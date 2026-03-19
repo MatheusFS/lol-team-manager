@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Histórico – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/match-list.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="matchList" class="bg-slate-950 text-slate-100 min-h-screen">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+
+    <!-- Page header -->
+    <div class="flex items-center justify-between mb-5">
+      <h1 class="text-xl font-bold">Histórico de Partidas</h1>
+      <a href="/pages/match-form.html"
+         class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-2 rounded text-sm transition-colors">
+        + Nova Partida
+      </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-4 flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Resultado</label>
+        <select x-model="fResult" class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
+          <option value="">Todos</option>
+          <option value="true">Vitórias</option>
+          <option value="false">Derrotas</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Lado</label>
+        <select x-model="fSide" class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
+          <option value="">Todos</option>
+          <option value="Red">🟥 Red</option>
+          <option value="Blue">🟦 Blue</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Tipo de Comp</label>
+        <select x-model="fComp" class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
+          <option value="">Todos</option>
+          <option value="Protect">🔼 Protect</option>
+          <option value="Pick">🔪 Pick</option>
+          <option value="Split">🔀 Split</option>
+          <option value="Siege">🌀 Siege</option>
+          <option value="Engage">💥 Engage</option>
+          <option value="Mix">⚠ Mix</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">De</label>
+        <input type="date" x-model="fFrom" class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Até</label>
+        <input type="date" x-model="fTo" class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
+      </div>
+      <button @click="applyFilters()" class="bg-slate-700 hover:bg-slate-600 px-4 py-1.5 rounded text-sm transition-colors">Aplicar</button>
+      <button @click="clearFilters()" class="text-slate-400 hover:text-slate-200 px-2 py-1.5 text-sm">Limpar</button>
+    </div>
+
+    <!-- Stats bar -->
+    <div x-show="!loading" class="flex gap-5 mb-4 text-sm text-slate-400 h-5">
+      <span x-text="`${total} partidas`"></span>
+      <span class="text-green-400" x-text="`${wins} vitórias`"></span>
+      <span class="text-red-400" x-text="`${losses} derrotas`"></span>
+      <span class="text-yellow-500 font-medium" x-text="`${wr}% de aproveitamento`"></span>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto rounded-lg border border-slate-800">
+      <table class="w-full text-sm" x-show="!msg">
+        <thead class="bg-slate-900 text-slate-400 text-xs uppercase tracking-wider">
+          <tr>
+            <th class="px-4 py-3 text-left">Data</th>
+            <th class="px-3 py-3 text-center">#</th>
+            <th class="px-4 py-3 text-center">Resultado</th>
+            <th class="px-3 py-3 text-center">Lado</th>
+            <th class="px-4 py-3 text-left">Top</th>
+            <th class="px-4 py-3 text-left">Comp</th>
+            <th class="px-3 py-3 text-center">Min</th>
+            <th class="px-4 py-3 text-left">MVP</th>
+            <th class="px-4 py-3 text-left">MVC</th>
+            <th class="px-4 py-3 text-right">GD@F</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+          <template x-for="m in matches" :key="m.id">
+            <tr class="hover:bg-slate-900/40 transition-colors" :class="borderCls(m.win)">
+              <td class="px-4 py-2.5 text-slate-300 whitespace-nowrap" x-text="fmtDate(m.date)"></td>
+              <td class="px-3 py-2.5 text-center text-slate-500" x-text="m.game_n"></td>
+              <td class="px-4 py-2.5 text-center">
+                <span class="px-2 py-0.5 rounded text-xs font-bold" :class="resultBg(m.win)" x-text="m.win ? 'VITÓRIA' : 'DERROTA'"></span>
+              </td>
+              <td class="px-3 py-2.5 text-center" :class="sideCls(m.side)" x-text="sideIcon(m.side)"></td>
+              <td class="px-4 py-2.5 text-slate-300" x-text="m.top_player || '—'"></td>
+              <td class="px-4 py-2.5 text-slate-200" x-text="compLabel(m.comp_type) || '—'"></td>
+              <td class="px-3 py-2.5 text-center text-slate-400" x-text="m.duration ?? '—'"></td>
+              <td class="px-4 py-2.5 text-slate-300" x-text="m.mvp || '—'"></td>
+              <td class="px-4 py-2.5">
+                <div class="flex items-center gap-1.5">
+                  <img x-show="mvcKey(m)" :src="champImg(mvcKey(m))"
+                       class="w-5 h-5 rounded-sm object-cover flex-shrink-0"
+                       :alt="mvcName(m)">
+                  <span class="text-slate-300" x-text="mvcName(m)"></span>
+                </div>
+              </td>
+              <td class="px-4 py-2.5 text-right font-mono text-xs"
+                  :class="m.gd_f != null ? gdfCls(m.gd_f) : 'text-slate-600'"
+                  x-text="m.gd_f != null ? fmtGold(m.gd_f) : '—'"></td>
+              <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                <a :href="`pages/match-form.html?id=${m.id}`"
+                   class="text-yellow-500 hover:text-yellow-400 text-xs font-medium mr-3 transition-colors">Editar</a>
+                <button @click="del(m.id)"
+                        class="text-slate-600 hover:text-red-400 text-xs transition-colors">Excluir</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+
+      <div x-show="msg" class="text-center py-12 text-slate-500 text-sm" x-text="msg"></div>
+    </div>
+
+    <!-- Pagination -->
+    <div x-show="showPagination" class="flex items-center justify-between mt-4 text-sm text-slate-400">
+      <span x-text="`Página ${page} de ${totalPages}`"></span>
+      <div class="flex gap-2">
+        <button @click="changePage(-1)" :disabled="!hasPrev"
+                class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          ← Anterior
+        </button>
+        <button @click="changePage(1)" :disabled="!hasNext"
+                class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          Próxima →
+        </button>
+      </div>
+    </div>
+
+  </main>
+</body>
+</html>
