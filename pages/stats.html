@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estatísticas – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/stats-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="statsPage" class="bg-slate-950 text-slate-100 min-h-screen">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+
+    <!-- Header + Tabs -->
+    <div class="flex items-center justify-between mb-5">
+      <h1 class="text-xl font-bold">Estatísticas</h1>
+      <div class="flex gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+        <button @click="tab('team')"
+                class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                :class="activeTab === 'team' ? 'bg-slate-800 text-yellow-400' : 'text-slate-400 hover:text-slate-200'">
+          Time
+        </button>
+        <button @click="tab('players')"
+                class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                :class="activeTab === 'players' ? 'bg-slate-800 text-yellow-400' : 'text-slate-400 hover:text-slate-200'">
+          Jogadores
+        </button>
+      </div>
+    </div>
+
+    <!-- CI legend -->
+    <p class="text-xs text-slate-500 mb-5">
+      Barras mostram aproveitamento. Bigodes = intervalo de confiança 95% (Wilson).
+      <span class="text-slate-400">⚠</span> = menos de 5 partidas — trate como anedótico.
+      Cores: <span class="text-green-400">verde ≥ 60%</span> · <span class="text-yellow-400">ouro 40–60%</span> · <span class="text-red-400">vermelho ≤ 40%</span> · <span class="text-slate-500">cinza &lt; 5 partidas</span>.
+    </p>
+
+    <!-- ── TIME ──────────────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'team'">
+
+      <div id="overview" class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Tipo de Comp</h3>
+          <p class="text-xs text-slate-500 mb-3">Desempenho de cada estratégia que jogamos</p>
+          <div class="relative h-52"><canvas id="c-comp-type"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento vs Tipo de Comp Inimiga</h3>
+          <p class="text-xs text-slate-500 mb-3">⚠ A maioria dos tipos inimigos tem N &lt; 5 — apenas Split é significativo</p>
+          <div class="relative h-52"><canvas id="c-enemy-type"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Número de Jogo</h3>
+          <p class="text-xs text-slate-500 mb-3">Desempenho ao longo do dia de Clash — J1 = primeiro jogo do bracket</p>
+          <div class="relative h-48"><canvas id="c-game-n"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Lado</h3>
+          <p class="text-xs text-slate-500 mb-3">Red side vs Blue side — território de cara ou coroa indica sem viés de lado</p>
+          <div class="relative h-48"><canvas id="c-side"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 lg:col-span-2">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Duração de Jogo</h3>
+          <p class="text-xs text-slate-500 mb-3">O tempo de jogo nos favorece?</p>
+          <div class="relative h-40"><canvas id="c-duration"></canvas></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── JOGADORES ──────────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'players'">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Frequência de MVP</h3>
+          <p class="text-xs text-slate-500 mb-3">% de partidas onde cada jogador foi MVP (N=<span id="mvp-n"></span>)</p>
+          <div class="relative h-44"><canvas id="c-mvp-freq"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento quando o Jogador é MVP</h3>
+          <p class="text-xs text-slate-500 mb-3">Aproveitamento do time nas partidas onde aquele jogador se destacou</p>
+          <div class="relative h-44"><canvas id="c-mvp-wr"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Top Laner</h3>
+          <p class="text-xs text-slate-500 mb-3">⚠ Apenas <span id="top-n"></span> partidas têm top laner registrado — interprete com cautela</p>
+          <div class="relative h-36"><canvas id="c-top-player"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Campeões MVC Mais Frequentes</h3>
+          <p class="text-xs text-slate-500 mb-3">Campeões que ganharam MVC com mais frequência</p>
+          <div class="relative h-64"><canvas id="c-mvc"></canvas></div>
+        </div>
+
+      </div>
+
+      <div class="mt-5 bg-slate-900 border border-slate-800 rounded-lg p-4 text-xs text-slate-400 leading-relaxed">
+        <strong class="text-slate-300">Nota sobre disponibilidade de dados individuais:</strong>
+        O dataset registra MVP (melhor jogador) e MVC (melhor campeão) por partida, além de qual jogador ocupou o top lane.
+        GdN (Jungle), Conkreto (Mid), Digo (ADC) e Kelly (Support) jogam em todas as partidas, então as estatísticas individuais
+        deles não podem ser isoladas do desempenho coletivo sem rastreamento por campeão.
+        O top lane é rastreado porque revezou entre Klebão, Pixek e Nunes.
+        Expandir o modelo de dados para registrar picks e KDA por jogador por partida desbloquearia análises individuais mais ricas.
+      </div>
+    </div>
+
+  </main>
+</body>
+</html>
