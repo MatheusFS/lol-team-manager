@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Importar Dados – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/import-tool.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="importTool" class="bg-slate-950 text-slate-100 min-h-screen">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-4xl mx-auto px-4 py-6">
+
+    <div class="mb-6">
+      <h1 class="text-xl font-bold">Importar Dados de Desempenho</h1>
+      <p class="text-sm text-slate-400 mt-1">Busca estatísticas ausentes (diferença de ouro, K/D, dano) na API da Riot e preenche seus registros.</p>
+    </div>
+
+    <!-- Setup card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-6">
+      <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Configuração da API do Riot</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-xs text-slate-400 mb-1">
+            Chave de API —
+            <a href="https://developer.riotgames.com" target="_blank" class="text-yellow-500 hover:underline">obter chave gratuita →</a>
+          </label>
+          <input x-model="apiKey" type="password" placeholder="RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                 class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-yellow-500">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Servidor</label>
+          <select x-model="region" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+            <option value="BR1">BR1 – Brasil</option>
+            <option value="NA1">NA1 – América do Norte</option>
+            <option value="EUW1">EUW1 – Europa Oeste</option>
+            <option value="EUNE1">EUNE1 – Europa Nórdica</option>
+            <option value="KR">KR – Coreia</option>
+            <option value="LAN">LAN – América Latina N</option>
+            <option value="LAS">LAS – América Latina S</option>
+            <option value="JP1">JP1 – Japão</option>
+            <option value="OC1">OC1 – Oceania</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs text-slate-400 mb-1">Riot ID de qualquer membro do time</label>
+          <input x-model="summoner" type="text" placeholder="NomeInvocador#BR1"
+                 class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+        </div>
+        <div class="flex items-end">
+          <button @click="fetchMatches()"
+                  class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-2 rounded text-sm transition-colors">
+            Buscar Partidas de Clash
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-slate-600 mt-3">A chave é armazenada apenas no localStorage do seu navegador e enviada somente aos servidores da Riot.</p>
+    </div>
+
+    <!-- Missing data summary -->
+    <div x-show="missingRows.length > 0" class="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6">
+      <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Dados incompletos nos seus registros</h2>
+      <div class="space-y-1 text-sm">
+        <template x-for="row in missingRows" :key="row.label">
+          <div class="flex items-center gap-2 text-slate-400">
+            <span class="text-amber-400">●</span>
+            <span>
+              <span class="text-slate-200 font-medium" x-text="row.n"></span>
+              partidas <span x-text="row.label"></span>
+            </span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div x-show="statusMsg" class="text-sm mb-4 py-2" :class="statusCls" x-text="statusMsg"></div>
+
+    <!-- Results -->
+    <div x-show="showResults">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-slate-300">Partidas de Clash Encontradas</h2>
+        <button @click="importAll()"
+                class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-1.5 rounded text-sm transition-colors">
+          Importar Todos
+        </button>
+      </div>
+
+      <div class="space-y-2">
+        <template x-for="card in cards" :key="card.riotId">
+          <div class="bg-slate-900 border border-slate-800 border-l-2 rounded-lg px-4 py-3"
+               :class="card.stats.win ? 'border-l-green-600' : 'border-l-red-700'">
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+              <div class="flex items-center gap-4 flex-wrap text-sm">
+                <span class="text-slate-400 tabular-nums" x-text="card.stats.date"></span>
+                <span class="font-bold" :class="card.stats.win ? 'text-green-400' : 'text-red-400'"
+                      x-text="card.stats.win ? 'VITÓRIA' : 'DERROTA'"></span>
+                <span x-text="(card.stats.side === 'Blue' ? '🟦' : '🟥') + ' ' + card.stats.side"></span>
+                <span class="text-slate-400" x-text="card.stats.duration + ' min'"></span>
+                <span class="text-slate-300" x-text="`${card.stats.team_kills}/${card.stats.team_deaths} K/D`"></span>
+                <span class="font-mono text-xs" :class="gdfCls(card.stats.gd_f)"
+                      x-text="fmtGdf(card.stats.gd_f) + ' GD@F'"></span>
+                <span class="text-slate-400 text-xs" x-text="`${(card.stats.damage/1000).toFixed(0)}k dano`"></span>
+
+                <!-- Badge -->
+                <span x-show="card.hasData"
+                      class="px-2 py-0.5 rounded text-xs bg-slate-700 text-slate-500">Já importado</span>
+                <span x-show="!card.hasData && card.pb"
+                      class="px-2 py-0.5 rounded text-xs bg-green-500/15 text-green-400"
+                      x-text="`Identificado → Jogo ${card.pb?.game_n}`"></span>
+                <span x-show="!card.pb"
+                      class="px-2 py-0.5 rounded text-xs bg-yellow-500/15 text-yellow-500">Sem registro correspondente</span>
+              </div>
+              <button x-show="card.canImport"
+                      @click="importSingle(card.riotId)"
+                      class="shrink-0 bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-3 py-1 rounded text-xs transition-colors">
+                Importar
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <p x-show="cards.length === 0" class="text-slate-500 text-sm">Nenhuma partida de Clash encontrada.</p>
+      </div>
+    </div>
+
+  </main>
+</body>
+</html>
