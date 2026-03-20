@@ -1,7 +1,7 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('matchList', () => ({
 
-    COMP_EMOJI: { Protect:'🔼', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'⚠' },
+    COMP_EMOJI: { Protect:'🛡️', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'🌫️' },
 
     // ── Filters ────────────────────────────────────────────────────────────
     fResult: '',

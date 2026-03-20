@@ -75,12 +75,12 @@ SUBTYPE_MAP = {
 }
 
 COMP_TYPE_MAP = {
-    "🔼 Protect": "Protect",
+    "🛡️ Protect": "Protect",
     "🔪 Pick":    "Pick",
     "🔀 Split":   "Split",
     "🌀 Siege":   "Siege",
     "💥 Engage":  "Engage",
-    "⚠ Mix":     "Mix",
+    "⚠️ Mix":     "Mix",
 }
 
 SIDE_MAP = {

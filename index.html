@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
   <script src="/scripts/match-list.js"></script>
+  <script src="/scripts/match-assistant.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
 <body x-data="matchList" class="bg-slate-950 text-slate-100 min-h-screen">
@@ -17,10 +18,10 @@
     <!-- Page header -->
     <div class="flex items-center justify-between mb-5">
       <h1 class="text-xl font-bold">Histórico de Partidas</h1>
-      <a href="/pages/match-form.html"
-         class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-2 rounded text-sm transition-colors">
+      <button @click="$dispatch('open-assistant', {})"
+              class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-2 rounded text-sm transition-colors">
         + Nova Partida
-      </a>
+      </button>
     </div>
 
     <!-- Filters -->
@@ -45,12 +46,12 @@
         <label class="block text-xs text-slate-400 mb-1">Tipo de Comp</label>
         <select x-model="fComp" class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
           <option value="">Todos</option>
-          <option value="Protect">🔼 Protect</option>
+          <option value="Protect">🛡️ Protect</option>
           <option value="Pick">🔪 Pick</option>
           <option value="Split">🔀 Split</option>
           <option value="Siege">🌀 Siege</option>
           <option value="Engage">💥 Engage</option>
-          <option value="Mix">⚠ Mix</option>
+          <option value="Mix">⚠️ Mix</option>
         </select>
       </div>
       <div>
@@ -116,6 +117,8 @@
                   :class="m.gd_f != null ? gdfCls(m.gd_f) : 'text-slate-600'"
                   x-text="m.gd_f != null ? fmtGold(m.gd_f) : '—'"></td>
               <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                <a x-show="m.riot_match_id" :href="`pages/match-detail.html?id=${m.id}`"
+                   class="text-slate-400 hover:text-slate-200 text-xs font-medium mr-3 transition-colors">Detalhes</a>
                 <a :href="`pages/match-form.html?id=${m.id}`"
                    class="text-yellow-500 hover:text-yellow-400 text-xs font-medium mr-3 transition-colors">Editar</a>
                 <button @click="del(m.id)"

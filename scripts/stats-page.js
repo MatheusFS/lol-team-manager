@@ -46,7 +46,7 @@ Chart.register({
 
 // ── Chart helpers (module-level, called from Alpine init) ─────────────────────
 
-const COMP_EMOJI_STATS = { Protect:'🔼', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'⚠' }
+const COMP_EMOJI_STATS = { Protect:'🛡️', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'🌫️' }
 
 function mean(arr) { return arr.length ? arr.reduce((s,v) => s+v, 0) / arr.length : null }
 
@@ -88,7 +88,7 @@ function winRateChart(canvasId, stats, isH = true, extraOpts = {}) {
     data: {
       labels: stats.map(s => {
         const e    = COMP_EMOJI_STATS[s.label] ?? ''
-        const warn = s.n < 5 ? ' ⚠' : ''
+        const warn = s.n < 5 ? ' ⚠️' : ''
         return `${e}${e?' ':''}${s.label}${warn}  N=${s.n}`
       }),
       datasets: [{

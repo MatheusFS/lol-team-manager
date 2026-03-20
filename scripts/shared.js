@@ -5,7 +5,7 @@ const PB = 'http://127.0.0.1:8090'
 const ROLES    = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
 const PLAYERS  = ['Klebão','GdN','Conkreto','Digo','Kelly','Pixek','Nunes','Eden','Xuao']
 const SUBTYPES = ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix']
-const COMP_EMOJI = { Protect:'🔼', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'⚠' }
+const COMP_EMOJI = { Protect:'🛡️', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'🌫️' }
 const SCALE_COLORS = ['🔴','🟡','🟢']
 const SCALE_SLOTS  = ['Early','Mid','Late']
 
@@ -72,6 +72,43 @@ const utils = {
       .map(([label, { wins, n }]) => ({ label, wins, n, ...utils.wilson(wins, n) }))
       .sort((a, b) => sort === 'rate' ? (b.rate ?? 0) - (a.rate ?? 0) : a.label.localeCompare(b.label))
   },
+}
+
+// ── Snapshot stripper (keeps only fields used by the app, avoids PB 1MB limit) ─
+function stripSnapshot({ match, timeline }) {
+  const PARTICIPANT_FIELDS = [
+    'teamId','participantId','puuid',
+    'kills','deaths','assists',
+    'goldEarned','totalDamageDealtToChampions','totalDamageTaken',
+    'wardsPlaced','visionScore','totalMinionsKilled','neutralMinionsKilled',
+    'championName','teamPosition','individualPosition','champLevel','firstBloodKill',
+  ]
+
+  const strippedMatch = {
+    metadata: { matchId: match.metadata?.matchId },
+    info: {
+      gameDuration:       match.info.gameDuration,
+      gameStartTimestamp: match.info.gameStartTimestamp,
+      teams:              match.info.teams,
+      participants:       match.info.participants.map(p => {
+        const out = {}
+        for (const k of PARTICIPANT_FIELDS) if (k in p) out[k] = p[k]
+        return out
+      }),
+    },
+  }
+
+  const strippedTimeline = {
+    info: {
+      frames: (timeline?.info?.frames ?? []).map(f => ({
+        participantFrames: Object.fromEntries(
+          Object.entries(f.participantFrames ?? {}).map(([id, pf]) => [id, { totalGold: pf.totalGold }])
+        ),
+      })),
+    },
+  }
+
+  return { match: strippedMatch, timeline: strippedTimeline }
 }
 
 // ── [x-cloak] CSS (prevent Alpine FOUC) ──────────────────────────────────────

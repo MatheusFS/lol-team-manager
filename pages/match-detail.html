@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalhes da Partida – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <style>
+    .jv-key    { color: #94a3b8; }
+    .jv-str    { color: #86efac; }
+    .jv-num    { color: #93c5fd; }
+    .jv-bool   { color: #fde68a; }
+    .jv-null   { color: #f87171; }
+    .jv-toggle { color: #64748b; cursor: pointer; user-select: none; }
+    .jv-toggle:hover { color: #cbd5e1; }
+    .jv-summary { color: #64748b; }
+    .jv-body   { padding-left: 1.25em; }
+  </style>
+  <script>
+    function buildJsonTree(value, depth = 0) {
+      if (value === null) {
+        const s = document.createElement('span')
+        s.className = 'jv-null'; s.textContent = 'null'; return s
+      }
+      if (typeof value === 'boolean') {
+        const s = document.createElement('span')
+        s.className = 'jv-bool'; s.textContent = String(value); return s
+      }
+      if (typeof value === 'number') {
+        const s = document.createElement('span')
+        s.className = 'jv-num'; s.textContent = String(value); return s
+      }
+      if (typeof value === 'string') {
+        const s = document.createElement('span')
+        s.className = 'jv-str'
+        s.textContent = '"' + (value.length > 120 ? value.slice(0, 120) + '…' : value) + '"'
+        return s
+      }
+
+      const isArr    = Array.isArray(value)
+      const keys     = isArr ? [...value.keys()] : Object.keys(value)
+      const open     = isArr ? '[' : '{'
+      const close    = isArr ? ']' : '}'
+
+      if (keys.length === 0) {
+        const s = document.createElement('span')
+        s.textContent = open + close; return s
+      }
+
+      const wrap    = document.createElement('span')
+      let collapsed = depth >= 1
+
+      const toggle  = document.createElement('span')
+      toggle.className = 'jv-toggle'
+
+      const summary = document.createElement('span')
+      summary.className = 'jv-summary'
+
+      const body    = document.createElement('div')
+      body.className = 'jv-body'
+
+      const closing = document.createElement('div')
+      closing.textContent = close
+
+      const setCollapsed = (c) => {
+        collapsed = c
+        toggle.textContent  = (collapsed ? '▶ ' : '▼ ') + open
+        summary.textContent = collapsed ? (isArr ? `…${keys.length} items` : `…${keys.length} keys`) + close : ''
+        body.style.display    = collapsed ? 'none' : ''
+        closing.style.display = collapsed ? 'none' : ''
+      }
+
+      toggle.addEventListener('click', () => setCollapsed(!collapsed))
+
+      keys.forEach((key, i) => {
+        const item = isArr ? value[key] : value[key]
+        const line = document.createElement('div')
+        if (!isArr) {
+          const k = document.createElement('span')
+          k.className = 'jv-key'
+          k.textContent = '"' + key + '": '
+          line.appendChild(k)
+        }
+        line.appendChild(buildJsonTree(item, depth + 1))
+        if (i < keys.length - 1) line.insertAdjacentText('beforeend', ',')
+        body.appendChild(line)
+      })
+
+      wrap.appendChild(toggle)
+      wrap.appendChild(summary)
+      wrap.appendChild(body)
+      wrap.appendChild(closing)
+      setCollapsed(collapsed)
+      return wrap
+    }
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('matchDetail', () => ({
+        loading:       true,
+        match:         null,
+        error:         null,
+        apiKey:        localStorage.getItem('riot-api-key') ?? '',
+        repairing:     false,
+        repairStatus:  '',
+
+        async init() {
+          await Alpine.store('champions').load()
+          const id = new URLSearchParams(location.search).get('id')
+          if (!id) { this.error = 'ID não informado.'; this.loading = false; return }
+          try {
+            this.match = await api.col('matches').get(id, { expand: 'mvc' })
+          } catch (e) {
+            this.error = 'Partida não encontrada.'
+          }
+          this.loading = false
+        },
+
+        // ── Helpers ───────────────────────────────────────────────────────
+        fmtDate(d) {
+          if (!d) return '—'
+          return new Date(d).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+        },
+
+        fmtNum(v) {
+          if (v == null) return '—'
+          return Number(v).toLocaleString('pt-BR')
+        },
+
+        fmtGold(v) {
+          if (v == null) return '—'
+          const sign = v > 0 ? '+' : ''
+          return sign + Number(v).toLocaleString('en')
+        },
+
+        goldCls(v) {
+          if (v == null) return 'text-slate-500'
+          return v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-300'
+        },
+
+        champImg(key) {
+          return Alpine.store('champions').imgUrl(key)
+        },
+
+        // Player stats sorted by role order
+        get sortedPlayers() {
+          const ORDER = { TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4 }
+          const arr = Array.isArray(this.match?.player_stats) ? [...this.match.player_stats] : []
+          return arr.sort((a, b) => (ORDER[a.role] ?? 99) - (ORDER[b.role] ?? 99))
+        },
+
+        champKey(championName) {
+          const c = Alpine.store('champions').list.find(x => x.name === championName)
+          return c?.key ?? ''
+        },
+
+        roleLabel(role) {
+          const MAP = { TOP: 'Top', JUNGLE: 'Jg', MIDDLE: 'Mid', BOTTOM: 'ADC', UTILITY: 'Sup' }
+          return MAP[role] ?? role ?? '—'
+        },
+
+        // Parse obj_flow string t/v/g/d/b/i/n
+        get objFlowParsed() {
+          const raw = this.match?.obj_flow
+          if (!raw) return null
+          const [t, v, g, d, b, i, n] = raw.split('/').map(Number)
+          return [
+            { label: 'Torres',    icon: '🏰', val: t },
+            { label: 'Void',      icon: '🌊', val: v },
+            { label: 'Herald',    icon: '🐉', val: g },
+            { label: 'Dragões',   icon: '🔥', val: d },
+            { label: 'Baron',     icon: '👁', val: b },
+            { label: 'Inibidores',icon: '💀', val: i },
+            { label: 'Nexus',     icon: '⭐', val: n },
+          ]
+        },
+
+        get mvcChamp() {
+          if (!this.match?.expand?.mvc) return null
+          return this.match.expand.mvc
+        },
+
+        // ── Repair missing snapshot ────────────────────────────────────────
+        _clusterFromMatchId(matchId) {
+          const CLUSTER = {
+            BR1:'americas', NA1:'americas', LAN:'americas', LAS:'americas',
+            EUW1:'europe',  EUNE1:'europe', TR1:'europe',   RU:'europe',
+            KR:'asia',      JP1:'asia',
+            OC1:'sea',      PH2:'sea',      SG2:'sea',      TH2:'sea', TW2:'sea', VN2:'sea',
+          }
+          return CLUSTER[matchId.split('_')[0]] ?? 'americas'
+        },
+
+        async repairSnapshot() {
+          if (!this.apiKey || this.repairing) return
+          localStorage.setItem('riot-api-key', this.apiKey)
+          this.repairing = true
+          this.repairStatus = 'Buscando partida…'
+          try {
+            const base    = `https://${this._clusterFromMatchId(this.match.riot_match_id)}.api.riotgames.com`
+            const headers = { 'X-Riot-Token': this.apiKey }
+            const riotId  = this.match.riot_match_id
+
+            const [match, timeline] = await Promise.all([
+              fetch(`${base}/lol/match/v5/matches/${riotId}`, { headers }).then(r => { if (!r.ok) throw new Error(`Riot ${r.status}`); return r.json() }),
+              fetch(`${base}/lol/match/v5/matches/${riotId}/timeline`, { headers }).then(r => { if (!r.ok) throw new Error(`Riot ${r.status}`); return r.json() }),
+            ])
+
+            this.repairStatus = 'Calculando estatísticas…'
+            const info      = match.info
+            const ourTeamId = this.match.side === 'Blue' ? 100 : 200
+            const allOur    = info.participants.filter(p => p.teamId === ourTeamId)
+            const ourTeam   = info.teams.find(t => t.teamId === ourTeamId)
+            const ourIds    = new Set(allOur.map(p => p.participantId))
+            const dur       = Math.round(info.gameDuration / 60) || 1
+
+            const totalGold   = allOur.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
+            const damage      = allOur.reduce((s, p) => s + (p.totalDamageDealtToChampions ?? 0), 0)
+            const dmgTaken    = allOur.reduce((s, p) => s + (p.totalDamageTaken ?? 0), 0)
+            const wards       = allOur.reduce((s, p) => s + (p.wardsPlaced ?? 0), 0)
+            const visionScore = allOur.reduce((s, p) => s + (p.visionScore ?? 0), 0)
+            const csTotal     = allOur.reduce((s, p) => s + (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0), 0)
+
+            const o = ourTeam?.objectives
+            const objFlow = o ? [
+              o.tower?.kills ?? 0, o.horde?.kills ?? 0, o.riftHerald?.kills ?? 0,
+              o.dragon?.kills ?? 0, o.baron?.kills ?? 0, o.inhibitor?.kills ?? 0, o.nexus?.kills ?? 0,
+            ].join('/') : ''
+
+            const frames = timeline?.info?.frames
+            const calcGd = (min) => {
+              const f = frames?.[min]
+              if (!f?.participantFrames) return null
+              let our = 0, enm = 0
+              for (const [pid, pf] of Object.entries(f.participantFrames)) {
+                if (ourIds.has(+pid)) our += pf.totalGold ?? 0
+                else                  enm += pf.totalGold ?? 0
+              }
+              return our - enm
+            }
+            let gdF = null
+            if (frames?.length) {
+              const last = frames[frames.length - 1]
+              if (last?.participantFrames) {
+                let our = 0, enm = 0
+                for (const [pid, pf] of Object.entries(last.participantFrames)) {
+                  if (ourIds.has(+pid)) our += pf.totalGold ?? 0
+                  else                  enm += pf.totalGold ?? 0
+                }
+                gdF = our - enm
+              }
+            }
+
+            this.repairStatus = 'Buscando jogadores…'
+            const puuidToName = {}
+            try {
+              const players = await api.col('players').list({ perPage: 50 })
+              for (const p of players.items) { if (p.puuid) puuidToName[p.puuid] = p.name }
+            } catch (_) {}
+
+            const POS_ORDER = { TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4 }
+            const sorted = [...allOur].sort((a, b) => (POS_ORDER[a.teamPosition] ?? 99) - (POS_ORDER[b.teamPosition] ?? 99))
+            const champList = Alpine.store('champions').list
+            const resolveChamp = (id) => champList.find(c => c.key === id) ?? champList.find(c => c.name === id)
+
+            const playerStats = sorted.map(p => {
+              const kda = p.deaths === 0
+                ? (p.kills + p.assists)
+                : Math.round(((p.kills + p.assists) / p.deaths) * 100) / 100
+              return {
+                name: puuidToName[p.puuid] ?? null,
+                role: p.teamPosition || p.individualPosition || null,
+                champion: p.championName,
+                kills: p.kills ?? 0, deaths: p.deaths ?? 0, assists: p.assists ?? 0,
+                cs: (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0),
+                damage: p.totalDamageDealtToChampions ?? 0,
+                damageTaken: p.totalDamageTaken ?? 0,
+                gold: p.goldEarned ?? 0,
+                visionScore: p.visionScore ?? 0,
+                wardsPlaced: p.wardsPlaced ?? 0,
+                level: p.champLevel ?? null,
+                kda, firstBlood: p.firstBloodKill ?? false,
+              }
+            })
+
+            // MVP suggestion
+            let mvpName = null, bestMvpScore = -Infinity
+            for (const p of allOur) {
+              const name = puuidToName[p.puuid]
+              if (!name) continue
+              const score = (p.kills ?? 0) * 2 + (p.assists ?? 0) - (p.deaths ?? 0) * 0.5
+              if (score > bestMvpScore) { bestMvpScore = score; mvpName = name }
+            }
+
+            // MVC = champion of the MVP player
+            const mvpPlayerName  = mvpName || this.match.mvp
+            const mvpParticipant = allOur.find(p => puuidToName[p.puuid] === mvpPlayerName)
+            const mvcFound       = mvpParticipant ? resolveChamp(mvpParticipant.championName) : null
+
+            this.repairStatus = 'Salvando…'
+            const payload = {
+              riot_match_snapshot: stripSnapshot({ match, timeline }),
+              player_stats:   playerStats,
+              duration:       dur,
+              team_kills:     allOur.reduce((s, p) => s + (p.kills   ?? 0), 0),
+              team_deaths:    allOur.reduce((s, p) => s + (p.deaths  ?? 0), 0),
+              team_assists:   allOur.reduce((s, p) => s + (p.assists ?? 0), 0),
+              total_gold:     totalGold,
+              damage,
+              da_di:          dmgTaken > 0 ? Math.round((damage / dmgTaken) * 100) / 100 : undefined,
+              gold_per_min:   Math.round(totalGold / dur),
+              wards_per_min:  Math.round((wards / dur) * 10) / 10,
+              vision_score:   visionScore,
+              cs_total:       csTotal,
+              cs_per_min:     Math.round((csTotal / dur) * 10) / 10,
+              first_blood:    ourTeam?.objectives?.champion?.first ?? false,
+              first_tower:    ourTeam?.objectives?.tower?.first    ?? false,
+              obj_flow:       objFlow,
+              gd_10:          calcGd(10),
+              gd_20:          calcGd(20),
+              gd_f:           gdF,
+            }
+            if (mvcFound)          payload.mvc = mvcFound.id
+            if (!this.match.mvp && mvpName) payload.mvp = mvpName
+
+            await api.col('matches').update(this.match.id, payload)
+            this.repairStatus = 'Salvo. Recarregando…'
+            location.reload()
+          } catch (e) {
+            this.repairStatus = 'Erro: ' + e.message
+            console.error(e)
+            this.repairing = false
+          }
+        },
+      }))
+    })
+  </script>
+</head>
+<body x-data="matchDetail" class="bg-slate-950 text-slate-100 min-h-screen pb-10">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-5xl mx-auto px-4 py-6" x-show="!loading">
+
+    <!-- Header -->
+    <div class="flex items-center gap-3 mb-6" x-show="match">
+      <a :href="`/pages/match-form.html?id=${match?.id}`"
+         class="text-slate-500 hover:text-slate-300 text-sm transition-colors">← Voltar</a>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-bold px-2 py-0.5 rounded text-sm"
+              :class="match?.win ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'"
+              x-text="match?.win ? 'VITÓRIA' : 'DERROTA'"></span>
+        <span class="text-slate-400 text-sm" x-text="match?.side === 'Red' ? '🟥 Red' : '🟦 Blue'"></span>
+        <span class="text-slate-400 text-sm" x-text="fmtDate(match?.date)"></span>
+        <span class="text-slate-500 text-sm" x-text="match?.duration ? match.duration + ' min' : ''"></span>
+        <span class="text-slate-600 text-xs font-mono" x-text="match?.riot_match_id"></span>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div x-show="error" class="text-center py-20 text-slate-500" x-text="error"></div>
+
+    <template x-if="match">
+      <div class="space-y-5">
+
+        <!-- ── Per-player stats ──────────────────────────────────────────── -->
+        <section x-show="sortedPlayers.length" class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+          <div class="px-5 py-3 border-b border-slate-800">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Performance Individual</h2>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-900/60 text-xs text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th class="px-4 py-2.5 text-left">Jogador</th>
+                  <th class="px-3 py-2.5 text-center">Lane</th>
+                  <th class="px-3 py-2.5 text-left">Campeão</th>
+                  <th class="px-3 py-2.5 text-center">K/D/A</th>
+                  <th class="px-3 py-2.5 text-center">KDA</th>
+                  <th class="px-3 py-2.5 text-right">CS</th>
+                  <th class="px-3 py-2.5 text-right">Dano</th>
+                  <th class="px-3 py-2.5 text-right">Ouro</th>
+                  <th class="px-3 py-2.5 text-right">Visão</th>
+                  <th class="px-3 py-2.5 text-center">Nível</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60">
+                <template x-for="p in sortedPlayers" :key="p.name ?? p.champion">
+                  <tr class="hover:bg-slate-800/40 transition-colors">
+                    <td class="px-4 py-2.5 font-medium text-slate-200">
+                      <span x-text="p.name ?? '—'"></span>
+                      <span x-show="p.firstBlood" class="ml-1 text-xs text-red-400" title="First Blood">⚔</span>
+                    </td>
+                    <td class="px-3 py-2.5 text-center text-slate-400 text-xs" x-text="roleLabel(p.role)"></td>
+                    <td class="px-3 py-2.5">
+                      <div class="flex items-center gap-1.5">
+                        <img :src="champImg(champKey(p.champion))" :alt="p.champion"
+                             class="w-6 h-6 rounded-sm object-cover flex-shrink-0"
+                             onerror="this.style.display='none'">
+                        <span class="text-slate-300 text-xs" x-text="p.champion ?? '—'"></span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-2.5 text-center font-mono text-xs">
+                      <span class="text-green-400" x-text="p.kills"></span>/<span class="text-red-400" x-text="p.deaths"></span>/<span class="text-blue-400" x-text="p.assists"></span>
+                    </td>
+                    <td class="px-3 py-2.5 text-center text-xs font-semibold"
+                        :class="p.kda >= 4 ? 'text-yellow-400' : p.kda >= 2 ? 'text-slate-200' : 'text-slate-500'"
+                        x-text="p.kda?.toFixed(2) ?? '—'"></td>
+                    <td class="px-3 py-2.5 text-right text-slate-300 font-mono text-xs" x-text="fmtNum(p.cs)"></td>
+                    <td class="px-3 py-2.5 text-right text-slate-300 font-mono text-xs" x-text="fmtNum(p.damage)"></td>
+                    <td class="px-3 py-2.5 text-right text-slate-400 font-mono text-xs" x-text="fmtNum(p.gold)"></td>
+                    <td class="px-3 py-2.5 text-right text-slate-400 text-xs" x-text="p.visionScore ?? '—'"></td>
+                    <td class="px-3 py-2.5 text-center text-slate-500 text-xs" x-text="p.level ?? '—'"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ── Team stats ────────────────────────────────────────────────── -->
+        <section class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Estatísticas de Equipe</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+
+            <!-- K/D/A team -->
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">K / D / A (equipe)</div>
+              <div class="font-mono">
+                <span class="text-green-400" x-text="match.team_kills ?? '—'"></span>
+                <span class="text-slate-600">/</span>
+                <span class="text-red-400" x-text="match.team_deaths ?? '—'"></span>
+                <span class="text-slate-600">/</span>
+                <span class="text-blue-400" x-text="match.team_assists ?? '—'"></span>
+              </div>
+            </div>
+
+            <!-- MVP / MVC -->
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">MVP</div>
+              <div class="text-slate-200" x-text="match.mvp || '—'"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">MVC (Campeão)</div>
+              <div class="flex items-center gap-1.5">
+                <img x-show="mvcChamp" :src="champImg(mvcChamp?.key)" :alt="mvcChamp?.name"
+                     class="w-5 h-5 rounded-sm object-cover" onerror="this.style.display='none'">
+                <span class="text-slate-200" x-text="mvcChamp?.name ?? '—'"></span>
+              </div>
+            </div>
+
+            <!-- First blood / tower -->
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">First Blood / First Tower</div>
+              <div class="flex gap-2 text-xs">
+                <span :class="match.first_blood ? 'text-green-400' : 'text-slate-600'"
+                      x-text="match.first_blood ? '⚔ FB' : '— FB'"></span>
+                <span :class="match.first_tower ? 'text-yellow-400' : 'text-slate-600'"
+                      x-text="match.first_tower ? '🏰 FT' : '— FT'"></span>
+              </div>
+            </div>
+
+            <!-- Gold diffs -->
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">GD@10</div>
+              <div class="font-mono text-sm" :class="goldCls(match.gd_10)" x-text="fmtGold(match.gd_10)"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">GD@20</div>
+              <div class="font-mono text-sm" :class="goldCls(match.gd_20)" x-text="fmtGold(match.gd_20)"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">GD@Final</div>
+              <div class="font-mono text-sm" :class="goldCls(match.gd_f)" x-text="fmtGold(match.gd_f)"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">Ouro Total</div>
+              <div class="text-slate-300 font-mono text-sm" x-text="fmtNum(match.total_gold)"></div>
+            </div>
+
+            <!-- Rates -->
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">Ouro/min</div>
+              <div class="text-slate-300 text-sm" x-text="fmtNum(match.gold_per_min)"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">CS Total</div>
+              <div class="text-slate-300 text-sm" x-text="fmtNum(match.cs_total)"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">CS/min</div>
+              <div class="text-slate-300 text-sm" x-text="match.cs_per_min ?? '—'"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">Dano Total</div>
+              <div class="text-slate-300 font-mono text-sm" x-text="fmtNum(match.damage)"></div>
+            </div>
+
+            <!-- Vision / wards -->
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">Visão Total</div>
+              <div class="text-slate-300 text-sm" x-text="fmtNum(match.vision_score)"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">Wards/min</div>
+              <div class="text-slate-300 text-sm" x-text="match.wards_per_min ?? '—'"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-0.5">DA/DI</div>
+              <div class="text-slate-300 text-sm" x-text="match.da_di ?? '—'"></div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ── Objectives ─────────────────────────────────────────────────── -->
+        <section x-show="objFlowParsed" class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Objetivos</h2>
+          <div class="flex flex-wrap gap-4">
+            <template x-for="obj in objFlowParsed" :key="obj.label">
+              <div class="text-center min-w-[56px]">
+                <div class="text-xl" x-text="obj.icon"></div>
+                <div class="text-lg font-bold text-slate-200" x-text="isNaN(obj.val) ? '—' : obj.val"></div>
+                <div class="text-xs text-slate-500" x-text="obj.label"></div>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <!-- ── Snapshot info ──────────────────────────────────────────────── -->
+        <section x-show="match.riot_match_id" x-data="{ showJson: false }"
+                 class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+          <div class="px-5 py-3 flex items-center gap-3 flex-wrap">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Fonte</h2>
+            <span class="text-xs text-slate-500">Riot Match ID:</span>
+            <span class="text-xs font-mono text-slate-300" x-text="match.riot_match_id"></span>
+            <span x-show="match.riot_match_snapshot"
+                  class="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">
+              Snapshot salvo
+            </span>
+            <button x-show="match.riot_match_snapshot"
+                    @click="showJson = !showJson"
+                    class="ml-auto text-xs px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors font-mono"
+                    x-text="showJson ? '▲ Ocultar JSON' : '▼ Ver JSON'">
+            </button>
+          </div>
+          <!-- Repair banner: riot_match_id sem snapshot -->
+          <div x-show="!match.riot_match_snapshot"
+               class="border-t border-slate-800 px-5 py-4 flex items-center gap-3 flex-wrap">
+            <span class="text-xs text-amber-400">⚠️ Snapshot ausente</span>
+            <input type="password" x-model="apiKey" placeholder="RGAPI-…"
+                   class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-yellow-500 w-64">
+            <button @click="repairSnapshot()" :disabled="!apiKey || repairing"
+                    class="text-xs bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-slate-900 font-semibold px-3 py-1.5 rounded transition-colors"
+                    x-text="repairing ? repairStatus : 'Buscar e salvar snapshot'">
+            </button>
+            <span x-show="repairStatus && !repairing" class="text-xs text-red-400" x-text="repairStatus"></span>
+          </div>
+
+          <div x-show="showJson" x-transition
+               x-effect="if (showJson && match?.riot_match_snapshot) $nextTick(() => { const el = $refs.jsonTree; el.innerHTML = ''; el.appendChild(buildJsonTree(match.riot_match_snapshot)) })"
+               class="border-t border-slate-800 px-4 py-3 overflow-x-auto max-h-[70vh] overflow-y-auto">
+            <div x-ref="jsonTree" class="font-mono text-xs leading-5 text-slate-300 whitespace-nowrap"></div>
+          </div>
+        </section>
+
+      </div>
+    </template>
+
+  </main>
+
+  <!-- Loading state -->
+  <div x-show="loading" class="flex items-center justify-center min-h-screen">
+    <span class="text-slate-500 text-sm">Carregando…</span>
+  </div>
+
+</body>
+</html>
