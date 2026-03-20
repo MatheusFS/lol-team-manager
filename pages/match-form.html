@@ -30,9 +30,15 @@
   </style>
   <script src="/scripts/shared.js"></script>
   <script src="/scripts/match-form.js"></script>
+  <script src="/scripts/match-assistant.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <script>
+    window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload() })
+  </script>
 </head>
-<body x-data="matchForm" class="bg-slate-950 text-slate-100 min-h-screen pb-24">
+<body x-data="matchForm"
+      x-on:apply-match.window="applyFromRiot($event.detail)"
+      class="bg-slate-950 text-slate-100 min-h-screen pb-24">
 <script src="/scripts/layout.js"></script>
 
   <main class="max-w-4xl mx-auto px-4 py-6">
@@ -40,10 +46,18 @@
     <div class="flex items-center gap-3 mb-6">
       <a href="/index.html" class="text-slate-500 hover:text-slate-300 text-sm transition-colors">← Voltar</a>
       <h1 class="text-xl font-bold" x-text="pageTitle"></h1>
-      <a :href="`/pages/match-lookup.html${editId ? '?returnId=' + editId : ''}`"
-         class="ml-auto text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded transition-colors">
-        🔍 Buscar partida
-      </a>
+      <template x-if="riotMatchId">
+        <a :href="`/pages/match-detail.html?id=${editId}`"
+           class="ml-auto text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-yellow-400 px-3 py-1.5 rounded transition-colors">
+          📊 Ver detalhes Riot
+        </a>
+      </template>
+      <template x-if="!riotMatchId">
+        <button @click="$dispatch('open-assistant', { date, win, side })"
+                class="ml-auto text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded transition-colors">
+          🔍 Buscar partida
+        </button>
+      </template>
     </div>
 
     <!-- ── Informações ─────────────────────────────────────────────────── -->
@@ -63,7 +77,12 @@
 
         <div>
           <label class="field-label">Resultado</label>
-          <div class="flex rounded overflow-hidden border border-slate-700 h-9 mt-1">
+          <div x-show="riotMatchId"
+               class="mt-1 h-9 flex items-center px-3 rounded border text-sm font-semibold"
+               :class="win ? 'border-green-700 text-green-400 bg-green-500/10' : 'border-red-800 text-red-400 bg-red-500/10'"
+               x-text="win ? 'VITÓRIA' : 'DERROTA'">
+          </div>
+          <div x-show="!riotMatchId" class="flex rounded overflow-hidden border border-slate-700 h-9 mt-1">
             <button type="button" @click="win = true"
                     class="flex-1 text-sm font-semibold transition-colors"
                     :class="win === true ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-green-500/20'">
@@ -79,7 +98,12 @@
 
         <div>
           <label class="field-label">Lado</label>
-          <div class="flex rounded overflow-hidden border border-slate-700 h-9 mt-1">
+          <div x-show="riotMatchId"
+               class="mt-1 h-9 flex items-center px-3 rounded border text-sm"
+               :class="side === 'Red' ? 'border-red-800 text-red-400 bg-red-500/10' : 'border-blue-800 text-blue-400 bg-blue-500/10'"
+               x-text="side === 'Red' ? '🟥 Red' : '🟦 Blue'">
+          </div>
+          <div x-show="!riotMatchId" class="flex rounded overflow-hidden border border-slate-700 h-9 mt-1">
             <button type="button" @click="side = 'Red'"
                     class="flex-1 text-sm transition-colors"
                     :class="side === 'Red' ? 'bg-red-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-red-500/20'">
@@ -196,12 +220,12 @@
           <label class="field-label">Tipo de Comp (nossa)</label>
           <select x-model="compType" class="field-input">
             <option value="">— nenhum —</option>
-            <option value="Protect">🔼 Protect</option>
+            <option value="Protect">🛡️ Protect</option>
             <option value="Pick">🔪 Pick</option>
             <option value="Split">🔀 Split</option>
             <option value="Siege">🌀 Siege</option>
             <option value="Engage">💥 Engage</option>
-            <option value="Mix">⚠ Mix</option>
+            <option value="Mix">⚠️ Mix</option>
           </select>
         </div>
 
@@ -209,12 +233,12 @@
           <label class="field-label">Tipo de Comp (inimiga)</label>
           <select x-model="enemyType" class="field-input">
             <option value="">— nenhum —</option>
-            <option value="Protect">🔼 Protect</option>
+            <option value="Protect">🛡️ Protect</option>
             <option value="Pick">🔪 Pick</option>
             <option value="Split">🔀 Split</option>
             <option value="Siege">🌀 Siege</option>
             <option value="Engage">💥 Engage</option>
-            <option value="Mix">⚠ Mix</option>
+            <option value="Mix">⚠️ Mix</option>
           </select>
         </div>
 
@@ -277,6 +301,101 @@
           </div>
         </div>
 
+        <!-- ── Our suggestion panel ──────────────────────────────────── -->
+        <div x-show="ourSuggestion" x-cloak class="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 text-xs space-y-2">
+          <div class="text-slate-400 font-medium">💡 Sugestão — nossa comp</div>
+
+          <!-- Comp + scaling summary -->
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span class="font-semibold text-slate-200"
+                  x-text="ourSuggestion?.compType ? (COMP_EMOJI[ourSuggestion.compType] + ' ' + ourSuggestion.compType) : '—'"></span>
+            <div class="flex gap-2 text-slate-300">
+              <template x-for="(ci, i) in (ourSuggestion?.scaling ?? [])" :key="i">
+                <span>
+                  <span class="text-slate-500 text-[10px]" x-text="SCALE_SLOTS[i]"></span>
+                  <span class="ml-0.5" x-text="ci != null ? SCALE_COLORS[ci] : '·'"
+                        :class="ci == null ? 'text-slate-600' : ''"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+
+          <!-- Vote breakdown -->
+          <div x-show="ourSuggestion?.voteList.length > 1"
+               class="flex flex-wrap gap-x-3 text-[10px] text-slate-500">
+            <template x-for="v in (ourSuggestion?.voteList ?? [])" :key="v.type">
+              <span x-text="(COMP_EMOJI[v.type] ?? '') + ' ' + v.type + ' ×' + v.n"></span>
+            </template>
+          </div>
+
+          <!-- Per-champion breakdown -->
+          <div class="space-y-0.5">
+            <template x-for="c in (ourSuggestion?.champions ?? [])" :key="c.name">
+              <div class="flex items-center gap-1.5">
+                <img :src="$store.champions.imgUrl(c.key)" class="w-5 h-5 rounded-sm object-cover flex-shrink-0 opacity-80">
+                <span class="text-slate-300 w-20 truncate" x-text="c.name"></span>
+                <span class="text-slate-500 flex-1">
+                  <span x-text="c.comp_type ? (COMP_EMOJI[c.comp_type] + ' ' + c.comp_type) : '—'"></span>
+                  <span x-show="c.comp_type_2" class="text-slate-600 ml-1"
+                        x-text="c.comp_type_2 ? ('/ ' + COMP_EMOJI[c.comp_type_2] + ' ' + c.comp_type_2) : ''"></span>
+                </span>
+                <div class="flex gap-1">
+                  <template x-for="phase in ['early','mid','late']" :key="phase">
+                    <span x-text="c[phase] != null ? SCALE_COLORS[c[phase]] : '·'"
+                          :class="c[phase] == null ? 'opacity-25' : ''"></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- ── Enemy suggestion panel ─────────────────────────────────── -->
+        <div x-show="enemySuggestion" x-cloak class="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 text-xs space-y-2">
+          <div class="text-slate-400 font-medium">💡 Sugestão — comp inimiga</div>
+
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span class="font-semibold text-slate-200"
+                  x-text="enemySuggestion?.compType ? (COMP_EMOJI[enemySuggestion.compType] + ' ' + enemySuggestion.compType) : '—'"></span>
+            <div class="flex gap-2 text-slate-300">
+              <template x-for="(ci, i) in (enemySuggestion?.scaling ?? [])" :key="i">
+                <span>
+                  <span class="text-slate-500 text-[10px]" x-text="SCALE_SLOTS[i]"></span>
+                  <span class="ml-0.5" x-text="ci != null ? SCALE_COLORS[ci] : '·'"
+                        :class="ci == null ? 'text-slate-600' : ''"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+
+          <div x-show="enemySuggestion?.voteList.length > 1"
+               class="flex flex-wrap gap-x-3 text-[10px] text-slate-500">
+            <template x-for="v in (enemySuggestion?.voteList ?? [])" :key="v.type">
+              <span x-text="(COMP_EMOJI[v.type] ?? '') + ' ' + v.type + ' ×' + v.n"></span>
+            </template>
+          </div>
+
+          <div class="space-y-0.5">
+            <template x-for="c in (enemySuggestion?.champions ?? [])" :key="c.name">
+              <div class="flex items-center gap-1.5">
+                <img :src="$store.champions.imgUrl(c.key)" class="w-5 h-5 rounded-sm object-cover flex-shrink-0 opacity-80">
+                <span class="text-slate-300 w-20 truncate" x-text="c.name"></span>
+                <span class="text-slate-500 flex-1">
+                  <span x-text="c.comp_type ? (COMP_EMOJI[c.comp_type] + ' ' + c.comp_type) : '—'"></span>
+                  <span x-show="c.comp_type_2" class="text-slate-600 ml-1"
+                        x-text="c.comp_type_2 ? ('/ ' + COMP_EMOJI[c.comp_type_2] + ' ' + c.comp_type_2) : ''"></span>
+                </span>
+                <div class="flex gap-1">
+                  <template x-for="phase in ['early','mid','late']" :key="phase">
+                    <span x-text="c[phase] != null ? SCALE_COLORS[c[phase]] : '·'"
+                          :class="c[phase] == null ? 'opacity-25' : ''"></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -284,11 +403,6 @@
     <section class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-5">
       <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Resultados</h2>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-
-        <div>
-          <label class="field-label">Duração (min)</label>
-          <input type="number" x-model.number="duration" min="1" max="120" class="field-input" placeholder="32">
-        </div>
 
         <div>
           <label class="field-label">MVP</label>
@@ -300,55 +414,11 @@
           </select>
         </div>
 
-        <!-- MVC champion autocomplete -->
-        <div class="relative">
-          <label class="field-label">MVC (Campeão)</label>
-          <div class="relative mt-1">
-            <img x-show="mvcKey"
-                 :src="$store.champions.imgUrl(mvcKey)"
-                 class="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-sm object-cover pointer-events-none">
-            <input type="text"
-                   :value="mvcDisplay || mvcQuery"
-                   @input="mvcQuery = $event.target.value; mvcDisplay = ''; mvcId = ''; mvcKey = ''; searchMvc()"
-                   @focus="onMvcFocus()"
-                   @blur="onMvcBlur()"
-                   autocomplete="off"
-                   :class="mvcKey ? 'pl-10' : 'pl-3'"
-                   class="w-full bg-slate-800 border border-slate-700 rounded py-2 pr-3 text-sm focus:outline-none focus:border-yellow-500"
-                   placeholder="Buscar…">
-          </div>
-          <div x-show="mvcOpen"
-               class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-700 rounded max-h-48 overflow-y-auto shadow-xl">
-            <template x-for="c in mvcResults" :key="c.id">
-              <button type="button"
-                      class="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-slate-700 transition-colors"
-                      @mousedown.prevent="pickMvc(c)">
-                <img :src="$store.champions.imgUrl(c.key)"
-                     class="w-6 h-6 rounded-sm object-cover flex-shrink-0">
-                <span x-text="c.name"></span>
-              </button>
-            </template>
-            <div x-show="mvcResults.length === 0 && mvcQuery"
-                 class="px-3 py-2 text-sm text-slate-500">Nenhum campeão encontrado</div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="field-label">Kills</label>
-            <input type="number" x-model.number="teamKills" min="0" class="field-input" placeholder="0">
-          </div>
-          <div>
-            <label class="field-label">Deaths</label>
-            <input type="number" x-model.number="teamDeaths" min="0" class="field-input" placeholder="0">
-          </div>
-        </div>
-
       </div>
     </section>
 
     <!-- ── Estatísticas ───────────────────────────────────────────────── -->
-    <section class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+    <section x-show="!riotMatchId" class="bg-slate-900 border border-slate-800 rounded-lg p-5">
       <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">
         Estatísticas <span class="text-slate-600 font-normal normal-case">(opcional)</span>
       </h2>
@@ -364,6 +434,7 @@
         <div class="col-span-2"><label class="field-label">Fluxo de Objetivos</label><input type="text" x-model="objFlow" class="field-input" placeholder="t/v/g/d/b/i/n"></div>
       </div>
     </section>
+
 
   </main>
 

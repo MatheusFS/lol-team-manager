@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campeões – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/champions-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="championsPage" class="bg-slate-950 text-slate-100 min-h-screen pb-12">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-5xl mx-auto px-4 py-6">
+
+    <div class="flex items-center justify-between gap-4 mb-6">
+      <h1 class="text-xl font-bold">Campeões</h1>
+      <p class="text-xs text-slate-500">
+        Cadastre tipo de comp e força (🔴 fraco · 🟡 neutro · 🟢 forte) para cada campeão.
+        Salvo automaticamente ao alterar.
+      </p>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-4">
+      <input type="text" x-model="query" placeholder="Buscar campeão…"
+             class="w-full max-w-xs bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+      <span class="ml-3 text-xs text-slate-500" x-text="filtered.length + ' campeões'"></span>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-800/60">
+          <tr class="text-xs text-slate-400 uppercase tracking-wider">
+            <th class="text-left px-3 py-2 w-8"></th>
+            <th class="text-left px-3 py-2">Nome</th>
+            <th class="text-left px-3 py-2 w-36">Tipo Primário</th>
+            <th class="text-left px-3 py-2 w-36">Tipo Secundário</th>
+            <th class="text-center px-3 py-2 w-28">Early</th>
+            <th class="text-center px-3 py-2 w-28">Mid</th>
+            <th class="text-center px-3 py-2 w-28">Late</th>
+            <th class="text-center px-3 py-2 w-12"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="champ in filtered" :key="champ.id">
+            <tr class="border-t border-slate-800 hover:bg-slate-800/40 transition-colors">
+
+              <!-- Icon -->
+              <td class="px-2 py-1.5">
+                <div class="w-7 h-7 rounded overflow-hidden flex-shrink-0">
+                  <img :src="$store.champions.imgUrl(champ.key)"
+                       :alt="champ.name"
+                       class="w-full h-full object-cover"
+                       onerror="this.style.visibility='hidden'">
+                </div>
+              </td>
+
+              <!-- Name -->
+              <td class="px-3 py-1.5 font-medium text-slate-200" x-text="champ.name"></td>
+
+              <!-- Comp type primary -->
+              <td class="px-2 py-1.5">
+                <select x-model="champ.comp_type"
+                        @change="save(champ)"
+                        class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
+                  <option value="">—</option>
+                  <option value="Protect">🛡️ Protect</option>
+                  <option value="Pick">🔪 Pick</option>
+                  <option value="Split">🔀 Split</option>
+                  <option value="Siege">🌀 Siege</option>
+                  <option value="Engage">💥 Engage</option>
+                  <option value="Mix">⚠️ Mix</option>
+                </select>
+              </td>
+
+              <!-- Comp type secondary -->
+              <td class="px-2 py-1.5">
+                <select x-model="champ.comp_type_2"
+                        @change="save(champ)"
+                        class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer opacity-80">
+                  <option value="">—</option>
+                  <option value="Protect">🛡️ Protect</option>
+                  <option value="Pick">🔪 Pick</option>
+                  <option value="Split">🔀 Split</option>
+                  <option value="Siege">🌀 Siege</option>
+                  <option value="Engage">💥 Engage</option>
+                  <option value="Mix">⚠️ Mix</option>
+                </select>
+              </td>
+
+              <!-- Early / Mid / Late scaling buttons -->
+              <template x-for="(phase, pi) in PHASES" :key="phase">
+                <td class="px-2 py-1.5">
+                  <div class="flex justify-center gap-0.5">
+                    <template x-for="(color, ci) in SCALE_COLORS" :key="ci">
+                      <button type="button"
+                              @click="pickScaling(champ, phase, ci)"
+                              :title="SCALE_SLOTS[pi] + ': ' + color"
+                              class="w-7 h-7 text-sm rounded transition-colors hover:bg-slate-700"
+                              :class="champ[phase] === ci ? 'outline outline-2 outline-yellow-400 bg-slate-700' : 'opacity-40 hover:opacity-80'"
+                              x-text="color">
+                      </button>
+                    </template>
+                  </div>
+                </td>
+              </template>
+
+              <!-- Save indicator -->
+              <td class="px-2 py-1.5 text-center">
+                <span x-show="saving[champ.id] === 'saving'" class="text-slate-500 text-xs">⏳</span>
+                <span x-show="saving[champ.id] === 'ok'" class="text-green-400 text-xs">✓</span>
+              </td>
+
+            </tr>
+          </template>
+        </tbody>
+      </table>
+
+      <div x-show="champs.length === 0"
+           class="text-center text-slate-500 py-12 text-sm">
+        Carregando campeões…
+      </div>
+    </div>
+
+  </main>
+
+</body>
+</html>

@@ -7,7 +7,7 @@
     { href: '/index.html',       label: 'Histórico' },
     { href: '/pages/stats.html', label: 'Estatísticas' },
     { href: null,                label: 'Análise de Draft' },
-    { href: null,                label: 'Pool de Campeões' },
+    { href: '/pages/champions.html', label: 'Campeões' },
   ]
 
   function isActive(href) {
@@ -51,7 +51,7 @@
     bar.innerHTML = `
       <div class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-3 text-sm">
         <div class="flex items-center gap-3 min-w-0 flex-wrap">
-          <span class="text-amber-400 shrink-0">⚠</span>
+          <span class="text-amber-400 shrink-0">⚠️</span>
           <span class="text-slate-300">
             <span class="font-semibold text-amber-300">${count}</span>
             partidas com dados de desempenho incompletos (ouro, K/D, dano).

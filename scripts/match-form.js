@@ -39,8 +39,12 @@ document.addEventListener('alpine:init', () => {
     mvcDisplay: '',
     mvcResults: [],
     mvcOpen:    false,
-    teamKills:  '',
-    teamDeaths: '',
+    teamKills:    '',
+    teamDeaths:   '',
+    teamAssists:  '',
+    riotMatchId:  '',
+    riotSnapshot: null,
+    playerStats:  null,
 
     // ── Stats ──────────────────────────────────────────────────────────────
     gd10:        '',
@@ -51,6 +55,11 @@ document.addEventListener('alpine:init', () => {
     damage:      '',
     dadi:        '',
     wardsPerMin: '',
+    visionScore: '',
+    csTotal:     '',
+    csPerMin:    '',
+    firstBlood:  null,
+    firstTower:  null,
     objFlow:     '',
 
     // ── UI state ───────────────────────────────────────────────────────────
@@ -84,6 +93,25 @@ document.addEventListener('alpine:init', () => {
         try { this.applyFromRiot(JSON.parse(raw)) } catch (e) { console.warn('prefill error', e) }
         localStorage.removeItem('match-assistant-prefill')
       }
+      const snap = localStorage.getItem('match-assistant-snapshot')
+      if (snap) {
+        try { this.riotSnapshot = JSON.parse(snap) } catch (e) { console.warn('snapshot error', e) }
+        localStorage.removeItem('match-assistant-snapshot')
+      }
+
+      // When MVP changes, auto-update MVC to the champion played by that player
+      this.$watch('mvp', (playerName) => {
+        if (!playerName || !this.playerStats?.length) return
+        const stat = this.playerStats.find(s => s.name === playerName)
+        if (!stat?.champion) return
+        const found = Alpine.store('champions').list.find(c => c.name === stat.champion)
+                   ?? Alpine.store('champions').list.find(c => c.key === stat.champion)
+        if (found) {
+          this.mvcId      = found.id
+          this.mvcKey     = found.key ?? ''
+          this.mvcDisplay = found.name
+        }
+      })
     },
 
     // ── Scaling ────────────────────────────────────────────────────────────
@@ -155,6 +183,13 @@ document.addEventListener('alpine:init', () => {
 
     // ── Load match ─────────────────────────────────────────────────────────
     async loadMatch() {
+      // Reset fields that are only set when the match has them,
+      // so stale data from a previous session never leaks through.
+      this.mvcId = ''; this.mvcKey = ''; this.mvcDisplay = ''
+      this.ourChamps.forEach(s => { s.name = ''; s.key = ''; s.query = '' })
+      this.enemyChamps.forEach(s => { s.name = ''; s.key = ''; s.query = '' })
+      this.scaling.forEach(s => { s.ci = null })
+      this.enemyScaling.forEach(s => { s.ci = null })
       try {
         const m = await api.col('matches').get(this.editId, { expand: 'mvc' })
 
@@ -168,8 +203,11 @@ document.addEventListener('alpine:init', () => {
         this.compSubtype = Array.isArray(m.comp_subtype) ? m.comp_subtype : []
         this.duration   = m.duration   ?? ''
         this.mvp        = m.mvp        ?? ''
-        this.teamKills  = m.team_kills  ?? ''
-        this.teamDeaths = m.team_deaths ?? ''
+        this.teamKills   = m.team_kills    ?? ''
+        this.teamDeaths  = m.team_deaths   ?? ''
+        this.teamAssists = m.team_assists  ?? ''
+        this.riotMatchId = m.riot_match_id ?? ''
+        this.playerStats = Array.isArray(m.player_stats) ? m.player_stats : null
         this.gd10       = m.gd_10       ?? ''
         this.gd20       = m.gd_20       ?? ''
         this.gdF        = m.gd_f        ?? ''
@@ -178,6 +216,11 @@ document.addEventListener('alpine:init', () => {
         this.damage     = m.damage       ?? ''
         this.dadi       = m.da_di        ?? ''
         this.wardsPerMin = m.wards_per_min ?? ''
+        this.visionScore = m.vision_score  ?? ''
+        this.csTotal     = m.cs_total      ?? ''
+        this.csPerMin    = m.cs_per_min    ?? ''
+        this.firstBlood  = m.first_blood   ?? null
+        this.firstTower  = m.first_tower   ?? null
         this.objFlow    = m.obj_flow    ?? ''
 
         if (m.mvc && m.expand?.mvc) {
@@ -222,6 +265,8 @@ document.addEventListener('alpine:init', () => {
       if (this.win === null) { alert('Selecione VITÓRIA ou DERROTA.'); return }
       this.saving = true
       try {
+        if (this.riotSnapshot) this._extractStatsFromSnapshot()
+
         const num = v => (v !== '' && v != null) ? +v : undefined
         const str = v => (typeof v === 'string' ? v.trim() : String(v ?? '')).trim() || undefined
 
@@ -241,6 +286,10 @@ document.addEventListener('alpine:init', () => {
           mvc:           this.mvcId || undefined,
           team_kills:    num(this.teamKills),
           team_deaths:   num(this.teamDeaths),
+          team_assists:  num(this.teamAssists),
+          riot_match_id: str(this.riotMatchId) || undefined,
+          riot_match_snapshot: this.riotSnapshot ? stripSnapshot(this.riotSnapshot) : undefined,
+          player_stats:  this.playerStats ?? undefined,
           gd_10:         num(this.gd10),
           gd_20:         num(this.gd20),
           gd_f:          num(this.gdF),
@@ -249,6 +298,11 @@ document.addEventListener('alpine:init', () => {
           damage:        num(this.damage),
           da_di:         num(this.dadi),
           wards_per_min: num(this.wardsPerMin),
+          vision_score:  num(this.visionScore),
+          cs_total:      num(this.csTotal),
+          cs_per_min:    num(this.csPerMin),
+          first_blood:   this.firstBlood ?? undefined,
+          first_tower:   this.firstTower ?? undefined,
           obj_flow:      str(this.objFlow),
         }
 
@@ -283,6 +337,121 @@ document.addEventListener('alpine:init', () => {
         alert('Falha ao excluir.')
         this.deleting = false
       }
+    },
+
+    // ── Extract all stats from stored snapshot (called on save when snapshot exists) ──
+    _extractStatsFromSnapshot() {
+      const { match, timeline } = this.riotSnapshot
+      const info = match?.info
+      if (!info) return
+
+      const ourTeamId = this.side === 'Blue' ? 100 : 200
+      const allOur    = (info.participants ?? []).filter(p => p.teamId === ourTeamId)
+      const ourTeam   = (info.teams ?? []).find(t => t.teamId === ourTeamId)
+      const ourIds    = new Set(allOur.map(p => p.participantId))
+
+      this.duration    = info.gameDuration ? Math.round(info.gameDuration / 60) : this.duration
+      this.teamKills   = allOur.reduce((s, p) => s + (p.kills   ?? 0), 0)
+      this.teamDeaths  = allOur.reduce((s, p) => s + (p.deaths  ?? 0), 0)
+      this.teamAssists = allOur.reduce((s, p) => s + (p.assists ?? 0), 0)
+      this.totalGold   = allOur.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
+      this.damage      = allOur.reduce((s, p) => s + (p.totalDamageDealtToChampions ?? 0), 0)
+      const dmgTaken   = allOur.reduce((s, p) => s + (p.totalDamageTaken ?? 0), 0)
+      this.dadi        = dmgTaken > 0 ? Math.round((this.damage / dmgTaken) * 100) / 100 : ''
+      const wards      = allOur.reduce((s, p) => s + (p.wardsPlaced ?? 0), 0)
+      const dur        = +this.duration || 1
+      this.goldPerMin  = Math.round(this.totalGold / dur)
+      this.wardsPerMin = Math.round((wards / dur) * 10) / 10
+      this.visionScore = allOur.reduce((s, p) => s + (p.visionScore ?? 0), 0)
+      this.csTotal     = allOur.reduce((s, p) => s + (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0), 0)
+      this.csPerMin    = Math.round((this.csTotal / dur) * 10) / 10
+      this.firstBlood  = ourTeam?.objectives?.champion?.first ?? false
+      this.firstTower  = ourTeam?.objectives?.tower?.first    ?? false
+
+      const o = ourTeam?.objectives
+      if (o) {
+        this.objFlow = [
+          o.tower?.kills      ?? 0,
+          o.horde?.kills      ?? 0,
+          o.riftHerald?.kills ?? 0,
+          o.dragon?.kills     ?? 0,
+          o.baron?.kills      ?? 0,
+          o.inhibitor?.kills  ?? 0,
+          o.nexus?.kills      ?? 0,
+        ].join('/')
+      }
+
+      const frames = timeline?.info?.frames
+      if (frames) {
+        const calcGd = (minute) => {
+          const f = frames[minute]
+          if (!f?.participantFrames) return null
+          let our = 0, enm = 0
+          for (const [pid, pf] of Object.entries(f.participantFrames)) {
+            if (ourIds.has(+pid)) our += pf.totalGold ?? 0
+            else                  enm += pf.totalGold ?? 0
+          }
+          return our - enm
+        }
+        this.gd10 = calcGd(10)
+        this.gd20 = calcGd(20)
+        const last = frames[frames.length - 1]
+        if (last?.participantFrames) {
+          let our = 0, enm = 0
+          for (const [pid, pf] of Object.entries(last.participantFrames)) {
+            if (ourIds.has(+pid)) our += pf.totalGold ?? 0
+            else                  enm += pf.totalGold ?? 0
+          }
+          this.gdF = our - enm
+        }
+      }
+    },
+
+    // ── Strategy suggestion from champion data (display-only reference) ────
+    _computeSuggestion(slots) {
+      const phases = ['early', 'mid', 'late']
+      const votes  = {}
+      const totals = [0, 0, 0], counts = [0, 0, 0]
+      const champions = []
+
+      for (const slot of slots) {
+        if (!slot.name) continue
+        const c = Alpine.store('champions').list.find(ch => ch.name === slot.name)
+        champions.push({
+          name:        slot.name,
+          key:         slot.key,
+          comp_type:   c?.comp_type   ?? null,
+          comp_type_2: c?.comp_type_2 ?? null,
+          early:       c?.early       ?? null,
+          mid:         c?.mid         ?? null,
+          late:        c?.late        ?? null,
+        })
+        if (c?.comp_type)   votes[c.comp_type]   = (votes[c.comp_type]   ?? 0) + 2  // primário vale 2
+        if (c?.comp_type_2) votes[c.comp_type_2] = (votes[c.comp_type_2] ?? 0) + 1  // secundário vale 1
+        for (let i = 0; i < 3; i++) {
+          if (c?.[phases[i]] != null) { totals[i] += c[phases[i]]; counts[i]++ }
+        }
+      }
+
+      if (!champions.length) return null
+
+      const maxVotes = Object.values(votes).length ? Math.max(...Object.values(votes)) : 0
+      const winners  = Object.keys(votes).filter(k => votes[k] === maxVotes)
+      const compType = winners.length === 1 ? winners[0] : (winners.length > 1 ? 'Mix' : null)
+      const scaling  = totals.map((t, i) => counts[i] ? Math.round(t / counts[i]) : null)
+      const voteList = Object.entries(votes).map(([type, n]) => ({ type, n })).sort((a, b) => b.n - a.n)
+
+      return { compType, scaling, voteList, champions }
+    },
+
+    get ourSuggestion()   {
+      if (this.ourChamps.filter(s   => s.name).length < 3) return null
+      return this._computeSuggestion(this.ourChamps)
+    },
+
+    get enemySuggestion() {
+      if (this.enemyChamps.filter(s => s.name).length < 3) return null
+      return this._computeSuggestion(this.enemyChamps)
     },
 
     // ── Apply data from Riot assistant ─────────────────────────────────────
@@ -327,17 +496,26 @@ document.addEventListener('alpine:init', () => {
         }
       }
 
-      if (data.teamKills  != null) this.teamKills  = data.teamKills
-      if (data.teamDeaths != null) this.teamDeaths = data.teamDeaths
-      if (data.gd10       != null) this.gd10       = data.gd10
-      if (data.gd20       != null) this.gd20       = data.gd20
-      if (data.gdF        != null) this.gdF        = data.gdF
-      if (data.totalGold  != null) this.totalGold  = data.totalGold
-      if (data.goldPerMin != null) this.goldPerMin = data.goldPerMin
-      if (data.damage     != null) this.damage     = data.damage
-      if (data.dadi       != null) this.dadi       = data.dadi
+      if (data.teamKills   != null) this.teamKills   = data.teamKills
+      if (data.teamDeaths  != null) this.teamDeaths  = data.teamDeaths
+      if (data.teamAssists != null) this.teamAssists = data.teamAssists
+      if (data.matchId)             this.riotMatchId = data.matchId
+      if (data.gd10        != null) this.gd10        = data.gd10
+      if (data.gd20        != null) this.gd20        = data.gd20
+      if (data.gdF         != null) this.gdF         = data.gdF
+      if (data.totalGold   != null) this.totalGold   = data.totalGold
+      if (data.goldPerMin  != null) this.goldPerMin  = data.goldPerMin
+      if (data.damage      != null) this.damage      = data.damage
+      if (data.dadi        != null) this.dadi        = data.dadi
       if (data.wardsPerMin != null) this.wardsPerMin = data.wardsPerMin
-      if (data.objFlow)             this.objFlow    = data.objFlow
+      if (data.visionScore != null) this.visionScore = data.visionScore
+      if (data.csTotal     != null) this.csTotal     = data.csTotal
+      if (data.csPerMin    != null) this.csPerMin    = data.csPerMin
+      if (data.firstBlood  != null) this.firstBlood  = data.firstBlood
+      if (data.firstTower  != null) this.firstTower  = data.firstTower
+      if (data.objFlow)             this.objFlow     = data.objFlow
+      if (data.playerStats)         this.playerStats = data.playerStats
+      if (data._snapshot)           this.riotSnapshot = data._snapshot
     },
   }))
 })
