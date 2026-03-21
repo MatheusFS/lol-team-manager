@@ -304,7 +304,8 @@ document.addEventListener('alpine:init', () => {
           let confidence = 'partial', reason = ''
           let _mvpName = null, _formationName = null
 
-          if (mvcKey) {
+          // Only classify for MVP guarantee if mvp is currently empty
+          if (!m.mvp && mvcKey) {
             const mvcEntry = stats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
             if (mvcEntry) {
               confidence = 'safe'
@@ -313,11 +314,16 @@ document.addEventListener('alpine:init', () => {
             } else {
               reason = `Campeão MVC "${mvcKey}" não encontrado em player_stats`
             }
-          } else {
+          } else if (!m.mvp && !mvcKey) {
             reason = 'Sem MVC cadastrado — MVP pelo maior KDA'
           }
 
-          if (confidence === 'safe') {
+          // Show formation preview for safe items (and if formation is empty)
+          if (!m.formation && confidence === 'safe') {
+            const detection = detectFormation(m, formations, players)
+            _formationName = detection.match?.name ?? null
+          } else if (!m.formation && !m.mvp && !reason) {
+            // For partial MVP cases without reason yet, still try formation preview
             const detection = detectFormation(m, formations, players)
             _formationName = detection.match?.name ?? null
           }
@@ -398,8 +404,9 @@ document.addEventListener('alpine:init', () => {
           const formationId = detection.match?.id ?? ''
 
           const payload = { player_stats: enrichedStats }
-          if (mvpId) payload.mvp = mvpId
-          if (formationId) payload.formation = formationId
+          // Only set fields that are currently empty (don't overwrite existing data)
+          if (!m.mvp && mvpId) payload.mvp = mvpId
+          if (!m.formation && formationId) payload.formation = formationId
 
           await api.col('matches').update(m.id, payload)
           await RiotApi.sleep(80)
