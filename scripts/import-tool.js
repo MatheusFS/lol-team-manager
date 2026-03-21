@@ -284,7 +284,7 @@ document.addEventListener('alpine:init', () => {
             perPage: 200, sort: '-date',
             filter: 'riot_match_snapshot != "" && (mvp = "" || formation = "")',
             expand: 'mvc',
-            fields: 'id,date,win,side,game_n,player_stats,mvc,expand.mvc.key',
+            fields: 'id,date,win,side,game_n,player_stats,mvc,mvp,formation,expand.mvc.key',
           }),
           api.col('players').list({ perPage: 200, fields: 'id,name,riot_id,puuid' }),
           api.col('formations').list({ perPage: 200 }),
