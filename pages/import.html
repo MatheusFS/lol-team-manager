@@ -287,6 +287,12 @@
                         x-text="m.confidence === 'safe' ? 'Garantido' : 'Parcial'"></span>
                   <span x-show="m.confidence !== 'safe' && m.reason"
                         class="text-amber-400 text-[10px]" x-text="m.reason"></span>
+                  <span x-show="m.confidence === 'safe'" class="text-slate-400 text-[10px]">
+                    MVP → <span class="text-green-400 font-medium" x-text="m._mvpName ?? '?'"></span>
+                    <template x-if="m._formationName">
+                      <span> · Formação → <span class="text-slate-300" x-text="m._formationName"></span></span>
+                    </template>
+                  </span>
                 </div>
               </div>
             </template>

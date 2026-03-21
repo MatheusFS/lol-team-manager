@@ -279,14 +279,22 @@ document.addEventListener('alpine:init', () => {
 
     async loadBrokenPlayerRefs() {
       try {
-        const [mData] = await Promise.all([
+        const [mData, pData, fData] = await Promise.all([
           api.col('matches').list({
             perPage: 200, sort: '-date',
             filter: 'riot_match_snapshot != "" && (mvp = "" || formation = "")',
             expand: 'mvc',
             fields: 'id,date,win,side,game_n,player_stats,mvc,expand.mvc.key',
           }),
+          api.col('players').list({ perPage: 200, fields: 'id,name,riot_id,puuid' }),
+          api.col('formations').list({ perPage: 200 }),
         ])
+
+        const players = pData.items ?? []
+        const formations = fData.items ?? []
+        const puuidToId = Object.fromEntries(players.filter(p => p.puuid).map(p => [p.puuid, p.id]))
+        const idToName = Object.fromEntries(players.map(p => [p.id, p.name]))
+        const findPlayerId = buildPlayerLookup(players, puuidToId)
 
         this.brokenPlayerRefs = (mData.items ?? []).map(m => {
           const stats = Array.isArray(m.player_stats) ? m.player_stats
@@ -294,14 +302,27 @@ document.addEventListener('alpine:init', () => {
           const mvcKey = m.expand?.mvc?.key ?? null
 
           let confidence = 'partial', reason = ''
+          let _mvpName = null, _formationName = null
+
           if (mvcKey) {
-            const found = stats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
-            if (found) confidence = 'safe'
-            else reason = `Campeão MVC "${mvcKey}" não encontrado em player_stats`
+            const mvcEntry = stats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
+            if (mvcEntry) {
+              confidence = 'safe'
+              const resolvedId = findPlayerId(mvcEntry.name, mvcEntry.puuid)
+              _mvpName = resolvedId ? idToName[resolvedId] : mvcEntry.name
+            } else {
+              reason = `Campeão MVC "${mvcKey}" não encontrado em player_stats`
+            }
           } else {
             reason = 'Sem MVC cadastrado — MVP pelo maior KDA'
           }
-          return { ...m, confidence, reason }
+
+          if (confidence === 'safe') {
+            const detection = detectFormation(m, formations, players)
+            _formationName = detection.match?.name ?? null
+          }
+
+          return { ...m, confidence, reason, _mvpName, _formationName }
         })
       } catch (_) {}
     },
