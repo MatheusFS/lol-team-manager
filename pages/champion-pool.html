@@ -31,7 +31,7 @@
                     ? 'bg-yellow-600 text-slate-100 font-medium'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
                   class="px-4 py-2 rounded text-sm transition-colors">
-            <span x-text="`${p.name} (${p.role})`"></span>
+            <span x-text="`${p.name} (${p.role}${p.secondary_role ? '/'+p.secondary_role : ''})`"></span>
           </button>
         </template>
       </div>
@@ -89,6 +89,27 @@
         </div>
       </div>
 
+      <!-- Role Filter Tabs -->
+      <div class="flex gap-2 mb-6 flex-wrap">
+        <button @click="filterRole = null"
+                :class="filterRole === null ? 'bg-yellow-600 text-slate-100 font-medium' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                class="px-4 py-2 rounded text-sm transition-colors">
+          Todos
+        </button>
+        <button @click="filterRole = selectedPlayer.role"
+                :class="filterRole === selectedPlayer.role ? 'bg-yellow-600 text-slate-100 font-medium' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                class="px-4 py-2 rounded text-sm transition-colors"
+                x-text="selectedPlayer.role">
+        </button>
+        <template x-if="selectedPlayer.secondary_role">
+          <button @click="filterRole = selectedPlayer.secondary_role"
+                  :class="filterRole === selectedPlayer.secondary_role ? 'bg-yellow-600 text-slate-100 font-medium' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-4 py-2 rounded text-sm transition-colors"
+                  x-text="selectedPlayer.secondary_role">
+          </button>
+        </template>
+      </div>
+
       <!-- Pool List -->
       <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
         <table class="w-full text-sm">
@@ -100,7 +121,7 @@
             </tr>
           </thead>
           <tbody>
-            <template x-for="entry in pool" :key="entry.id">
+            <template x-for="entry in filteredPool" :key="entry.id">
               <tr class="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-3">
@@ -129,8 +150,8 @@
               </tr>
             </template>
 
-            <tr x-show="!loading && pool.length === 0">
-              <td colspan="3" class="text-center text-slate-500 py-12">Nenhum campeão na pool.</td>
+            <tr x-show="!loading && filteredPool.length === 0">
+              <td colspan="3" class="text-center text-slate-500 py-12" x-text="pool.length === 0 ? 'Nenhum campeão na pool.' : 'Nenhum campeão nesta posição.'"></td>
             </tr>
             <tr x-show="loading">
               <td colspan="3" class="text-center text-slate-500 py-12">Carregando…</td>

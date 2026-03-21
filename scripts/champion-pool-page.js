@@ -46,6 +46,7 @@ document.addEventListener('alpine:init', () => {
     players: [],
     selectedPlayer: null,
     pool: [],
+    filterRole: null,
     loading: false,
     saving: false,
     addTier: 'green',
@@ -66,8 +67,17 @@ document.addEventListener('alpine:init', () => {
       })
     },
 
+    get filteredPool() {
+      if (!this.filterRole) return this.pool
+      return this.pool.filter(entry => {
+        const champRoles = entry.expand?.champion?.roles || []
+        return champRoles.includes(this.filterRole)
+      })
+    },
+
     async selectPlayer(p) {
       this.selectedPlayer = p
+      this.filterRole = null
       await this.loadPool()
     },
 

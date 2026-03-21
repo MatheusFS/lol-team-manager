@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jogadores – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/players-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="playersPage" class="bg-slate-950 text-slate-100 min-h-screen pb-12"
+      @keydown.escape.window="closeModal()">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-4 mb-6">
+      <div>
+        <h1 class="text-xl font-bold">Jogadores</h1>
+        <p class="text-xs text-slate-500 mt-1">
+          Gerencie o elenco do time e os dados de integração com a Riot API.
+        </p>
+      </div>
+      <button @click="openNew()"
+              class="bg-yellow-600 hover:bg-yellow-500 text-sm font-medium px-4 py-2 rounded transition-colors">
+        Novo Jogador
+      </button>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
+            <th class="text-left px-4 py-3">Nome</th>
+            <th class="text-left px-4 py-3">Lane Primária</th>
+            <th class="text-left px-4 py-3">Lane Secundária</th>
+            <th class="text-left px-4 py-3">Sub</th>
+            <th class="text-left px-4 py-3">Riot ID</th>
+            <th class="text-left px-4 py-3">PUUID</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="p in players" :key="p.id">
+            <tr class="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+              <td class="px-4 py-3 font-medium text-slate-200" x-text="p.name"></td>
+              <td class="px-4 py-3 text-slate-300" x-text="p.role || '—'"></td>
+              <td class="px-4 py-3 text-slate-400" x-text="p.secondary_role || '—'"></td>
+              <td class="px-4 py-3">
+                <span x-show="p.is_sub"
+                      class="text-[10px] uppercase tracking-wider bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">Sub</span>
+                <span x-show="!p.is_sub" class="text-slate-600">—</span>
+              </td>
+              <td class="px-4 py-3 text-slate-400 font-mono text-xs" x-text="p.riot_id || '—'"></td>
+              <td class="px-4 py-3 text-slate-500 font-mono text-xs" x-text="truncate(p.puuid)"></td>
+              <td class="px-4 py-3">
+                <div class="flex gap-3 justify-end">
+                  <button @click="openEdit(p)"
+                          class="text-xs text-yellow-500 hover:text-yellow-300 transition-colors">Editar</button>
+                  <button @click="del(p.id)"
+                          class="text-xs text-red-500 hover:text-red-300 transition-colors">Excluir</button>
+                </div>
+              </td>
+            </tr>
+          </template>
+
+          <tr x-show="!loading && players.length === 0">
+            <td colspan="7" class="text-center text-slate-500 py-12">Nenhum jogador cadastrado.</td>
+          </tr>
+          <tr x-show="loading">
+            <td colspan="7" class="text-center text-slate-500 py-12">Carregando…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </main>
+
+  <!-- Modal -->
+  <template x-if="modal">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4"
+         @click.self="closeModal()">
+      <div class="absolute inset-0 bg-black/60"></div>
+
+      <div class="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md">
+
+        <!-- Header -->
+        <div class="px-5 py-4 border-b border-slate-800">
+          <h2 class="font-bold text-lg" x-text="editId ? 'Editar Jogador' : 'Novo Jogador'"></h2>
+        </div>
+
+        <!-- Body -->
+        <div class="px-5 py-4 space-y-4">
+          <!-- Nome -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Nome</label>
+            <input type="text" x-model="form.name" placeholder="Ex: Klebão"
+                   class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+          </div>
+
+          <!-- Lane Primária -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Lane Primária</label>
+            <select x-model="form.role"
+                    class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+              <option value="">— selecione —</option>
+              <template x-for="r in ['Top','Jungle','Mid','ADC','Support']" :key="r">
+                <option :value="r" :selected="form.role === r" x-text="r"></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- Lane Secundária -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Lane Secundária</label>
+            <select x-model="form.secondary_role"
+                    class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+              <option value="">— nenhuma —</option>
+              <template x-for="r in ['Top','Jungle','Mid','ADC','Support']" :key="r">
+                <option :value="r" :selected="form.secondary_role === r" x-text="r"></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- Substituto -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" x-model="form.is_sub"
+                   class="rounded border-slate-600 bg-slate-800 text-yellow-500 focus:ring-yellow-500">
+            <span class="text-sm text-slate-300">Substituto</span>
+          </label>
+
+          <!-- Riot ID -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Riot ID</label>
+            <input type="text" x-model="form.riot_id" placeholder="Nome#TAG"
+                   class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+          </div>
+
+          <!-- PUUID -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">PUUID</label>
+            <input type="text" x-model="form.puuid" placeholder="Deixe em branco para buscar automaticamente"
+                   class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-yellow-500">
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-800">
+          <button @click="closeModal()"
+                  class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+            Cancelar
+          </button>
+          <button @click="save()" :disabled="saving"
+                  class="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-sm font-medium px-4 py-2 rounded transition-colors">
+            <span x-text="saving ? 'Salvando…' : 'Salvar'"></span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </template>
+
+</body>
+</html>
