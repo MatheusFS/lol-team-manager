@@ -57,6 +57,15 @@ document.addEventListener('alpine:init', () => {
       if (this.players.length) await this.selectPlayer(this.players[0])
     },
 
+    sortPool() {
+      const tierOrder = { star: 0, green: 1, yellow: 2 }
+      this.pool.sort((a, b) => {
+        const tierDiff = (tierOrder[a.tier] ?? 99) - (tierOrder[b.tier] ?? 99)
+        if (tierDiff !== 0) return tierDiff
+        return a.expand.champion.name.localeCompare(b.expand.champion.name)
+      })
+    },
+
     async selectPlayer(p) {
       this.selectedPlayer = p
       await this.loadPool()
@@ -69,9 +78,9 @@ document.addEventListener('alpine:init', () => {
           filter: `player="${this.selectedPlayer.id}"`,
           expand: 'champion',
           perPage: 500,
-          sort: 'champion.name',
         })
         this.pool = res.items
+        this.sortPool()
       } catch (e) {
         console.error('[championPoolPage] loadPool failed:', e)
       } finally {
@@ -85,13 +94,17 @@ document.addEventListener('alpine:init', () => {
 
       this.saving = true
       try {
-        await api.col('champion_pool').create({
+        const newEntry = await api.col('champion_pool').create({
           player: this.selectedPlayer.id,
           champion: this.addChampId,
           tier: this.addTier,
         })
+        // Expand champion data for the new entry
+        const champ = Alpine.store('champions').byId(this.addChampId)
+        newEntry.expand = { champion: champ }
+        this.pool.push(newEntry)
+        this.sortPool()
         this.addChampId = null
-        await this.loadPool()
       } catch (e) {
         console.error('[championPoolPage] addEntry failed:', e)
       } finally {
@@ -103,6 +116,7 @@ document.addEventListener('alpine:init', () => {
       try {
         await api.col('champion_pool').update(entry.id, { tier })
         entry.tier = tier
+        this.sortPool()
       } catch (e) {
         console.error('[championPoolPage] updateTier failed:', e)
       }
