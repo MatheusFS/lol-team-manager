@@ -16,7 +16,7 @@
   <main class="max-w-5xl mx-auto px-4 py-6">
 
     <div class="mb-6">
-      <h1 class="text-xl font-bold">Importar Dados de Desempenho</h1>
+      <h1 class="text-xl font-bold">Importar Partidas</h1>
       <p class="text-sm text-slate-400 mt-1">Busca estatísticas de partidas com o time completo (titular ou sub) e associa aos seus registros.</p>
     </div>
 
@@ -85,100 +85,255 @@
       </div>
     </div>
 
-    <!-- Missing data summary -->
-    <div x-show="missingRows.length > 0" class="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6">
-      <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Dados incompletos nos seus registros</h2>
-      <div class="space-y-1 text-sm">
+    <!-- Unified "Dados Incompletos" section -->
+    <div x-show="(unformationedCount > 0 || assignResult) || wrongImports.length > 0 || mismatchImports.length > 0 || brokenPlayerRefs.length > 0 || missingRows.length > 0 || snapshotCount > 0 || unpairedPbMatches.length > 0"
+         class="bg-slate-900 border border-slate-800 rounded-lg mb-6 overflow-hidden">
+
+      <div class="px-4 py-3 border-b border-slate-800">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">⚠️ Dados Incompletos</h2>
+      </div>
+
+      <div class="divide-y divide-slate-800">
+
+        <!-- Formation assignment -->
+        <div x-show="unformationedCount > 0 || assignResult" class="p-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="flex-1">
+              <p class="text-sm text-slate-200">
+                <template x-if="!assignResult">
+                  <span>
+                    <span class="font-semibold text-yellow-400" x-text="unformationedCount"></span>
+                    partidas com dados completos ainda sem formação atribuída
+                  </span>
+                </template>
+                <template x-if="assignResult">
+                  <span>
+                    <span class="text-green-400 font-medium" x-text="assignResult.assigned"></span> formações importadas
+                    <span x-show="assignResult.skipped > 0">
+                      · <span class="text-amber-400 font-medium" x-text="assignResult.skipped"></span> sem correspondência exata
+                    </span>
+                  </span>
+                </template>
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">Match exato de 5 roles — cadastre novas formações em <a href="/pages/team.html" class="text-yellow-500 hover:underline">Formações</a>.</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              <button x-show="(assignResult?.allMatches?.length ?? 0) > 0"
+                      @click="showSkippedFormations = !showSkippedFormations"
+                      class="text-xs text-slate-500 hover:text-slate-300 underline">
+                <span x-text="showSkippedFormations ? 'Ocultar' : 'Mostrar'"></span>
+              </button>
+              <button @click="assignFormations()" :disabled="assigningFormations"
+                      class="bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-slate-900 text-sm font-semibold px-4 py-2 rounded transition-colors whitespace-nowrap">
+                <span x-text="assigningFormations ? 'Importando…' : `Importar seguros (${unformationedCount})`"></span>
+              </button>
+            </div>
+          </div>
+          <!-- All matches detail -->
+          <div x-show="showSkippedFormations && assignResult?.allMatches?.length > 0" class="mt-4 border-t border-slate-800 pt-4">
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+              <template x-for="m in (assignResult?.allMatches ?? [])" :key="m.id">
+                <div class="bg-slate-800/60 rounded px-3 py-2 text-xs">
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span class="text-slate-200 font-medium" x-text="m.date"></span>
+                    <span class="text-slate-500" x-show="m.game_n" x-text="'J' + m.game_n"></span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                          :class="m.confidence === 'safe' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/15 text-amber-400'"
+                          x-text="m.confidence === 'safe' ? 'Garantido' : 'Parcial'"></span>
+                    <span x-show="m.confidence === 'safe'" class="text-slate-400 text-[10px]" x-text="m.formationName"></span>
+                    <span x-show="m.confidence !== 'safe' && m.reason" class="text-amber-400 text-[10px]" x-text="m.reason"></span>
+                  </div>
+                  <div class="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                    <template x-for="role in ['top','jungle','mid','adc','support']" :key="role">
+                      <span>
+                        <span class="text-slate-500 uppercase" x-text="role"></span>
+                        <span class="ml-0.5"
+                              :class="m.lineupNames[role] ? 'text-slate-200' : 'text-red-400 font-semibold'"
+                              x-text="m.lineupNames[role] || '?'"></span>
+                      </span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wrong imports (remakes < 10 min) -->
+        <div x-show="wrongImports.length > 0" class="p-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p class="text-sm text-slate-200">
+                <span class="font-semibold text-red-400" x-text="wrongImports.length"></span>
+                associações incorretas — remake (&lt;10 min)
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">Stats e composição apagados ao limpar. Data e resultado mantidos — corrija pelo CSV se necessário.</p>
+            </div>
+            <button @click="clearAllWrongImports()"
+                    class="bg-red-700 hover:bg-red-600 text-sm font-medium px-4 py-2 rounded transition-colors whitespace-nowrap shrink-0">
+              Limpar todas (<span x-text="wrongImports.length"></span>)
+            </button>
+          </div>
+          <div class="mt-3 space-y-1.5">
+            <template x-for="m in wrongImports" :key="m.id">
+              <div class="flex items-center justify-between gap-3 text-xs text-slate-300 bg-slate-800/60 rounded px-3 py-2">
+                <div class="flex items-center gap-3 flex-wrap text-slate-400">
+                  <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
+                  <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
+                  <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
+                  <span x-text="m.side ?? '—'"></span>
+                  <span class="text-red-400" x-text="(m.duration ?? '?') + ' min'"></span>
+                </div>
+                <button @click="clearWrongImport(m.id)"
+                        class="shrink-0 text-xs text-red-400 hover:text-red-300 border border-red-800 hover:border-red-600 px-2 py-0.5 rounded transition-colors">
+                  Limpar
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Mismatch imports (≤2/5 champs) -->
+        <div x-show="mismatchImports.length > 0" class="p-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p class="text-sm text-slate-200">
+                <span class="font-semibold text-amber-400" x-text="mismatchImports.length"></span>
+                associações suspeitas (≤2/5 campeões)
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">Stats Riot apagados ao limpar. Campeões cadastrados (our_champs) são mantidos para reassociação.</p>
+            </div>
+            <button @click="clearAllMismatchImports()"
+                    class="bg-amber-700 hover:bg-amber-600 text-sm font-medium px-4 py-2 rounded transition-colors whitespace-nowrap shrink-0">
+              Limpar todas (<span x-text="mismatchImports.length"></span>)
+            </button>
+          </div>
+          <div class="mt-3 space-y-2">
+            <template x-for="m in mismatchImports" :key="m.id">
+              <div class="bg-slate-800/60 rounded px-3 py-2 text-xs">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-3 flex-wrap text-slate-400">
+                    <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
+                    <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
+                    <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
+                    <span x-text="m.side ?? '—'"></span>
+                  </div>
+                  <button @click="clearMismatchImport(m.id)"
+                          class="shrink-0 text-amber-400 hover:text-amber-300 border border-amber-800 hover:border-amber-600 px-2 py-0.5 rounded transition-colors">
+                    Limpar
+                  </button>
+                </div>
+                <div class="mt-1.5 grid grid-cols-2 gap-3">
+                  <div>
+                    <div class="text-[10px] text-slate-500 mb-0.5">Cadastrado</div>
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="ch in (m.our_champs ?? [])" :key="ch">
+                        <span class="px-1 py-0.5 rounded bg-slate-700 text-slate-300" x-text="ch"></span>
+                      </template>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-slate-500 mb-0.5">Riot API</div>
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="ps in (m.player_stats ?? [])" :key="ps.champion">
+                        <span class="px-1 py-0.5 rounded bg-slate-700/50 text-slate-400" x-text="ps.champion"></span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Partidas com snapshot mas sem mvp ou formação -->
+        <div x-show="brokenPlayerRefs.length > 0" class="p-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="flex-1">
+              <p class="text-sm text-slate-200">
+                <span class="font-semibold text-amber-400" x-text="brokenPlayerRefs.length"></span>
+                partidas com snapshot mas sem mvp ou formação
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">Formação e MVP resolvidos via PUUID do snapshot. MVP usa o campeão MVC cadastrado; fallback: maior KDA.</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              <button x-show="brokenPlayerRefs.length > 0"
+                      @click="showBrokenPlayerRefs = !showBrokenPlayerRefs"
+                      class="text-xs text-slate-500 hover:text-slate-300 underline">
+                <span x-text="showBrokenPlayerRefs ? 'Ocultar' : 'Mostrar'"></span>
+              </button>
+              <button @click="reprocessSafePlayerRefs()" :disabled="reprocessing"
+                      x-show="brokenPlayerRefs.some(m => m.confidence === 'safe')"
+                      class="bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-slate-900 text-sm font-semibold px-4 py-2 rounded transition-colors whitespace-nowrap">
+                <span x-text="reprocessing
+                  ? 'Processando…'
+                  : `Re-processar garantidos (${brokenPlayerRefs.filter(m => m.confidence === 'safe').length})`
+                "></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Lista colapsável -->
+          <div x-show="showBrokenPlayerRefs" class="mt-3 space-y-2 max-h-96 overflow-y-auto">
+            <template x-for="m in brokenPlayerRefs" :key="m.id">
+              <div class="bg-slate-800/60 rounded px-3 py-2 text-xs">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
+                  <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
+                  <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
+                  <span x-text="m.side ?? '—'" class="text-slate-400"></span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                        :class="m.confidence === 'safe' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/15 text-amber-400'"
+                        x-text="m.confidence === 'safe' ? 'Garantido' : 'Parcial'"></span>
+                  <span x-show="m.confidence !== 'safe' && m.reason"
+                        class="text-amber-400 text-[10px]" x-text="m.reason"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Snapshot: fetch from Riot API -->
+        <div x-show="snapshotCount > 0" class="p-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p class="text-sm text-slate-200">
+                <span class="font-semibold text-amber-400" x-text="snapshotCount"></span>
+                partidas com riot_match_id mas sem snapshot
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">Snapshot necessário para exibir detalhes da partida. Requer chave de API configurada.</p>
+            </div>
+            <button @click="fetchMissingSnapshots()" :disabled="fetchingSnapshots"
+                    class="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm font-medium px-4 py-2 rounded transition-colors whitespace-nowrap shrink-0">
+              <span x-text="fetchingSnapshots ? 'Buscando…' : 'Buscar Snapshots'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Unpaired: scroll to import form -->
+        <div x-show="unpairedPbMatches.length > 0" class="p-4">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p class="text-sm text-slate-200">
+                <span class="font-semibold text-amber-400" x-text="unpairedPbMatches.length"></span>
+                partidas sem associação com a Riot API
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">Use a ferramenta de importação acima para buscar e associar pela data e campeões.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Informational rows (gd_f, team_kills only) -->
         <template x-for="row in missingRows" :key="row.label">
-          <div class="flex items-center gap-2 text-slate-400">
-            <span class="text-amber-400">●</span>
-            <span>
+          <div class="px-4 py-3 flex items-center gap-3">
+            <span class="text-amber-400 text-xs shrink-0">●</span>
+            <span class="text-sm text-slate-400">
               <span class="text-slate-200 font-medium" x-text="row.n"></span>
               partidas <span x-text="row.label"></span>
             </span>
           </div>
         </template>
-      </div>
-    </div>
 
-    <!-- Wrong imports (remakes < 10 min) -->
-    <div x-show="wrongImports.length > 0" class="bg-red-950/40 border border-red-800/60 rounded-lg p-4 mb-6">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xs font-semibold text-red-400 uppercase tracking-wider">
-          Associações incorretas — remake (&lt;10 min)
-        </h2>
-        <button @click="clearAllWrongImports()"
-                class="text-xs font-semibold text-red-400 border border-red-700 hover:bg-red-900/40 px-3 py-1 rounded transition-colors">
-          Limpar todas (<span x-text="wrongImports.length"></span>)
-        </button>
-      </div>
-      <p class="text-xs text-red-300/70 mb-3">Stats e composição apagados ao limpar. Data e resultado são mantidos — corrija pelo CSV se necessário.</p>
-      <div class="space-y-1.5">
-        <template x-for="m in wrongImports" :key="m.id">
-          <div class="flex items-center justify-between gap-3 text-xs text-slate-300 bg-slate-900/60 rounded px-3 py-2">
-            <div class="flex items-center gap-3 flex-wrap text-slate-400">
-              <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
-              <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
-              <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
-              <span x-text="m.side ?? '—'"></span>
-              <span class="text-red-400" x-text="(m.duration ?? '?') + ' min'"></span>
-            </div>
-            <button @click="clearWrongImport(m.id)"
-                    class="shrink-0 text-xs text-red-400 hover:text-red-300 border border-red-800 hover:border-red-600 px-2 py-0.5 rounded transition-colors">
-              Limpar
-            </button>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <!-- Mismatch imports (≤2/5 champs) -->
-    <div x-show="mismatchImports.length > 0" class="bg-amber-950/30 border border-amber-800/50 rounded-lg p-4 mb-6">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-          Associações suspeitas (≤2/5 campeões) (<span x-text="mismatchImports.length"></span>)
-        </h2>
-        <button @click="clearAllMismatchImports()"
-                class="text-xs font-semibold text-amber-400 border border-amber-700 hover:bg-amber-900/30 px-3 py-1 rounded transition-colors">
-          Limpar todas (<span x-text="mismatchImports.length"></span>)
-        </button>
-      </div>
-      <p class="text-xs text-amber-300/60 mb-3">Stats Riot apagados ao limpar. Campeões cadastrados são mantidos para reassociação.</p>
-      <div class="space-y-2">
-        <template x-for="m in mismatchImports" :key="m.id">
-          <div class="bg-slate-900/60 rounded px-3 py-2 text-xs">
-            <div class="flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3 flex-wrap text-slate-400">
-                <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
-                <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
-                <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
-                <span x-text="m.side ?? '—'"></span>
-              </div>
-              <button @click="clearMismatchImport(m.id)"
-                      class="shrink-0 text-amber-400 hover:text-amber-300 border border-amber-800 hover:border-amber-600 px-2 py-0.5 rounded transition-colors">
-                Limpar
-              </button>
-            </div>
-            <div class="mt-1.5 grid grid-cols-2 gap-3">
-              <div>
-                <div class="text-[10px] text-slate-500 mb-0.5">Cadastrado</div>
-                <div class="flex flex-wrap gap-1">
-                  <template x-for="ch in (m.our_champs ?? [])" :key="ch">
-                    <span class="px-1 py-0.5 rounded bg-slate-700 text-slate-300" x-text="ch"></span>
-                  </template>
-                </div>
-              </div>
-              <div>
-                <div class="text-[10px] text-slate-500 mb-0.5">Riot API</div>
-                <div class="flex flex-wrap gap-1">
-                  <template x-for="ps in (m.player_stats ?? [])" :key="ps.champion">
-                    <span class="px-1 py-0.5 rounded bg-slate-700/50 text-slate-400" x-text="ps.champion"></span>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
       </div>
     </div>
 

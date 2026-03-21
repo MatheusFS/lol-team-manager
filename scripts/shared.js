@@ -3,8 +3,16 @@ const PB = 'http://127.0.0.1:8090'
 
 // ── Domain constants ──────────────────────────────────────────────────────────
 const ROLES    = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
-const PLAYERS  = ['Klebão','GdN','Conkreto','Digo','Kelly','Pixek','Nunes','Eden','Xuao']
 const SUBTYPES = ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix']
+
+// ── Player cache ──────────────────────────────────────────────────────────────
+let _cachedPlayers = null
+async function loadPlayers() {
+  if (_cachedPlayers) return _cachedPlayers
+  const data = await api.col('players').list({ sort: 'name', perPage: 200 })
+  _cachedPlayers = data.items
+  return _cachedPlayers
+}
 // ── Comp type table — única fonte de verdade para tipos e emojis ──────────────
 const COMP_TYPE_DEFS = [
   { value: 'Protect', emoji: '🛡️' },
@@ -125,7 +133,7 @@ function normChampKey(name) {
   return _CHAMP_ALIASES[clean] ?? clean
 }
 
-function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToName = {} } = {}) {
+function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToName = {}, puuidToId = {} } = {}) {
   const info = match?.info
   if (!info) return null
 
@@ -207,6 +215,7 @@ function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToNam
       ? (p.kills + p.assists)
       : Math.round(((p.kills + p.assists) / p.deaths) * 100) / 100
     return {
+      puuid:       p.puuid,
       name:        puuidToName[p.puuid] ?? null,
       role:        p.teamPosition || p.individualPosition || null,
       champion:    p.championName,
@@ -225,23 +234,24 @@ function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToNam
     }
   })
 
-  let mvp = null, bestScore = -Infinity
+  let mvp = null, mvpPuuid = null, bestScore = -Infinity
   for (const p of allOur) {
     const name = puuidToName[p.puuid]
     if (!name) continue
     const score = (p.kills ?? 0) * 2 + (p.assists ?? 0) - (p.deaths ?? 0) * 0.5
-    if (score > bestScore) { bestScore = score; mvp = name }
+    if (score > bestScore) { bestScore = score; mvp = name; mvpPuuid = p.puuid }
   }
 
-  let topPlayer = ''
+  let topPlayer = '', topPlayerPuuid = null
   for (const p of sortedOur) {
     if ((p.teamPosition || p.individualPosition) === 'TOP') {
       topPlayer = puuidToName[p.puuid] ?? ''
+      topPlayerPuuid = p.puuid
       break
     }
   }
 
-  const mvpParticipant = allOur.find(p => puuidToName[p.puuid] === mvp)
+  const mvpParticipant = allOur.find(p => p.puuid === mvpPuuid)
 
   return {
     win:     ourTeam.win,
@@ -263,8 +273,10 @@ function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToNam
 
     playerStats,
     mvp,
+    mvpId:          puuidToId[mvpPuuid] ?? null,
     mvcChampKey:    mvpParticipant?.championName ?? null,
     topPlayer,
+    topPlayerId:    puuidToId[topPlayerPuuid] ?? null,
     ourChampKeys:   sortedOur.map(p => p.championName),
     enemyChampKeys: sortedEnm.map(p => p.championName),
   }
@@ -326,6 +338,94 @@ fetch(`${PB}/scripts/ddragon-version.txt`)
 function champImgUrl(key) {
   if (!key || !_ddragonVersion) return ''
   return `https://ddragon.leagueoflegends.com/cdn/${_ddragonVersion}/img/champion/${key}.png`
+}
+
+// ── Formation detection ───────────────────────────────────────────────────────
+// Given a match record and an array of formation objects, returns the best
+// matching formation (or null if ambiguous / no data).
+//
+// Returns: { match: formationObj|null, score: number, total: number, candidates: [] }
+//   score   = number of roles that matched
+//   total   = number of roles we had data for
+//   match   = single formation when unambiguous, null when tied or no match
+//   candidates = tied formations when ambiguous
+// players = array of player records { id, name, ... } — required for ID-based matching
+// Builds a name→id lookup that handles renamed players via riot_id prefix and case-insensitive match.
+function buildPlayerLookup(players, puuidToId = {}) {
+  const nameToId   = Object.fromEntries(players.map(p => [p.name, p.id]))
+  const riotIdToId = Object.fromEntries(players.map(p => {
+    const base = p.riot_id ? p.riot_id.split('#')[0] : ''
+    return [base, p.id]
+  }))
+  return (name, puuid) => {
+    if (puuid && puuidToId[puuid]) return puuidToId[puuid]
+    if (!name) return null
+    if (nameToId[name])   return nameToId[name]
+    if (riotIdToId[name]) return riotIdToId[name]
+    const key = Object.keys(nameToId).find(k => k.toLowerCase() === name.toLowerCase())
+    return key ? nameToId[key] : null
+  }
+}
+
+function detectFormation(match, formations, players = []) {
+  const ROLE_MAP = { TOP: 'top', JUNGLE: 'jungle', MIDDLE: 'mid', BOTTOM: 'adc', UTILITY: 'support' }
+  const ALL_ROLES = ['top', 'jungle', 'mid', 'adc', 'support']
+  const puuidToId = Object.fromEntries(players.filter(p => p.puuid).map(p => [p.puuid, p.id]))
+  const findPlayerId = buildPlayerLookup(players, puuidToId)
+
+  // Extract role→player ID from player_stats (PUUID-first, then name fallback)
+  const byRole = {}
+  if (Array.isArray(match.player_stats)) {
+    for (const ps of match.player_stats) {
+      if (ps.role) {
+        const key = ROLE_MAP[ps.role]
+        const id  = findPlayerId(ps.name, ps.puuid)
+        if (key && id) byRole[key] = id
+      }
+    }
+  }
+  // Fallback: top_player is already a relation ID after migration
+  if (!byRole.top && match.top_player) byRole.top = match.top_player
+
+  const knownRoles = ALL_ROLES.filter(r => byRole[r])
+  if (!knownRoles.length) return { match: null, score: 0, total: 0, candidates: [] }
+
+  const scored = formations.map(f => {
+    const hits = knownRoles.filter(r => f[r] === byRole[r]).length
+    return { formation: f, score: hits }
+  }).sort((a, b) => b.score - a.score)
+
+  const best = scored[0]
+  if (!best || best.score === 0) return { match: null, score: 0, total: knownRoles.length, candidates: [] }
+
+  const tied = scored.filter(s => s.score === best.score)
+  if (tied.length > 1) {
+    return { match: null, score: best.score, total: knownRoles.length, candidates: tied.map(s => s.formation) }
+  }
+
+  return { match: best.formation, score: best.score, total: knownRoles.length, candidates: [] }
+}
+
+// Extract role→player ID map from a match's player_stats (same ROLE_MAP as detectFormation).
+// Returns { top, jungle, mid, adc, support } — missing roles are null.
+// players = array of player records { id, name } — required for ID-based lookup.
+function extractLineup(match, players = []) {
+  const ROLE_MAP = { TOP: 'top', JUNGLE: 'jungle', MIDDLE: 'mid', BOTTOM: 'adc', UTILITY: 'support' }
+  const lineup = { top: null, jungle: null, mid: null, adc: null, support: null }
+  const puuidToId = Object.fromEntries(players.filter(p => p.puuid).map(p => [p.puuid, p.id]))
+  const findPlayerId = buildPlayerLookup(players, puuidToId)
+  if (Array.isArray(match.player_stats)) {
+    for (const ps of match.player_stats) {
+      if (ps.role) {
+        const key = ROLE_MAP[ps.role]
+        const id  = findPlayerId(ps.name, ps.puuid)
+        if (key && id) lineup[key] = id
+      }
+    }
+  }
+  // Fallback: top_player is already a relation ID after migration
+  if (!lineup.top && match.top_player) lineup.top = match.top_player
+  return lineup
 }
 
 // ── Alpine.store: shared champion list ────────────────────────────────────────

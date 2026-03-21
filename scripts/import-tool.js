@@ -10,10 +10,21 @@ document.addEventListener('alpine:init', () => {
     playerRiotIds: [],
 
     // ── Missing data ───────────────────────────────────────────────────────
-    missingRows:       [],
-    unpairedPbMatches: [],
-    wrongImports:      [],   // registros com riot_match_id de remake (duration < 10)
-    mismatchImports:   [],   // registros com riot_match_id mas campeões incompatíveis
+    missingRows:        [],
+    unpairedPbMatches:  [],
+    wrongImports:       [],   // registros com riot_match_id de remake (duration < 10)
+    mismatchImports:    [],   // registros com riot_match_id mas campeões incompatíveis
+    brokenPlayerRefs:      [],   // partidas com snapshot mas sem mvp ou formação
+    showBrokenPlayerRefs:  false,
+    snapshotCount:         0,
+    fetchingSnapshots:     false,
+    reprocessing:          false,
+
+    // ── Formation assignment ────────────────────────────────────────────────
+    unformationedCount:      0,
+    assigningFormations:     false,
+    assignResult:            null,   // { assigned, skipped } | null
+    showSkippedFormations:   false,
 
     // ── Results ────────────────────────────────────────────────────────────
     matchPairs:  [],
@@ -33,7 +44,99 @@ document.addEventListener('alpine:init', () => {
       this.loadMissing()
       this.loadWrongImports()
       this.loadMismatchImports()
+      this.loadBrokenPlayerRefs()
       this._loadPlayerRiotIds()
+      this.previewFormations()
+    },
+
+    async _loadUnformationedCount() {
+      try {
+        const enc = s => encodeURIComponent(s)
+        const res = await fetch(
+          `${PB}/api/collections/matches/records?perPage=1&filter=${enc('formation="" && player_stats!=""')}`
+        ).then(r => r.json())
+        this.unformationedCount = res.totalItems ?? 0
+      } catch (_) {}
+    },
+
+    async _computeFormationMatches() {
+      const [fData, mData, pData] = await Promise.all([
+        api.col('formations').list({ perPage: 100 }),
+        api.col('matches').list({ perPage: 500, filter: 'formation="" && player_stats!=""' }),
+        api.col('players').list({ perPage: 200 }),
+      ])
+      const formations = fData.items
+      const matches    = mData.items
+      const players    = pData.items
+      const idToName   = Object.fromEntries(players.map(p => [p.id, p.name]))
+
+      const toUpdate   = []
+      const allMatches = []
+      for (const m of matches) {
+        const { match: f, score, total, candidates } = detectFormation(m, formations, players)
+        const lineup = extractLineup(m, players)
+        const missing = ['top','jungle','mid','adc','support'].filter(r => !lineup[r])
+        const lineupNames = Object.fromEntries(
+          Object.entries(lineup).map(([role, id]) => [role, id ? (idToName[id] ?? id) : null])
+        )
+        const base = {
+          id: m.id, date: m.date?.slice(0, 10) ?? '—', game_n: m.game_n,
+          lineup, lineupNames, score, total, missing,
+          candidates: candidates.map(c => c.name),
+        }
+        if (f && score === 5 && total === 5) {
+          toUpdate.push({ matchId: m.id, formationId: f.id })
+          allMatches.push({ ...base, confidence: 'safe', formationName: f.name })
+        } else {
+          let reason = ''
+          if (missing.length > 0)         reason = `Roles sem dados: ${missing.join(', ')}`
+          else if (candidates.length > 1) reason = `Ambíguo: ${candidates.map(c => c.name ?? c).join(' / ')}`
+          else if (score < 5)             reason = `Nenhuma formação compatível (${score}/${total})`
+          allMatches.push({ ...base, confidence: 'partial', reason })
+        }
+      }
+      return { formations, players, toUpdate, allMatches }
+    },
+
+    async previewFormations() {
+      try {
+        const { toUpdate, allMatches } = await this._computeFormationMatches()
+        this.assignResult = {
+          assigned: 0,
+          skipped:  allMatches.filter(m => m.confidence === 'partial').length,
+          allMatches,
+          skippedMatches: allMatches.filter(m => m.confidence === 'partial'),
+        }
+        this.unformationedCount = toUpdate.length
+      } catch (e) {
+        console.error('[import] previewFormations failed:', e)
+      }
+    },
+
+    async assignFormations() {
+      this.assigningFormations = true
+      this.assignResult = null
+      try {
+        const { toUpdate, allMatches } = await this._computeFormationMatches()
+
+        await Promise.all(
+          toUpdate.map(({ matchId, formationId }) =>
+            api.col('matches').update(matchId, { formation: formationId })
+          )
+        )
+
+        this.assignResult = {
+          assigned:       toUpdate.length,
+          skipped:        allMatches.filter(m => m.confidence === 'partial').length,
+          allMatches,
+          skippedMatches: allMatches.filter(m => m.confidence === 'partial'),
+        }
+        this.unformationedCount = Math.max(0, this.unformationedCount - toUpdate.length)
+      } catch (e) {
+        console.error('[import] assignFormations failed:', e)
+        alert('Erro ao atribuir formações: ' + (e.message ?? JSON.stringify(e)))
+      }
+      this.assigningFormations = false
     },
 
     // ── Missing data ───────────────────────────────────────────────────────
@@ -46,9 +149,9 @@ document.addEventListener('alpine:init', () => {
           fetch(`${PB}/api/collections/matches/records?perPage=1&filter=${enc('riot_match_id != "" && riot_match_snapshot = null')}`).then(r => r.json()),
         ])
         this.missingRows = []
-        if (gd.totalItems)   this.missingRows.push({ n: gd.totalItems,   label: 'sem diferença de ouro (GD@F)' })
-        if (kda.totalItems)  this.missingRows.push({ n: kda.totalItems,  label: 'sem K/D do time' })
-        if (snap.totalItems) this.missingRows.push({ n: snap.totalItems, label: 'com riot_match_id mas sem snapshot' })
+        if (gd.totalItems)  this.missingRows.push({ n: gd.totalItems,  label: 'sem diferença de ouro (GD@F)' })
+        if (kda.totalItems) this.missingRows.push({ n: kda.totalItems, label: 'sem K/D do time' })
+        this.snapshotCount = snap.totalItems ?? 0
       } catch (_) {}
 
       try {
@@ -57,9 +160,35 @@ document.addEventListener('alpine:init', () => {
           `${PB}/api/collections/matches/records?perPage=200&sort=-date&filter=${enc('riot_match_id = ""')}&fields=id,date,win,side,game_n,duration`
         ).then(r => r.json())
         this.unpairedPbMatches = res.items ?? []
-        if (this.unpairedPbMatches.length)
-          this.missingRows.push({ n: this.unpairedPbMatches.length, label: 'sem associação com a Riot API' })
       } catch (_) {}
+    },
+
+    async fetchMissingSnapshots() {
+      if (!this.apiKey) return alert('Configure a chave de API primeiro.')
+      this.fetchingSnapshots = true
+      const onStatus = m => this.setStatus(m)
+      try {
+        const enc = s => encodeURIComponent(s)
+        const res = await fetch(
+          `${PB}/api/collections/matches/records?perPage=200&filter=${enc('riot_match_id != "" && riot_match_snapshot = null')}&fields=id,riot_match_id`
+        ).then(r => r.json())
+        const matches = res.items ?? []
+        let done = 0
+        for (const m of matches) {
+          const base = `https://${RiotApi.clusterFromMatchId(m.riot_match_id)}.api.riotgames.com`
+          this.setStatus(`Snapshot ${++done}/${matches.length}…`)
+          const match    = await RiotApi.fetch(`${base}/lol/match/v5/matches/${m.riot_match_id}`, this.apiKey, { onStatus })
+          await RiotApi.sleep(80)
+          const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${m.riot_match_id}/timeline`, this.apiKey, { onStatus })
+          await RiotApi.sleep(80)
+          await api.col('matches').update(m.id, { riot_match_snapshot: stripSnapshot({ match, timeline }) })
+        }
+        this.setStatus(`${matches.length} snapshot(s) atualizados.`, 'ok')
+        await this.loadMissing()
+      } catch (e) {
+        this.setStatus(e.message, 'error')
+      }
+      this.fetchingSnapshots = false
     },
 
     async loadWrongImports() {
@@ -148,6 +277,145 @@ document.addEventListener('alpine:init', () => {
       } catch (e) { this.setStatus(e.message, 'error') }
     },
 
+    async loadBrokenPlayerRefs() {
+      try {
+        const [mData] = await Promise.all([
+          api.col('matches').list({
+            perPage: 200, sort: '-date',
+            filter: 'riot_match_snapshot != "" && (mvp = "" || formation = "")',
+            expand: 'mvc',
+            fields: 'id,date,win,side,game_n,player_stats,mvc,expand.mvc.key',
+          }),
+        ])
+
+        this.brokenPlayerRefs = (mData.items ?? []).map(m => {
+          const stats = Array.isArray(m.player_stats) ? m.player_stats
+            : (typeof m.player_stats === 'string' ? JSON.parse(m.player_stats) : [])
+          const mvcKey = m.expand?.mvc?.key ?? null
+
+          let confidence = 'partial', reason = ''
+          if (mvcKey) {
+            const found = stats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
+            if (found) confidence = 'safe'
+            else reason = `Campeão MVC "${mvcKey}" não encontrado em player_stats`
+          } else {
+            reason = 'Sem MVC cadastrado — MVP pelo maior KDA'
+          }
+          return { ...m, confidence, reason }
+        })
+      } catch (_) {}
+    },
+
+    async _reprocessMatches(ids) {
+      if (!ids.length) return
+      const idFilter = ids.map(id => `id="${id}"`).join(' || ')
+      try {
+        const [mData, pData, fData] = await Promise.all([
+          api.col('matches').list({
+            perPage: 200,
+            filter: `(${idFilter}) && riot_match_snapshot != ""`,
+            expand: 'mvc',
+            fields: 'id,player_stats,riot_match_snapshot,top_player,mvc,expand.mvc.key',
+          }),
+          api.col('players').list({ perPage: 200, fields: 'id,name,riot_id,puuid' }),
+          api.col('formations').list({ perPage: 200 }),
+        ])
+
+        const players = pData.items ?? []
+        const formations = fData.items ?? []
+        const puuidToPlayerId = Object.fromEntries(
+          players.filter(p => p.puuid).map(p => [p.puuid, p.id])
+        )
+
+        let updated = 0
+        for (const m of (mData.items ?? [])) {
+          const snapshot = m.riot_match_snapshot
+          if (!snapshot) continue
+
+          const participants = snapshot.match?.info?.participants ?? []
+
+          // Build champion+role → PUUID map from snapshot
+          const champRoleToInfo = {}
+          for (const p of participants) {
+            const champKey = normChampKey(p.championName)
+            const role = p.teamPosition
+            if (champKey && role) champRoleToInfo[`${champKey}_${role}`] = p.puuid
+          }
+
+          // Enrich player_stats with puuid via champion+role cross-reference
+          const stats = Array.isArray(m.player_stats) ? m.player_stats
+            : (typeof m.player_stats === 'string' ? JSON.parse(m.player_stats) : [])
+
+          const enrichedStats = stats.map(ps => {
+            if (ps.puuid) return ps
+            const champKey = normChampKey(ps.champion)
+            const puuid = champRoleToInfo[`${champKey}_${ps.role}`]
+            return puuid ? { ...ps, puuid } : ps
+          })
+
+          // MVP: prioridade = jogador que usou o campeão do mvc cadastrado
+          //      fallback   = maior KDA score entre jogadores identificados
+          let mvpId = null
+          const mvcKey = m.expand?.mvc?.key ?? null
+          if (mvcKey) {
+            const mvcEntry = enrichedStats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
+            if (mvcEntry?.puuid) mvpId = puuidToPlayerId[mvcEntry.puuid] ?? null
+          }
+          if (!mvpId) {
+            let bestScore = -Infinity
+            for (const ps of enrichedStats) {
+              if (!ps.puuid) continue
+              const pId = puuidToPlayerId[ps.puuid]
+              if (!pId) continue
+              const score = (ps.kills ?? 0) * 2 + (ps.assists ?? 0) - (ps.deaths ?? 0) * 0.5
+              if (score > bestScore) { bestScore = score; mvpId = pId }
+            }
+          }
+
+          // Formation: detect with PUUID-enriched stats
+          const detection = detectFormation({ ...m, player_stats: enrichedStats }, formations, players)
+          const formationId = detection.match?.id ?? ''
+
+          const payload = { player_stats: enrichedStats }
+          if (mvpId) payload.mvp = mvpId
+          if (formationId) payload.formation = formationId
+
+          await api.col('matches').update(m.id, payload)
+          await RiotApi.sleep(80)
+          updated++
+        }
+
+        this.setStatus(`Re-processadas ${updated} partida(s).`, 'ok')
+        await this.loadBrokenPlayerRefs()
+        await this.previewFormations()
+      } catch (e) {
+        this.setStatus('Erro ao re-processar: ' + (e.message ?? JSON.stringify(e)), 'error')
+      }
+    },
+
+    async reprocessSafePlayerRefs() {
+      const safe = this.brokenPlayerRefs.filter(m => m.confidence === 'safe')
+      if (!safe.length) return
+      if (!confirm(`Re-processar ${safe.length} partida(s) Garantido?`)) return
+      this.reprocessing = true
+      try {
+        await this._reprocessMatches(safe.map(m => m.id))
+      } finally {
+        this.reprocessing = false
+      }
+    },
+
+    async reprocessPlayerRefs() {
+      if (!this.brokenPlayerRefs.length) return
+      if (!confirm(`Re-processar ${this.brokenPlayerRefs.length} partida(s)?`)) return
+      this.reprocessing = true
+      try {
+        await this._reprocessMatches(this.brokenPlayerRefs.map(m => m.id))
+      } finally {
+        this.reprocessing = false
+      }
+    },
+
     async _loadPlayerRiotIds() {
       try {
         const res = await api.col('players').list({ perPage: 50, fields: 'riot_id' })
@@ -181,12 +449,14 @@ document.addEventListener('alpine:init', () => {
         // ── 2. Jogadores ───────────────────────────────────────────────────
         this.setStatus('Carregando jogadores…')
         const puuidToName = {}
+        const puuidToId   = {}
         const knownPuuids = new Set()
         try {
           const players = await api.col('players').list({ perPage: 50 })
           for (const p of players.items) {
             if (p.puuid) {
               puuidToName[p.puuid] = p.name
+              puuidToId[p.puuid]   = p.id
               knownPuuids.add(p.puuid)
             }
           }
@@ -257,7 +527,7 @@ document.addEventListener('alpine:init', () => {
             const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}/timeline`, this.apiKey, { onStatus })
             await RiotApi.sleep(80)
 
-            const stats = extractMatchStats(match, timeline, { knownPuuidSet: knownPuuids, puuidToName })
+            const stats = extractMatchStats(match, timeline, { knownPuuidSet: knownPuuids, puuidToName, puuidToId })
             if (!stats) {
               RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
               continue
