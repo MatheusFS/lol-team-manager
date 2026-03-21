@@ -6,17 +6,18 @@
   <title>Importar Dados – Clash Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/riot-api.js"></script>
   <script src="/scripts/import-tool.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
 <body x-data="importTool" class="bg-slate-950 text-slate-100 min-h-screen">
 <script src="/scripts/layout.js"></script>
 
-  <main class="max-w-4xl mx-auto px-4 py-6">
+  <main class="max-w-5xl mx-auto px-4 py-6">
 
     <div class="mb-6">
       <h1 class="text-xl font-bold">Importar Dados de Desempenho</h1>
-      <p class="text-sm text-slate-400 mt-1">Busca estatísticas ausentes (diferença de ouro, K/D, dano) na API da Riot e preenche seus registros.</p>
+      <p class="text-sm text-slate-400 mt-1">Busca estatísticas de partidas com o time completo (titular ou sub) e associa aos seus registros.</p>
     </div>
 
     <!-- Setup card -->
@@ -48,16 +49,40 @@
         <div class="sm:col-span-2">
           <label class="block text-xs text-slate-400 mb-1">Riot ID de qualquer membro do time</label>
           <input x-model="summoner" type="text" placeholder="NomeInvocador#BR1"
+                 list="summoner-datalist"
+                 class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+          <datalist id="summoner-datalist">
+            <template x-for="id in playerRiotIds" :key="id">
+              <option :value="id"></option>
+            </template>
+          </datalist>
+        </div>
+        <div></div><!-- spacer -->
+
+        <!-- Date range row -->
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">De</label>
+          <input x-model="startDate" type="date" min="2025-01-01" :max="endDate"
+                 class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Até</label>
+          <input x-model="endDate" type="date" :min="startDate"
                  class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
         </div>
         <div class="flex items-end">
           <button @click="fetchMatches()"
                   class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-2 rounded text-sm transition-colors">
-            Buscar Partidas de Clash
+            Buscar Partidas do Time
           </button>
         </div>
       </div>
-      <p class="text-xs text-slate-600 mt-3">A chave é armazenada apenas no localStorage do seu navegador e enviada somente aos servidores da Riot.</p>
+      <div class="flex items-center justify-between mt-3">
+        <p class="text-xs text-slate-600">A chave é armazenada apenas no localStorage do seu navegador e enviada somente aos servidores da Riot.</p>
+        <button @click="clearCache()" class="text-xs text-slate-600 hover:text-slate-400 underline shrink-0 ml-4">
+          Limpar cache da API (<span x-text="_cacheCount()"></span> entradas)
+        </button>
+      </div>
     </div>
 
     <!-- Missing data summary -->
@@ -76,25 +101,108 @@
       </div>
     </div>
 
+    <!-- Wrong imports (remakes < 10 min) -->
+    <div x-show="wrongImports.length > 0" class="bg-red-950/40 border border-red-800/60 rounded-lg p-4 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-semibold text-red-400 uppercase tracking-wider">
+          Associações incorretas — remake (&lt;10 min)
+        </h2>
+        <button @click="clearAllWrongImports()"
+                class="text-xs font-semibold text-red-400 border border-red-700 hover:bg-red-900/40 px-3 py-1 rounded transition-colors">
+          Limpar todas (<span x-text="wrongImports.length"></span>)
+        </button>
+      </div>
+      <p class="text-xs text-red-300/70 mb-3">Stats e composição apagados ao limpar. Data e resultado são mantidos — corrija pelo CSV se necessário.</p>
+      <div class="space-y-1.5">
+        <template x-for="m in wrongImports" :key="m.id">
+          <div class="flex items-center justify-between gap-3 text-xs text-slate-300 bg-slate-900/60 rounded px-3 py-2">
+            <div class="flex items-center gap-3 flex-wrap text-slate-400">
+              <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
+              <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
+              <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
+              <span x-text="m.side ?? '—'"></span>
+              <span class="text-red-400" x-text="(m.duration ?? '?') + ' min'"></span>
+            </div>
+            <button @click="clearWrongImport(m.id)"
+                    class="shrink-0 text-xs text-red-400 hover:text-red-300 border border-red-800 hover:border-red-600 px-2 py-0.5 rounded transition-colors">
+              Limpar
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Mismatch imports (≤2/5 champs) -->
+    <div x-show="mismatchImports.length > 0" class="bg-amber-950/30 border border-amber-800/50 rounded-lg p-4 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+          Associações suspeitas (≤2/5 campeões) (<span x-text="mismatchImports.length"></span>)
+        </h2>
+        <button @click="clearAllMismatchImports()"
+                class="text-xs font-semibold text-amber-400 border border-amber-700 hover:bg-amber-900/30 px-3 py-1 rounded transition-colors">
+          Limpar todas (<span x-text="mismatchImports.length"></span>)
+        </button>
+      </div>
+      <p class="text-xs text-amber-300/60 mb-3">Stats Riot apagados ao limpar. Campeões cadastrados são mantidos para reassociação.</p>
+      <div class="space-y-2">
+        <template x-for="m in mismatchImports" :key="m.id">
+          <div class="bg-slate-900/60 rounded px-3 py-2 text-xs">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3 flex-wrap text-slate-400">
+                <span class="text-slate-200 font-medium" x-text="m.date?.slice(0,10) ?? '—'"></span>
+                <span x-show="m.game_n" x-text="'J' + m.game_n" class="text-slate-500"></span>
+                <span :class="m.win ? 'text-green-400' : 'text-red-400'" x-text="m.win ? 'V' : 'D'"></span>
+                <span x-text="m.side ?? '—'"></span>
+              </div>
+              <button @click="clearMismatchImport(m.id)"
+                      class="shrink-0 text-amber-400 hover:text-amber-300 border border-amber-800 hover:border-amber-600 px-2 py-0.5 rounded transition-colors">
+                Limpar
+              </button>
+            </div>
+            <div class="mt-1.5 grid grid-cols-2 gap-3">
+              <div>
+                <div class="text-[10px] text-slate-500 mb-0.5">Cadastrado</div>
+                <div class="flex flex-wrap gap-1">
+                  <template x-for="ch in (m.our_champs ?? [])" :key="ch">
+                    <span class="px-1 py-0.5 rounded bg-slate-700 text-slate-300" x-text="ch"></span>
+                  </template>
+                </div>
+              </div>
+              <div>
+                <div class="text-[10px] text-slate-500 mb-0.5">Riot API</div>
+                <div class="flex flex-wrap gap-1">
+                  <template x-for="ps in (m.player_stats ?? [])" :key="ps.champion">
+                    <span class="px-1 py-0.5 rounded bg-slate-700/50 text-slate-400" x-text="ps.champion"></span>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <!-- Status -->
     <div x-show="statusMsg" class="text-sm mb-4 py-2" :class="statusCls" x-text="statusMsg"></div>
 
     <!-- Results -->
     <div x-show="showResults">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold text-slate-300">Partidas de Clash Encontradas</h2>
+        <h2 class="text-sm font-semibold text-slate-300">Partidas Encontradas</h2>
         <button @click="importAll()"
                 class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-4 py-1.5 rounded text-sm transition-colors">
-          Importar Todos
+          Importar Seguros (<span x-text="cards.filter(c => c.autoSafe).length"></span>)
         </button>
       </div>
 
-      <div class="space-y-2">
+      <div class="space-y-3">
         <template x-for="card in cards" :key="card.riotId">
           <div class="bg-slate-900 border border-slate-800 border-l-2 rounded-lg px-4 py-3"
                :class="card.stats.win ? 'border-l-green-600' : 'border-l-red-700'">
-            <div class="flex items-center justify-between gap-4 flex-wrap">
-              <div class="flex items-center gap-4 flex-wrap text-sm">
+
+            <!-- Top row: match summary + confidence badge + import button -->
+            <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <div class="flex items-center gap-3 flex-wrap text-sm">
                 <span class="text-slate-400 tabular-nums" x-text="card.stats.date"></span>
                 <span class="font-bold" :class="card.stats.win ? 'text-green-400' : 'text-red-400'"
                       x-text="card.stats.win ? 'VITÓRIA' : 'DERROTA'"></span>
@@ -103,27 +211,104 @@
                 <span class="text-slate-300" x-text="`${card.stats.team_kills}/${card.stats.team_deaths} K/D`"></span>
                 <span class="font-mono text-xs" :class="gdfCls(card.stats.gd_f)"
                       x-text="fmtGdf(card.stats.gd_f) + ' GD@F'"></span>
-                <span class="text-slate-400 text-xs" x-text="`${(card.stats.damage/1000).toFixed(0)}k dano`"></span>
-
-                <!-- Badge -->
-                <span x-show="card.hasData"
-                      class="px-2 py-0.5 rounded text-xs bg-slate-700 text-slate-500">Já importado</span>
-                <span x-show="!card.hasData && card.pb"
-                      class="px-2 py-0.5 rounded text-xs bg-green-500/15 text-green-400"
-                      x-text="`Identificado → Jogo ${card.pb?.game_n}`"></span>
-                <span x-show="!card.pb"
-                      class="px-2 py-0.5 rounded text-xs bg-yellow-500/15 text-yellow-500">Sem registro correspondente</span>
               </div>
-              <button x-show="card.canImport"
-                      @click="importSingle(card.riotId)"
-                      class="shrink-0 bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-semibold px-3 py-1 rounded text-xs transition-colors">
-                Importar
-              </button>
+              <div class="flex items-center gap-2 shrink-0">
+                <!-- Confidence badge -->
+                <span class="px-2 py-0.5 rounded text-xs font-medium"
+                      :class="{
+                        'bg-slate-700 text-slate-400':          card.hasData,
+                        'bg-green-500/25 text-green-400':       !card.hasData && card.confidence >= 3,
+                        'bg-amber-500/15 text-amber-400':       !card.hasData && card.confidence === 2,
+                        'bg-yellow-500/15 text-yellow-500':     !card.hasData && card.confidence === 1,
+                        'bg-slate-700 text-slate-500':          !card.hasData && card.confidence === 0,
+                      }"
+                      x-text="card.confLabel"></span>
+                <!-- Import button -->
+                <button x-show="card.canImport && card.manualPbId"
+                        @click="importSingle(card.riotId)"
+                        class="shrink-0 font-semibold px-3 py-1 rounded text-xs transition-colors"
+                        :class="card.confidence >= 3
+                          ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-900'
+                          : 'border border-amber-500 text-amber-400 hover:bg-amber-500/10'">
+                  <span x-text="card.confidence >= 3 ? 'Importar' : 'Importar ⚠'"></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Side-by-side comparison -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs border-t border-slate-800 pt-3">
+
+              <!-- Left: Riot API champions -->
+              <div>
+                <div class="text-slate-500 font-semibold uppercase tracking-wider text-[10px] mb-2">API Riot</div>
+                <div class="space-y-1">
+                  <template x-for="rc in card.riotChamps" :key="rc.champion">
+                    <div class="flex items-center gap-2 text-slate-300">
+                      <span class="font-medium text-slate-100 w-28 truncate" x-text="rc.champion"></span>
+                      <span class="text-slate-500 truncate flex-1" x-text="rc.name ?? '—'"></span>
+                      <span class="text-slate-400 tabular-nums shrink-0" x-text="rc.kda"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Right: Registro manual -->
+              <div>
+                <div class="text-slate-500 font-semibold uppercase tracking-wider text-[10px] mb-2">Registro Manual</div>
+
+                <!-- Detalhes do registro manual quando associado -->
+                <div x-show="card.pb" class="mb-2 space-y-1.5">
+                  <div class="flex items-center gap-2 text-slate-400 flex-wrap">
+                    <span class="text-slate-200 font-medium"
+                          x-text="'Jogo ' + (card.pb?.game_n ?? '?')"></span>
+                    <span x-text="card.pb?.date?.slice(0,10) ?? '—'"></span>
+                    <span :class="card.pb?.win ? 'text-green-400' : 'text-red-400'"
+                          x-text="card.pb?.win ? 'Vitória' : 'Derrota'"></span>
+                    <span x-text="card.pb?.side ?? '—'"></span>
+                    <span x-show="card.pb?.duration" x-text="(card.pb?.duration ?? '') + 'min'"></span>
+                  </div>
+                  <!-- Campeões do registro manual (player_stats ou our_champs como fallback) -->
+                  <template x-if="card.pbChampNames.length > 0">
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="ch in card.pbChampNames" :key="ch">
+                        <span class="px-1.5 py-0.5 rounded text-[10px]"
+                              :class="card.riotChamps.some(r => normChampKey(r.champion) === normChampKey(ch))
+                                ? 'bg-green-500/20 text-green-300'
+                                : 'bg-slate-700 text-slate-400'"
+                              x-text="ch"></span>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- No match message -->
+                <p x-show="!card.pb && !card.hasData"
+                   class="text-slate-600 text-[11px] mb-2">Nenhum registro encontrado automaticamente.</p>
+
+                <!-- Confidence detail -->
+                <p x-show="card.confDetail && !card.hasData"
+                   class="text-[11px] text-slate-500 mb-2 leading-snug"
+                   x-text="card.confDetail"></p>
+
+                <!-- Select para escolher / trocar registro manual (oculto quando já importado) -->
+                <div x-show="!card.hasData">
+                  <select @change="card.manualPbId = $event.target.value; selectPb(card)"
+                          class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
+                    <option value="" :selected="!card.manualPbId">— selecionar registro —</option>
+                    <template x-for="opt in pbSelectOptions(card)" :key="opt.id">
+                      <option :value="opt.id"
+                              :selected="opt.id === card.manualPbId"
+                              x-text="opt.label"></option>
+                    </template>
+                  </select>
+                </div>
+              </div>
+
             </div>
           </div>
         </template>
 
-        <p x-show="cards.length === 0" class="text-slate-500 text-sm">Nenhuma partida de Clash encontrada.</p>
+        <p x-show="cards.length === 0" class="text-slate-500 text-sm">Nenhuma partida com o time completo encontrada.</p>
       </div>
     </div>
 

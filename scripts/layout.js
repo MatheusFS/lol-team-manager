@@ -3,11 +3,16 @@
 
   // ── Nav ───────────────────────────────────────────────────────────────────
 
-  const NAV_ITEMS = [
-    { href: '/index.html',       label: 'Histórico' },
-    { href: '/pages/stats.html', label: 'Estatísticas' },
-    { href: null,                label: 'Análise de Draft' },
-    { href: '/pages/champions.html', label: 'Campeões' },
+  const PAGE_ITEMS = [
+    { href: '/index.html',       label: '📋 Histórico' },
+    { href: '/pages/stats.html', label: '📊 Estatísticas' },
+    { href: null,                label: '🗡️ Assistente de Draft' },
+  ]
+
+  const CONFIG_ITEMS = [
+    { href: '/pages/champions.html', label: '👑 Campeões' },
+    { href: '/pages/import.html',    label: '📥 Importar' },
+    { href: '/pages/team.html',      label: '🛡️ Formações' },
   ]
 
   function isActive(href) {
@@ -17,17 +22,32 @@
   }
 
   function buildNav() {
-    const items = NAV_ITEMS.map(item => {
+    const pageLinks = PAGE_ITEMS.map(item => {
       if (!item.href)
         return `<span class="text-slate-500 cursor-not-allowed">${item.label}</span>`
       const active = isActive(item.href)
       return `<a href="${item.href}" class="${active ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'}">${item.label}</a>`
     }).join('')
 
+    const configActive = CONFIG_ITEMS.some(i => isActive(i.href))
+    const configLinks = CONFIG_ITEMS.map(item => {
+      const active = isActive(item.href)
+      return `<a href="${item.href}" class="block px-4 py-1.5 ${active ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'}">${item.label}</a>`
+    }).join('')
+
+    const dropdown = `<div class="relative group">
+        <span class="cursor-default ${configActive ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'} flex items-center gap-1 select-none">⚙️ Configurações <span class="text-xs">▾</span></span>
+        <div class="absolute hidden group-hover:block right-0 top-full pt-1 z-50">
+          <div class="bg-slate-800 border border-slate-700 rounded shadow-xl py-1 min-w-[10rem]">
+            ${configLinks}
+          </div>
+        </div>
+      </div>`
+
     return `<nav class="bg-slate-900 border-b border-slate-800">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
         <a href="/index.html" class="font-bold text-yellow-500 tracking-wide">⚔ Clash Manager</a>
-        <div class="flex gap-6 text-sm">${items}</div>
+        <div class="flex gap-6 text-sm items-center">${pageLinks}${dropdown}</div>
       </div>
     </nav>`
   }
@@ -37,13 +57,19 @@
   const DISMISS_KEY = 'missing-alert-dismissed'
 
   async function checkAlerts() {
-    const today = new Date().toISOString().slice(0, 10)
-    if (localStorage.getItem(DISMISS_KEY) === today) return
+    localStorage.removeItem(DISMISS_KEY)   // limpa dismiss antigo de versões anteriores
+    if (sessionStorage.getItem(DISMISS_KEY)) return
     try {
-      const res  = await fetch(`${PB}/api/collections/matches/records?perPage=1&filter=${encodeURIComponent('gd_f = null && team_kills = null')}`)
-      const data = await res.json()
-      if (data.totalItems > 0) showAlert(data.totalItems)
-    } catch (_) {}
+      const enc = s => encodeURIComponent(s)
+      const [r1, r2] = await Promise.all([
+        fetch(`${PB}/api/collections/matches/records?perPage=1&fields=id&filter=${enc('gd_f = null')}`).then(r => r.json()),
+        fetch(`${PB}/api/collections/matches/records?perPage=1&fields=id&filter=${enc('team_kills = null')}`).then(r => r.json()),
+      ])
+      const total = Math.max(r1.totalItems ?? 0, r2.totalItems ?? 0)
+      if (total > 0) showAlert(total)
+    } catch (e) {
+      console.warn('[layout] checkAlerts falhou:', e)
+    }
   }
 
   function showAlert(count) {
@@ -69,7 +95,7 @@
     else document.body.prepend(bar)
 
     document.getElementById('_alert-dismiss').addEventListener('click', () => {
-      localStorage.setItem(DISMISS_KEY, new Date().toISOString().slice(0, 10))
+      sessionStorage.setItem(DISMISS_KEY, '1')
       bar.remove()
     })
   }

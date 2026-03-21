@@ -29,6 +29,7 @@
     select.field-input { cursor: pointer; }
   </style>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/riot-api.js"></script>
   <script src="/scripts/match-form.js"></script>
   <script src="/scripts/match-assistant.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
@@ -126,11 +127,11 @@
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
 
         <div>
-          <label class="field-label">Top Laner</label>
-          <select x-model="topPlayer" class="field-input">
-            <option value="">— nenhum —</option>
-            <template x-for="p in PLAYERS" :key="p">
-              <option :value="p" x-text="p"></option>
+          <label class="field-label">Formação</label>
+          <select x-model="formationId" class="field-input">
+            <option value="">— nenhuma —</option>
+            <template x-for="f in formations" :key="f.id">
+              <option :value="f.id" x-text="f.name + (f.active ? ' (ativa)' : '')"></option>
             </template>
           </select>
         </div>
@@ -220,12 +221,9 @@
           <label class="field-label">Tipo de Comp (nossa)</label>
           <select x-model="compType" class="field-input">
             <option value="">— nenhum —</option>
-            <option value="Protect">🛡️ Protect</option>
-            <option value="Pick">🔪 Pick</option>
-            <option value="Split">🔀 Split</option>
-            <option value="Siege">🌀 Siege</option>
-            <option value="Engage">💥 Engage</option>
-            <option value="Mix">⚠️ Mix</option>
+            <template x-for="d in COMP_TYPE_DEFS" :key="d.value">
+              <option :value="d.value" x-text="d.emoji + ' ' + d.value"></option>
+            </template>
           </select>
         </div>
 
@@ -233,12 +231,9 @@
           <label class="field-label">Tipo de Comp (inimiga)</label>
           <select x-model="enemyType" class="field-input">
             <option value="">— nenhum —</option>
-            <option value="Protect">🛡️ Protect</option>
-            <option value="Pick">🔪 Pick</option>
-            <option value="Split">🔀 Split</option>
-            <option value="Siege">🌀 Siege</option>
-            <option value="Engage">💥 Engage</option>
-            <option value="Mix">⚠️ Mix</option>
+            <template x-for="d in COMP_TYPE_DEFS" :key="d.value">
+              <option :value="d.value" x-text="d.emoji + ' ' + d.value"></option>
+            </template>
           </select>
         </div>
 
@@ -266,12 +261,17 @@
             <template x-for="(slot, si) in scaling" :key="si">
               <div>
                 <div class="text-xs text-slate-500 mb-1 text-center" x-text="SCALE_SLOTS[si]"></div>
-                <div class="flex gap-1">
+                <div x-data="scaleSelector"
+                     x-modelable="value"
+                     x-model="slot.ci"
+                     class="flex gap-1">
                   <template x-for="(color, ci) in SCALE_COLORS" :key="ci">
                     <button type="button"
-                            class="w-8 h-8 text-base rounded transition-colors hover:bg-slate-700"
-                            :class="slot.ci === ci ? 'outline outline-2 outline-yellow-500' : ''"
-                            @click="pickScaling(scaling, si, ci)"
+                            @click="pick(ci)"
+                            class="w-8 h-8 text-base rounded transition-colors"
+                            :class="value === ci
+                              ? 'opacity-100 outline outline-2 outline-yellow-500 bg-slate-700'
+                              : 'opacity-20 hover:opacity-60'"
                             x-text="color"></button>
                   </template>
                 </div>
@@ -287,12 +287,17 @@
             <template x-for="(slot, si) in enemyScaling" :key="si">
               <div>
                 <div class="text-xs text-slate-500 mb-1 text-center" x-text="SCALE_SLOTS[si]"></div>
-                <div class="flex gap-1">
+                <div x-data="scaleSelector"
+                     x-modelable="value"
+                     x-model="slot.ci"
+                     class="flex gap-1">
                   <template x-for="(color, ci) in SCALE_COLORS" :key="ci">
                     <button type="button"
-                            class="w-8 h-8 text-base rounded transition-colors hover:bg-slate-700"
-                            :class="slot.ci === ci ? 'outline outline-2 outline-yellow-500' : ''"
-                            @click="pickScaling(enemyScaling, si, ci)"
+                            @click="pick(ci)"
+                            class="w-8 h-8 text-base rounded transition-colors"
+                            :class="value === ci
+                              ? 'opacity-100 outline outline-2 outline-yellow-500 bg-slate-700'
+                              : 'opacity-20 hover:opacity-60'"
                             x-text="color"></button>
                   </template>
                 </div>

@@ -5,8 +5,7 @@ document.addEventListener('alpine:init', () => {
     ROLES:        ['Top', 'Jungle', 'Mid', 'ADC', 'Support'],
     PLAYERS:      ['Klebão','GdN','Conkreto','Digo','Kelly','Pixek','Nunes','Eden','Xuao'],
     SUBTYPES:     ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix'],
-    SCALE_COLORS: ['🔴','🟡','🟢'],
-    SCALE_SLOTS:  ['Early','Mid','Late'],
+    // SCALE_COLORS, SCALE_SLOTS vêm de shared.js
 
     // ── Identity ───────────────────────────────────────────────────────────
     editId: null,
@@ -19,6 +18,8 @@ document.addEventListener('alpine:init', () => {
     side:   null,   // 'Red' | 'Blue' | null
 
     // ── Lineup ────────────────────────────────────────────────────────────
+    formations:  [],
+    formationId: '',
     topPlayer:  '',
     ourChamps:   Array(5).fill(null).map(() => ({ name: '', key: '', query: '', results: [], open: false })),
     enemyChamps: Array(5).fill(null).map(() => ({ name: '', key: '', query: '', results: [], open: false })),
@@ -78,7 +79,11 @@ document.addEventListener('alpine:init', () => {
 
     // ── Init ───────────────────────────────────────────────────────────────
     async init() {
-      await Alpine.store('champions').load()
+      const [, fData] = await Promise.all([
+        Alpine.store('champions').load(),
+        api.col('formations').list({ sort: '-active,name', perPage: 100 }),
+      ])
+      this.formations = fData.items
       const params = new URLSearchParams(location.search)
       this.editId  = params.get('id')
       this.isEdit  = !!this.editId
@@ -86,6 +91,8 @@ document.addEventListener('alpine:init', () => {
         await this.loadMatch()
       } else {
         this.date = new Date().toISOString().slice(0, 10)
+        const active = this.formations.find(f => f.active)
+        if (active) this.formationId = active.id
       }
       // Apply prefill from match lookup page (after loadMatch so it can override blanks)
       const raw = localStorage.getItem('match-assistant-prefill')
@@ -114,10 +121,6 @@ document.addEventListener('alpine:init', () => {
       })
     },
 
-    // ── Scaling ────────────────────────────────────────────────────────────
-    pickScaling(arr, si, ci) {
-      arr[si].ci = ci
-    },
 
     _loadScaling(str, arr) {
       const C = ['🔴','🟡','🟢']
@@ -197,6 +200,7 @@ document.addEventListener('alpine:init', () => {
         this.game_n     = m.game_n ?? 1
         this.win        = m.win   ?? null
         this.side       = m.side  ?? null
+        this.formationId = m.formation  ?? ''
         this.topPlayer  = m.top_player ?? ''
         this.compType   = m.comp_type  ?? ''
         this.enemyType  = m.enemy_type ?? ''
@@ -275,6 +279,7 @@ document.addEventListener('alpine:init', () => {
           game_n:        +this.game_n,
           win:           this.win,
           side:          this.side       ?? undefined,
+          formation:     this.formationId || undefined,
           top_player:    str(this.topPlayer),
           comp_type:     str(this.compType),
           comp_subtype:  this.compSubtype.length ? this.compSubtype : undefined,
@@ -342,69 +347,27 @@ document.addEventListener('alpine:init', () => {
     // ── Extract all stats from stored snapshot (called on save when snapshot exists) ──
     _extractStatsFromSnapshot() {
       const { match, timeline } = this.riotSnapshot
-      const info = match?.info
-      if (!info) return
+      const stats = extractMatchStats(match, timeline, { ourSide: this.side })
+      if (!stats) return
 
-      const ourTeamId = this.side === 'Blue' ? 100 : 200
-      const allOur    = (info.participants ?? []).filter(p => p.teamId === ourTeamId)
-      const ourTeam   = (info.teams ?? []).find(t => t.teamId === ourTeamId)
-      const ourIds    = new Set(allOur.map(p => p.participantId))
-
-      this.duration    = info.gameDuration ? Math.round(info.gameDuration / 60) : this.duration
-      this.teamKills   = allOur.reduce((s, p) => s + (p.kills   ?? 0), 0)
-      this.teamDeaths  = allOur.reduce((s, p) => s + (p.deaths  ?? 0), 0)
-      this.teamAssists = allOur.reduce((s, p) => s + (p.assists ?? 0), 0)
-      this.totalGold   = allOur.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
-      this.damage      = allOur.reduce((s, p) => s + (p.totalDamageDealtToChampions ?? 0), 0)
-      const dmgTaken   = allOur.reduce((s, p) => s + (p.totalDamageTaken ?? 0), 0)
-      this.dadi        = dmgTaken > 0 ? Math.round((this.damage / dmgTaken) * 100) / 100 : ''
-      const wards      = allOur.reduce((s, p) => s + (p.wardsPlaced ?? 0), 0)
-      const dur        = +this.duration || 1
-      this.goldPerMin  = Math.round(this.totalGold / dur)
-      this.wardsPerMin = Math.round((wards / dur) * 10) / 10
-      this.visionScore = allOur.reduce((s, p) => s + (p.visionScore ?? 0), 0)
-      this.csTotal     = allOur.reduce((s, p) => s + (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0), 0)
-      this.csPerMin    = Math.round((this.csTotal / dur) * 10) / 10
-      this.firstBlood  = ourTeam?.objectives?.champion?.first ?? false
-      this.firstTower  = ourTeam?.objectives?.tower?.first    ?? false
-
-      const o = ourTeam?.objectives
-      if (o) {
-        this.objFlow = [
-          o.tower?.kills      ?? 0,
-          o.horde?.kills      ?? 0,
-          o.riftHerald?.kills ?? 0,
-          o.dragon?.kills     ?? 0,
-          o.baron?.kills      ?? 0,
-          o.inhibitor?.kills  ?? 0,
-          o.nexus?.kills      ?? 0,
-        ].join('/')
-      }
-
-      const frames = timeline?.info?.frames
-      if (frames) {
-        const calcGd = (minute) => {
-          const f = frames[minute]
-          if (!f?.participantFrames) return null
-          let our = 0, enm = 0
-          for (const [pid, pf] of Object.entries(f.participantFrames)) {
-            if (ourIds.has(+pid)) our += pf.totalGold ?? 0
-            else                  enm += pf.totalGold ?? 0
-          }
-          return our - enm
-        }
-        this.gd10 = calcGd(10)
-        this.gd20 = calcGd(20)
-        const last = frames[frames.length - 1]
-        if (last?.participantFrames) {
-          let our = 0, enm = 0
-          for (const [pid, pf] of Object.entries(last.participantFrames)) {
-            if (ourIds.has(+pid)) our += pf.totalGold ?? 0
-            else                  enm += pf.totalGold ?? 0
-          }
-          this.gdF = our - enm
-        }
-      }
+      this.duration    = stats.duration
+      this.teamKills   = stats.team_kills
+      this.teamDeaths  = stats.team_deaths
+      this.teamAssists = stats.team_assists
+      this.totalGold   = stats.total_gold
+      this.damage      = stats.damage
+      this.dadi        = stats.da_di ?? ''
+      this.goldPerMin  = stats.gold_per_min
+      this.wardsPerMin = stats.wards_per_min
+      this.visionScore = stats.vision_score
+      this.csTotal     = stats.cs_total
+      this.csPerMin    = stats.cs_per_min
+      this.firstBlood  = stats.first_blood
+      this.firstTower  = stats.first_tower
+      this.objFlow     = stats.obj_flow
+      this.gd10        = stats.gd_10
+      this.gd20        = stats.gd_20
+      this.gdF         = stats.gd_f
     },
 
     // ── Strategy suggestion from champion data (display-only reference) ────
@@ -438,7 +401,7 @@ document.addEventListener('alpine:init', () => {
       const maxVotes = Object.values(votes).length ? Math.max(...Object.values(votes)) : 0
       const winners  = Object.keys(votes).filter(k => votes[k] === maxVotes)
       const compType = winners.length === 1 ? winners[0] : (winners.length > 1 ? 'Mix' : null)
-      const scaling  = totals.map((t, i) => counts[i] ? Math.round(t / counts[i]) : null)
+      const scaling  = totals.map((t, i) => counts[i] ? (t / counts[i] >= 7/5 ? 2 : t / counts[i] >= 3/5 ? 1 : 0) : null)
       const voteList = Object.entries(votes).map(([type, n]) => ({ type, n })).sort((a, b) => b.n - a.n)
 
       return { compType, scaling, voteList, champions }
@@ -456,7 +419,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Apply data from Riot assistant ─────────────────────────────────────
     applyFromRiot(data) {
-      if (data.date)        this.date     = data.date
+      if (data.date && !this.date) this.date = data.date
       if (data.win != null) this.win      = data.win
       if (data.side)        this.side     = data.side
       if (data.duration)    this.duration = data.duration

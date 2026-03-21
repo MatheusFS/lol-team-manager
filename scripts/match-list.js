@@ -1,18 +1,19 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('matchList', () => ({
 
-    COMP_EMOJI: { Protect:'🛡️', Pick:'🔪', Split:'🔀', Siege:'🌀', Engage:'💥', Mix:'🌫️' },
-
     // ── Filters ────────────────────────────────────────────────────────────
-    fResult: '',
-    fSide:   '',
-    fComp:   '',
-    fFrom:   '',
-    fTo:     '',
+    fResult:    '',
+    fSide:      '',
+    fComp:      '',
+    fFrom:      '',
+    fTo:        '',
+    fFormation: '',
 
     // ── Data ───────────────────────────────────────────────────────────────
-    matches:    [],
-    total:      0,
+    formations: [],
+    matches:        [],
+    displayMatches: [],
+    total:          0,
     wins:       0,
     page:       1,
     totalPages: 1,
@@ -29,9 +30,12 @@ document.addEventListener('alpine:init', () => {
     get showPagination() { return this.totalPages > 1 },
 
     // ── Init ───────────────────────────────────────────────────────────────
-    init() {
-      // Load champions so ddragon version is resolved for champion icons
-      Alpine.store('champions').load()
+    async init() {
+      const [,fData] = await Promise.all([
+        Alpine.store('champions').load(),
+        api.col('formations').list({ sort: '-active,name', perPage: 100 }),
+      ])
+      this.formations = fData.items
       this.load()
     },
 
@@ -43,6 +47,7 @@ document.addEventListener('alpine:init', () => {
       if (this.fComp)          parts.push(`comp_type='${this.fComp}'`)
       if (this.fFrom)          parts.push(`date>='${this.fFrom} 00:00:00.000Z'`)
       if (this.fTo)            parts.push(`date<='${this.fTo} 23:59:59.000Z'`)
+      if (this.fFormation)     parts.push(`formation='${this.fFormation}'`)
       return parts.join(' && ')
     },
 
@@ -50,7 +55,7 @@ document.addEventListener('alpine:init', () => {
 
     clearFilters() {
       this.fResult = ''; this.fSide = ''; this.fComp = ''
-      this.fFrom   = ''; this.fTo   = ''
+      this.fFrom   = ''; this.fTo   = ''; this.fFormation = ''
       this.page = 1; this.load()
     },
 
@@ -65,7 +70,7 @@ document.addEventListener('alpine:init', () => {
       this.msg     = 'Carregando…'
       const filter = this.buildFilter()
       try {
-        const params = { sort: '-date,-game_n', expand: 'mvc', perPage: 25, page: this.page }
+        const params = { sort: '-date,game_n', expand: 'mvc', perPage: 25, page: this.page }
         if (filter) params.filter = filter
 
         const [matchRes, statsRes] = await Promise.all([
@@ -74,6 +79,55 @@ document.addEventListener('alpine:init', () => {
         ])
 
         this.matches    = matchRes.items
+
+        // Agrupar por game_n
+        const byGameN = {}
+        for (const m of this.matches) {
+          const gn = m.game_n ?? 0
+          if (!byGameN[gn]) byGameN[gn] = []
+          byGameN[gn].push(m)
+        }
+
+        // Para cada J1 (mais antigo primeiro), pegar consecutivos dentro de 2 dias
+        const usedIds = new Set()
+        const rawSessions = []
+        const starts = [...(byGameN[1] ?? [])].sort((a, b) => a.date.localeCompare(b.date))
+
+        for (const start of starts) {
+          if (usedIds.has(start.id)) continue
+          const games = [start]
+          usedIds.add(start.id)
+          let gn = 2
+          while (byGameN[gn]) {
+            const candidates = byGameN[gn].filter(m => !usedIds.has(m.id))
+            if (!candidates.length) break
+            const lastDate = new Date(games[games.length - 1].date)
+            candidates.sort((a, b) =>
+              Math.abs(new Date(a.date) - lastDate) - Math.abs(new Date(b.date) - lastDate)
+            )
+            const pick = candidates[0]
+            if (Math.abs((new Date(pick.date) - lastDate) / 86400000) > 2) break
+            games.push(pick)
+            usedIds.add(pick.id)
+            gn++
+          }
+          rawSessions.push({ startDate: start.date, games })
+        }
+
+        // Sessões mais recentes primeiro; jogos em ordem crescente de game_n (já estão)
+        rawSessions.sort((a, b) => b.startDate.localeCompare(a.startDate))
+
+        this.displayMatches = []
+        for (const s of rawSessions) {
+          const wins = s.games.filter(g => g.win).length
+          this.displayMatches.push({ _isSep: true, date: s.startDate, count: s.games.length, wins })
+          for (const g of s.games) this.displayMatches.push(g)
+        }
+        // Jogos sem game_n (registros antigos) ao final, sem separador
+        for (const m of this.matches) {
+          if (!usedIds.has(m.id)) this.displayMatches.push(m)
+        }
+
         this.total      = statsRes.total
         this.wins       = statsRes.wins
         this.page       = matchRes.page
@@ -105,7 +159,7 @@ document.addEventListener('alpine:init', () => {
     resultBg(w)  { return w ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400' },
     sideIcon(s)  { return s === 'Red' ? '🟥' : s === 'Blue' ? '🟦' : '—' },
     sideCls(s)   { return s === 'Red' ? 'text-red-400' : s === 'Blue' ? 'text-blue-400' : 'text-slate-600' },
-    compLabel(t) { return t ? `${this.COMP_EMOJI[t] ?? ''} ${t}` : '' },
+    compLabel(t) { return t ? `${COMP_EMOJI[t] ?? ''} ${t}` : '' },
     fmtGold(v)   { return utils.fmtGold(v) },
     gdfCls(v)    { return v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-400' },
     mvcName(m)   { return m.expand?.mvc?.name ?? '—' },

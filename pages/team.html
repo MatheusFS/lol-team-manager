@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formações – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/team-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="teamPage" class="bg-slate-950 text-slate-100 min-h-screen pb-12"
+      @keydown.escape.window="closeModal()">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-4xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-4 mb-6">
+      <div>
+        <h1 class="text-xl font-bold">Formações</h1>
+        <p class="text-xs text-slate-500 mt-1">
+          Cadastre as formações do time para segmentar estatísticas por escalação.
+        </p>
+      </div>
+      <button @click="openNew()"
+              class="bg-yellow-600 hover:bg-yellow-500 text-sm font-medium px-4 py-2 rounded transition-colors">
+        Nova Formação
+      </button>
+    </div>
+
+    <!-- Formation cards -->
+    <div class="space-y-3">
+      <template x-for="f in formations" :key="f.id">
+        <div class="bg-slate-900 border rounded-lg px-5 py-4 flex items-center gap-4 flex-wrap"
+             :class="f.active ? 'border-yellow-600/60' : 'border-slate-800'">
+
+          <!-- Name + badge -->
+          <div class="w-40 shrink-0">
+            <span class="font-semibold text-slate-200" x-text="f.name"></span>
+            <span x-show="f.active"
+                  class="ml-2 text-[10px] uppercase tracking-wider bg-yellow-600/20 text-yellow-400 px-1.5 py-0.5 rounded">Ativa</span>
+          </div>
+
+          <!-- Roles -->
+          <div class="flex-1 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            <template x-for="role in ROLES" :key="role">
+              <div class="flex items-center gap-1">
+                <span class="text-[10px] uppercase text-slate-500 w-12" x-text="role"></span>
+                <span class="text-slate-300" x-text="f[role.toLowerCase()]"></span>
+              </div>
+            </template>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex gap-3 shrink-0">
+            <button @click="openEdit(f)"
+                    class="text-xs text-yellow-500 hover:text-yellow-300 transition-colors">Editar</button>
+            <button @click="del(f.id)"
+                    class="text-xs text-red-500 hover:text-red-300 transition-colors">Excluir</button>
+          </div>
+        </div>
+      </template>
+
+      <div x-show="!loading && formations.length === 0"
+           class="text-center text-slate-500 py-12 text-sm">
+        Nenhuma formação cadastrada.
+      </div>
+      <div x-show="loading"
+           class="text-center text-slate-500 py-12 text-sm">
+        Carregando…
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Modal ─────────────────────────────────────────────────────────── -->
+  <template x-if="modal">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4"
+         @click.self="closeModal()">
+      <div class="absolute inset-0 bg-black/60"></div>
+
+      <div class="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md">
+
+        <!-- Header -->
+        <div class="px-5 py-4 border-b border-slate-800">
+          <h2 class="font-bold text-lg" x-text="editId ? 'Editar Formação' : 'Nova Formação'"></h2>
+        </div>
+
+        <!-- Body -->
+        <div class="px-5 py-4 space-y-4">
+          <!-- Name -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Nome</label>
+            <input type="text" x-model="form.name" placeholder="Ex: Klebão Top"
+                   class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+          </div>
+
+          <!-- Role selectors -->
+          <template x-for="role in ROLES" :key="role">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="role"></label>
+              <select x-model="form[role.toLowerCase()]"
+                      class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+                <option value="">— selecione —</option>
+                <template x-for="p in PLAYERS" :key="p">
+                  <option :value="p" x-text="p"></option>
+                </template>
+              </select>
+            </div>
+          </template>
+
+          <!-- Active -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" x-model="form.active"
+                   class="rounded border-slate-600 bg-slate-800 text-yellow-500 focus:ring-yellow-500">
+            <span class="text-sm text-slate-300">Formação ativa (padrão)</span>
+          </label>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-800">
+          <button @click="closeModal()"
+                  class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+            Cancelar
+          </button>
+          <button @click="save()" :disabled="saving"
+                  class="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-sm font-medium px-4 py-2 rounded transition-colors">
+            <span x-text="saving ? 'Salvando…' : 'Salvar'"></span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </template>
+
+</body>
+</html>

@@ -6,42 +6,108 @@
   <title>Campeões – Clash Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/champion-suggest.js"></script>
   <script src="/scripts/champions-page.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
-<body x-data="championsPage" class="bg-slate-950 text-slate-100 min-h-screen pb-12">
+<body x-data="championsPage" class="bg-slate-950 text-slate-100 min-h-screen pb-12"
+      @keydown.escape.window="closeModal()">
 <script src="/scripts/layout.js"></script>
 
-  <main class="max-w-5xl mx-auto px-4 py-6">
+  <main class="max-w-6xl mx-auto px-4 py-6">
 
-    <div class="flex items-center justify-between gap-4 mb-6">
-      <h1 class="text-xl font-bold">Campeões</h1>
-      <p class="text-xs text-slate-500">
-        Cadastre tipo de comp e força (🔴 fraco · 🟡 neutro · 🟢 forte) para cada campeão.
-        Salvo automaticamente ao alterar.
-      </p>
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
+      <div>
+        <h1 class="text-xl font-bold">Campeões</h1>
+        <p class="text-xs text-slate-500 mt-1">
+          Metadados gerados automaticamente via DDragon + meta. Clique em "Editar" para ajustar.
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span x-show="fetchProgress" x-text="fetchProgress" class="text-xs text-yellow-400"></span>
+        <span x-show="metaStatus === 'cors'" class="text-xs text-orange-400">Meta indisponível (CORS)</span>
+        <button @click="fetchSuggestions()" :disabled="fetching"
+                class="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-sm font-medium px-4 py-2 rounded transition-colors">
+          <span x-show="!fetching">Buscar Sugestões</span>
+          <span x-show="fetching">Buscando…</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Search -->
-    <div class="mb-4">
+    <!-- Meta import (shown when CORS blocks Lolalytics) -->
+    <div x-show="metaStatus === 'cors'" x-cloak class="mb-4 bg-slate-900 border border-orange-800 rounded-lg p-4">
+      <p class="text-xs text-orange-300 mb-2">
+        Lolalytics bloqueou a requisição (CORS). Cole abaixo um JSON com dados de meta por campeão
+        <code class="text-orange-200">{"aatrox": {"winrate": 51.2, "pickrate": 5.1, "lane": "top"}, ...}</code>
+        e clique "Importar Meta" antes de buscar sugestões novamente.
+      </p>
+      <div class="flex gap-2">
+        <textarea x-model="metaJson" rows="3" placeholder='{"aatrox": {"winrate": 51.2, "pickrate": 5.1, "lane": "top"}, ...}'
+                  class="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-orange-500"></textarea>
+        <button @click="importMetaManual()" class="bg-orange-700 hover:bg-orange-600 text-xs font-medium px-3 py-2 rounded self-end transition-colors">
+          Importar Meta
+        </button>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="mb-4 flex flex-wrap items-center gap-3">
       <input type="text" x-model="query" placeholder="Buscar campeão…"
-             class="w-full max-w-xs bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
-      <span class="ml-3 text-xs text-slate-500" x-text="filtered.length + ' campeões'"></span>
+             class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+      <select x-model="filterClass"
+              class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+        <option value="">Todas classes</option>
+        <template x-for="cls in CHAMPION_CLASSES" :key="cls">
+          <option :value="cls" x-text="cls"></option>
+        </template>
+      </select>
+      <select x-model="filterRole"
+              class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+        <option value="">Todas roles</option>
+        <template x-for="r in ROLES" :key="r">
+          <option :value="r" x-text="r"></option>
+        </template>
+      </select>
+      <select x-model="filterComp"
+              class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+        <option value="">Todos os tipos</option>
+        <template x-for="d in COMP_TYPE_DEFS" :key="d.value">
+          <option :value="d.value" x-text="d.emoji + ' ' + d.value"></option>
+        </template>
+      </select>
+      <select x-model="filterTier"
+              class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+        <option value="">Todos tiers</option>
+        <template x-for="t in TIERS" :key="t">
+          <option :value="t" x-text="t"></option>
+        </template>
+      </select>
+      <select x-model="filterConfigured"
+              class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+        <option value="">Todos</option>
+        <option value="yes">Configurados</option>
+        <option value="no">Não configurados</option>
+      </select>
+      <span class="text-xs text-slate-500" x-text="filtered.length + ' campeões'"></span>
     </div>
 
     <!-- Table -->
-    <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+    <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-slate-800/60">
           <tr class="text-xs text-slate-400 uppercase tracking-wider">
-            <th class="text-left px-3 py-2 w-8"></th>
-            <th class="text-left px-3 py-2">Nome</th>
-            <th class="text-left px-3 py-2 w-36">Tipo Primário</th>
-            <th class="text-left px-3 py-2 w-36">Tipo Secundário</th>
-            <th class="text-center px-3 py-2 w-28">Early</th>
-            <th class="text-center px-3 py-2 w-28">Mid</th>
-            <th class="text-center px-3 py-2 w-28">Late</th>
-            <th class="text-center px-3 py-2 w-12"></th>
+            <th class="text-left px-2 py-2 w-8"></th>
+            <th class="text-left px-2 py-2">Nome</th>
+            <th class="text-left px-2 py-2 w-20">Classe</th>
+            <th class="text-left px-2 py-2 w-28">Roles</th>
+            <th class="text-left px-2 py-2 w-20">Dano</th>
+            <th class="text-left px-2 py-2 w-20">Comp</th>
+            <th class="text-center px-1 py-2 w-16">E</th>
+            <th class="text-center px-1 py-2 w-16">M</th>
+            <th class="text-center px-1 py-2 w-16">L</th>
+            <th class="text-center px-2 py-2 w-12">Tier</th>
+            <th class="text-center px-2 py-2 w-16"></th>
           </tr>
         </thead>
         <tbody>
@@ -59,59 +125,83 @@
               </td>
 
               <!-- Name -->
-              <td class="px-3 py-1.5 font-medium text-slate-200" x-text="champ.name"></td>
+              <td class="px-2 py-1.5 font-medium text-slate-200" x-text="champ.name"></td>
 
-              <!-- Comp type primary -->
+              <!-- Class -->
               <td class="px-2 py-1.5">
-                <select x-model="champ.comp_type"
-                        @change="save(champ)"
-                        class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
-                  <option value="">—</option>
-                  <option value="Protect">🛡️ Protect</option>
-                  <option value="Pick">🔪 Pick</option>
-                  <option value="Split">🔀 Split</option>
-                  <option value="Siege">🌀 Siege</option>
-                  <option value="Engage">💥 Engage</option>
-                  <option value="Mix">⚠️ Mix</option>
-                </select>
+                <span x-text="champ.class || '—'"
+                      class="text-xs px-1.5 py-0.5 rounded"
+                      :class="champ.class ? 'bg-slate-700 text-slate-200' : 'text-slate-600'"></span>
               </td>
 
-              <!-- Comp type secondary -->
+              <!-- Roles -->
               <td class="px-2 py-1.5">
-                <select x-model="champ.comp_type_2"
-                        @change="save(champ)"
-                        class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer opacity-80">
-                  <option value="">—</option>
-                  <option value="Protect">🛡️ Protect</option>
-                  <option value="Pick">🔪 Pick</option>
-                  <option value="Split">🔀 Split</option>
-                  <option value="Siege">🌀 Siege</option>
-                  <option value="Engage">💥 Engage</option>
-                  <option value="Mix">⚠️ Mix</option>
-                </select>
-              </td>
-
-              <!-- Early / Mid / Late scaling buttons -->
-              <template x-for="(phase, pi) in PHASES" :key="phase">
-                <td class="px-2 py-1.5">
-                  <div class="flex justify-center gap-0.5">
-                    <template x-for="(color, ci) in SCALE_COLORS" :key="ci">
-                      <button type="button"
-                              @click="pickScaling(champ, phase, ci)"
-                              :title="SCALE_SLOTS[pi] + ': ' + color"
-                              class="w-7 h-7 text-sm rounded transition-colors hover:bg-slate-700"
-                              :class="champ[phase] === ci ? 'outline outline-2 outline-yellow-400 bg-slate-700' : 'opacity-40 hover:opacity-80'"
-                              x-text="color">
-                      </button>
+                <template x-if="Array.isArray(champ.roles) && champ.roles.length">
+                  <div class="flex flex-wrap gap-0.5">
+                    <template x-for="r in champ.roles" :key="r">
+                      <span x-text="r" class="text-[10px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-300"></span>
                     </template>
                   </div>
+                </template>
+                <template x-if="!Array.isArray(champ.roles) || !champ.roles.length">
+                  <span class="text-slate-600 text-xs">—</span>
+                </template>
+              </td>
+
+              <!-- Damage type -->
+              <td class="px-2 py-1.5">
+                <span x-text="champ.damage_type || '—'"
+                      class="text-xs"
+                      :class="{
+                        'text-red-400':    champ.damage_type && champ.damage_type.startsWith('AD'),
+                        'text-blue-400':   champ.damage_type && champ.damage_type.startsWith('AP'),
+                        'text-purple-400': champ.damage_type === 'Mixed',
+                        'text-slate-600':  !champ.damage_type,
+                      }"></span>
+              </td>
+
+              <!-- Comp type -->
+              <td class="px-2 py-1.5">
+                <div class="flex flex-col gap-0.5">
+                  <span x-text="(COMP_EMOJI[champ.comp_type] || '') + ' ' + (champ.comp_type || '—')"
+                        class="text-xs"
+                        :class="champ.comp_type ? 'text-slate-200' : 'text-slate-600'"></span>
+                  <span x-show="champ.comp_type_2"
+                        x-text="(COMP_EMOJI[champ.comp_type_2] || '') + ' ' + champ.comp_type_2"
+                        class="text-[10px] text-slate-500"></span>
+                </div>
+              </td>
+
+              <!-- Early / Mid / Late -->
+              <template x-for="phase in PHASES" :key="phase">
+                <td class="px-1 py-1.5 text-center">
+                  <span x-text="champ[phase] != null ? SCALE_COLORS[champ[phase]] : '—'"
+                        class="text-sm"
+                        :class="champ[phase] == null ? 'text-slate-600 text-xs' : ''"></span>
                 </td>
               </template>
 
-              <!-- Save indicator -->
+              <!-- Tier -->
               <td class="px-2 py-1.5 text-center">
-                <span x-show="saving[champ.id] === 'saving'" class="text-slate-500 text-xs">⏳</span>
-                <span x-show="saving[champ.id] === 'ok'" class="text-green-400 text-xs">✓</span>
+                <span x-text="champ.tier || '—'"
+                      class="text-xs font-bold"
+                      :class="{
+                        'text-yellow-300': champ.tier === 'S',
+                        'text-green-400':  champ.tier === 'A',
+                        'text-slate-300':  champ.tier === 'B',
+                        'text-orange-400': champ.tier === 'C',
+                        'text-red-400':    champ.tier === 'D',
+                        'text-slate-600':  !champ.tier,
+                      }"></span>
+              </td>
+
+              <!-- Actions -->
+              <td class="px-2 py-1.5 text-center">
+                <button @click="openModal(champ)"
+                        class="text-xs text-yellow-500 hover:text-yellow-300 transition-colors">
+                  Editar
+                </button>
+                <span x-show="saving[champ.id] === 'ok'" class="text-green-400 text-xs ml-1">✓</span>
               </td>
 
             </tr>
@@ -126,6 +216,187 @@
     </div>
 
   </main>
+
+  <!-- ── Edit Modal ─────────────────────────────────────────────────────────── -->
+  <template x-if="modal">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4"
+         @click.self="closeModal()">
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black/60"></div>
+
+      <!-- Card -->
+      <div class="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+
+        <!-- Header -->
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-800">
+          <div class="w-10 h-10 rounded overflow-hidden flex-shrink-0">
+            <img :src="$store.champions.imgUrl(modal.champ.key)"
+                 :alt="modal.champ.name"
+                 class="w-full h-full object-cover">
+          </div>
+          <div class="flex-1">
+            <h2 class="font-bold text-lg" x-text="modal.champ.name"></h2>
+            <p class="text-xs text-slate-500" x-text="modal.champ.patch ? 'Patch ' + modal.champ.patch : 'Sem sugestões'"></p>
+          </div>
+          <button @click="closeModal()" class="text-slate-400 hover:text-slate-200 text-xl">&times;</button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-5 py-4 space-y-3">
+
+          <!-- Field rows: Suggested | Current | Accept -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center text-xs">
+            <span class="text-slate-500 uppercase font-semibold">Campo</span>
+            <span class="text-slate-500 uppercase font-semibold">Sugerido</span>
+            <span class="text-slate-500 uppercase font-semibold">Atual</span>
+            <span></span>
+          </div>
+
+          <!-- Class -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+            <span class="text-xs text-slate-400">Classe</span>
+            <span class="text-xs text-slate-500" x-text="modal.suggested.class || '—'"></span>
+            <select @change="modal.edits.class = $event.target.value"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+              <option value="" :selected="!modal.edits.class">—</option>
+              <template x-for="cls in CHAMPION_CLASSES" :key="cls">
+                <option :value="cls" :selected="modal.edits.class === cls" x-text="cls"></option>
+              </template>
+            </select>
+            <button @click="acceptSuggestion('class')" title="Aceitar sugestão"
+                    class="text-slate-500 hover:text-yellow-400 text-sm">&#x27F2;</button>
+          </div>
+
+          <!-- Roles -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+            <span class="text-xs text-slate-400">Roles</span>
+            <span class="text-xs text-slate-500" x-text="(modal.suggested.roles || []).join(', ') || '—'"></span>
+            <div class="flex flex-wrap gap-1">
+              <template x-for="r in ROLES" :key="r">
+                <button @click="toggleRole(r)" type="button"
+                        class="text-[10px] px-1.5 py-0.5 rounded border transition-colors"
+                        :class="modal.edits.roles.includes(r)
+                          ? 'bg-yellow-600/30 border-yellow-500 text-yellow-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-500'"
+                        x-text="r"></button>
+              </template>
+            </div>
+            <button @click="acceptSuggestion('roles')" title="Aceitar sugestão"
+                    class="text-slate-500 hover:text-yellow-400 text-sm">&#x27F2;</button>
+          </div>
+
+          <!-- Damage type -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+            <span class="text-xs text-slate-400">Dano</span>
+            <span class="text-xs text-slate-500" x-text="modal.suggested.damage_type || '—'"></span>
+            <select @change="modal.edits.damage_type = $event.target.value"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+              <option value="" :selected="!modal.edits.damage_type">—</option>
+              <template x-for="dt in DAMAGE_TYPES" :key="dt">
+                <option :value="dt" :selected="modal.edits.damage_type === dt" x-text="dt"></option>
+              </template>
+            </select>
+            <button @click="acceptSuggestion('damage_type')" title="Aceitar sugestão"
+                    class="text-slate-500 hover:text-yellow-400 text-sm">&#x27F2;</button>
+          </div>
+
+          <!-- Comp fit (primary) -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+            <span class="text-xs text-slate-400">Comp Fit</span>
+            <span class="text-xs text-slate-500"
+                  x-text="modal.suggested.comp_fit ? (COMP_EMOJI[modal.suggested.comp_fit] || '') + ' ' + modal.suggested.comp_fit : '—'"></span>
+            <select @change="modal.edits.comp_fit = $event.target.value"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+              <option value="" :selected="!modal.edits.comp_fit">—</option>
+              <template x-for="d in COMP_TYPE_DEFS" :key="d.value">
+                <option :value="d.value" :selected="modal.edits.comp_fit === d.value" x-text="d.emoji + ' ' + d.value"></option>
+              </template>
+            </select>
+            <button @click="acceptSuggestion('comp_fit')" title="Aceitar sugestão"
+                    class="text-slate-500 hover:text-yellow-400 text-sm">&#x27F2;</button>
+          </div>
+
+          <!-- Comp fit 2 (secondary — no suggestion) -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+            <span class="text-xs text-slate-400">Comp Fit 2</span>
+            <span class="text-xs text-slate-500">—</span>
+            <select @change="modal.edits.comp_fit_2 = $event.target.value"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+              <option value="" :selected="!modal.edits.comp_fit_2">—</option>
+              <template x-for="d in COMP_TYPE_DEFS" :key="d.value">
+                <option :value="d.value" :selected="modal.edits.comp_fit_2 === d.value" x-text="d.emoji + ' ' + d.value"></option>
+              </template>
+            </select>
+            <span></span>
+          </div>
+
+          <!-- Early / Mid / Late scaling -->
+          <template x-for="(phase, pi) in PHASES" :key="phase">
+            <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+              <span class="text-xs text-slate-400" x-text="SCALE_SLOTS[pi]"></span>
+              <span class="text-sm" x-text="modal.suggested.power_curve && modal.suggested.power_curve[phase] != null ? SCALE_COLORS[modal.suggested.power_curve[phase]] : '—'"></span>
+              <div class="flex gap-0.5">
+                <template x-for="(color, ci) in SCALE_COLORS" :key="ci">
+                  <button type="button"
+                          @click="pickScale(phase, ci)"
+                          class="w-7 h-7 text-sm rounded transition-colors"
+                          :class="modal.edits[phase] === ci
+                            ? 'opacity-100 outline outline-2 outline-yellow-400 bg-slate-700'
+                            : 'opacity-20 hover:opacity-60'"
+                          x-text="color"></button>
+                </template>
+              </div>
+              <span></span>
+            </div>
+          </template>
+
+          <!-- Tier -->
+          <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
+            <span class="text-xs text-slate-400">Tier</span>
+            <span class="text-xs font-bold"
+                  :class="{
+                    'text-yellow-300': modal.suggested.tier === 'S',
+                    'text-green-400':  modal.suggested.tier === 'A',
+                    'text-slate-300':  modal.suggested.tier === 'B',
+                    'text-orange-400': modal.suggested.tier === 'C',
+                    'text-red-400':    modal.suggested.tier === 'D',
+                    'text-slate-500':  !modal.suggested.tier,
+                  }"
+                  x-text="modal.suggested.tier || '—'"></span>
+            <select @change="modal.edits.tier = $event.target.value"
+                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+              <option value="" :selected="!modal.edits.tier">—</option>
+              <template x-for="t in TIERS" :key="t">
+                <option :value="t" :selected="modal.edits.tier === t" x-text="t"></option>
+              </template>
+            </select>
+            <button @click="acceptSuggestion('tier')" title="Aceitar sugestão"
+                    class="text-slate-500 hover:text-yellow-400 text-sm">&#x27F2;</button>
+          </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-between px-5 py-4 border-t border-slate-800">
+          <button @click="acceptAll()"
+                  class="text-xs text-yellow-500 hover:text-yellow-300 transition-colors">
+            Aceitar Todas Sugestões
+          </button>
+          <div class="flex gap-2">
+            <button @click="closeModal()"
+                    class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+              Cancelar
+            </button>
+            <button @click="saveModal()"
+                    class="bg-yellow-600 hover:bg-yellow-500 text-sm font-medium px-4 py-2 rounded transition-colors">
+              Salvar
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </template>
 
 </body>
 </html>

@@ -1,21 +1,19 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('importTool', () => ({
 
-    CLUSTER: {
-      BR1:'americas', NA1:'americas', LAN:'americas', LAS:'americas',
-      EUW1:'europe',  EUNE1:'europe', TR1:'europe',   RU:'europe',
-      KR:'asia',      JP1:'asia',
-      OC1:'sea',      PH2:'sea',      SG2:'sea',      TH2:'sea', TW2:'sea', VN2:'sea',
-    },
-    POS_ORDER: { TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4 },
-
     // ── Config ─────────────────────────────────────────────────────────────
-    apiKey:   '',
-    region:   'BR1',
-    summoner: '',
+    apiKey:        '',
+    region:        'BR1',
+    summoner:      '',
+    startDate:     '2025-01-01',
+    endDate:       '',
+    playerRiotIds: [],
 
     // ── Missing data ───────────────────────────────────────────────────────
-    missingRows: [],
+    missingRows:       [],
+    unpairedPbMatches: [],
+    wrongImports:      [],   // registros com riot_match_id de remake (duration < 10)
+    mismatchImports:   [],   // registros com riot_match_id mas campeões incompatíveis
 
     // ── Results ────────────────────────────────────────────────────────────
     matchPairs:  [],
@@ -31,7 +29,11 @@ document.addEventListener('alpine:init', () => {
       this.apiKey   = localStorage.getItem('riot-api-key')  || ''
       this.region   = localStorage.getItem('riot-region')   || 'BR1'
       this.summoner = localStorage.getItem('riot-summoner') || ''
+      this.endDate  = new Date().toISOString().slice(0, 10)
       this.loadMissing()
+      this.loadWrongImports()
+      this.loadMismatchImports()
+      this._loadPlayerRiotIds()
     },
 
     // ── Missing data ───────────────────────────────────────────────────────
@@ -48,6 +50,109 @@ document.addEventListener('alpine:init', () => {
         if (kda.totalItems)  this.missingRows.push({ n: kda.totalItems,  label: 'sem K/D do time' })
         if (snap.totalItems) this.missingRows.push({ n: snap.totalItems, label: 'com riot_match_id mas sem snapshot' })
       } catch (_) {}
+
+      try {
+        const enc = s => encodeURIComponent(s)
+        const res = await fetch(
+          `${PB}/api/collections/matches/records?perPage=200&sort=-date&filter=${enc('riot_match_id = ""')}&fields=id,date,win,side,game_n,duration`
+        ).then(r => r.json())
+        this.unpairedPbMatches = res.items ?? []
+        if (this.unpairedPbMatches.length)
+          this.missingRows.push({ n: this.unpairedPbMatches.length, label: 'sem associação com a Riot API' })
+      } catch (_) {}
+    },
+
+    async loadWrongImports() {
+      try {
+        const enc = s => encodeURIComponent(s)
+        const res = await fetch(
+          `${PB}/api/collections/matches/records?perPage=200&sort=-date&filter=${enc('riot_match_id != "" && duration > 0 && duration < 10')}&fields=id,date,win,side,game_n,duration,mvp`
+        ).then(r => r.json())
+        this.wrongImports = res.items ?? []
+      } catch (_) {}
+    },
+
+    async clearWrongImport(id) {
+      const payload = {
+        riot_match_id: '', riot_match_snapshot: null, player_stats: [], our_champs: [],
+        team_kills: null, team_deaths: null, team_assists: null,
+        total_gold: null, damage: null, da_di: null,
+        gold_per_min: null, wards_per_min: null, vision_score: null,
+        cs_total: null, cs_per_min: null,
+        first_blood: false, first_tower: false, obj_flow: '',
+        gd_f: null, gd_10: null, gd_20: null, duration: null,
+      }
+      await api.col('matches').update(id, payload)
+      this.wrongImports = this.wrongImports.filter(m => m.id !== id)
+    },
+
+    async clearAllWrongImports() {
+      if (!confirm(`Limpar ${this.wrongImports.length} associação(ões) incorreta(s)?\n\nStats e composição serão apagados. Data e resultado são mantidos — corrija pelo CSV se necessário.`)) return
+      try {
+        for (const m of [...this.wrongImports]) {
+          await this.clearWrongImport(m.id)
+          await RiotApi.sleep(80)
+        }
+      } catch (e) { this.setStatus(e.message, 'error') }
+    },
+
+    async loadMismatchImports() {
+      try {
+        const enc = s => encodeURIComponent(s)
+        const res = await fetch(
+          `${PB}/api/collections/matches/records?perPage=500&sort=-date` +
+          `&filter=${enc('riot_match_id != ""')}&fields=id,date,win,side,game_n,our_champs,player_stats`
+        ).then(r => r.json())
+
+        const items = res.items ?? []
+
+        this.mismatchImports = items.filter(m => {
+          const parseArr = v => {
+            if (Array.isArray(v)) return v
+            if (typeof v === 'string') { try { return JSON.parse(v) } catch { return [] } }
+            return []
+          }
+          const ourNorm  = parseArr(m.our_champs).map(normChampKey).filter(Boolean)
+          const riotNorm = parseArr(m.player_stats).map(p => normChampKey(p?.champion)).filter(Boolean)
+          if (riotNorm.length < 5) return false   // sem dados Riot importados
+          if (ourNorm.length < 3)  return false   // poucos campeões cadastrados
+          return ourNorm.filter(c => riotNorm.includes(c)).length < 5  // qualquer diferença é suspeita
+        })
+      } catch (e) {
+        console.error('[mismatch] erro ao carregar:', e)
+      }
+    },
+
+    async clearMismatchImport(id) {
+      const payload = {
+        riot_match_id: '', riot_match_snapshot: null, player_stats: [],
+        // our_champs: NÃO apagado — dado original do CSV
+        team_kills: null, team_deaths: null, team_assists: null,
+        total_gold: null, damage: null, da_di: null,
+        gold_per_min: null, wards_per_min: null, vision_score: null,
+        cs_total: null, cs_per_min: null,
+        first_blood: false, first_tower: false, obj_flow: '',
+        gd_f: null, gd_10: null, gd_20: null, duration: null,
+      }
+      await api.col('matches').update(id, payload)
+      this.mismatchImports = this.mismatchImports.filter(m => m.id !== id)
+    },
+
+    async clearAllMismatchImports() {
+      if (!confirm(`Limpar ${this.mismatchImports.length} associação(ões) com campeões errados?\n\nStats Riot apagados. Campeões cadastrados (our_champs) são mantidos.`)) return
+      try {
+        for (const m of [...this.mismatchImports]) {
+          await this.clearMismatchImport(m.id)
+          await RiotApi.sleep(80)
+        }
+      } catch (e) { this.setStatus(e.message, 'error') }
+    },
+
+    async _loadPlayerRiotIds() {
+      try {
+        const res = await api.col('players').list({ perPage: 50, fields: 'riot_id' })
+        this.playerRiotIds = res.items.map(p => p.riot_id).filter(Boolean)
+      } catch (_) {}
     },
 
     // ── Fetch Riot matches ─────────────────────────────────────────────────
@@ -56,49 +161,130 @@ document.addEventListener('alpine:init', () => {
       if (!this.summoner.includes('#')) {
         this.setStatus('Insira o Riot ID no formato Nome#Tag (ex: GdN#BR1)', 'error'); return
       }
+      if (!this.startDate || !this.endDate || this.startDate > this.endDate) {
+        this.setStatus('Intervalo de datas inválido.', 'error'); return
+      }
 
       localStorage.setItem('riot-api-key',  this.apiKey)
       localStorage.setItem('riot-region',   this.region)
       localStorage.setItem('riot-summoner', this.summoner)
 
-      const [gameName, tagLine] = this.summoner.split('#')
-      const cluster = this.CLUSTER[this.region] || 'americas'
-      const base    = `https://${cluster}.api.riotgames.com`
+      const base    = RiotApi.baseUrl(this.region)
+      const onStatus = m => this.setStatus(m)
       this.showResults = false
 
       try {
+        // ── 1. PUUID (cache 24h) ───────────────────────────────────────────
         this.setStatus('Buscando conta…')
-        const account = await this._riotFetch(`${base}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`)
+        const puuid = await RiotApi.resolvePuuid(this.summoner, this.apiKey, base)
 
+        // ── 2. Jogadores ───────────────────────────────────────────────────
         this.setStatus('Carregando jogadores…')
         const puuidToName = {}
+        const knownPuuids = new Set()
         try {
           const players = await api.col('players').list({ perPage: 50 })
           for (const p of players.items) {
-            if (p.puuid) puuidToName[p.puuid] = p.name
+            if (p.puuid) {
+              puuidToName[p.puuid] = p.name
+              knownPuuids.add(p.puuid)
+            }
           }
         } catch (_) {}
 
-        this.setStatus('Buscando lista de partidas de Clash…')
-        const matchIds = await this._riotFetch(`${base}/lol/match/v5/matches/by-puuid/${account.puuid}/ids?queue=700&count=20`)
-        if (!matchIds.length) { this.setStatus('Nenhuma partida de Clash encontrada.'); return }
+        // ── 3. IDs semanais (cache para semanas passadas) ──────────────────
+        const weeks  = this._buildWeeks(this.startDate, this.endDate)
+        const nowSec = Math.floor(Date.now() / 1000)
+        const allMatchIds = []
 
-        const details = []
-        for (let i = 0; i < matchIds.length; i++) {
-          this.setStatus(`Buscando partida ${i + 1}/${matchIds.length}…`)
-          const match    = await this._riotFetch(`${base}/lol/match/v5/matches/${matchIds[i]}`)
-          await this._sleep(100)
-          const timeline = await this._riotFetch(`${base}/lol/match/v5/matches/${matchIds[i]}/timeline`)
-          details.push({ riotId: matchIds[i], match, timeline, puuid: account.puuid })
-          if (i < matchIds.length - 1) await this._sleep(150)
+        for (let wi = 0; wi < weeks.length; wi++) {
+          const { startTime, endTime, label } = weeks[wi]
+          const idsKey = `riot-ids-${puuid}-${startTime}-${endTime}`
+          const isPast = endTime < nowSec - 3600
+          let ids = isPast ? RiotApi.cache.get(idsKey) : null
+
+          if (!ids) {
+            this.setStatus(`Buscando semana ${wi + 1}/${weeks.length} (${label})…`)
+            ids = await RiotApi.fetch(
+              `${base}/lol/match/v5/matches/by-puuid/${puuid}/ids?startTime=${startTime}&endTime=${endTime}&count=100`,
+              this.apiKey, { onStatus }
+            )
+            if (isPast) RiotApi.cache.set(idsKey, ids)
+            if (ids.length > 0) await RiotApi.sleep(80)
+          }
+          allMatchIds.push(...ids)
         }
 
-        this.setStatus('Cruzando com seus registros…')
+        const uniqueIds = [...new Set(allMatchIds)]
+        if (!uniqueIds.length) { this.setStatus('Nenhuma partida encontrada no período.'); return }
+
+        // ── 4. Registros manuais carregados antes do scan (associação imediata) ──
+        this.setStatus('Carregando registros manuais…')
         const pbRes = await fetch(
-          `${PB}/api/collections/matches/records?perPage=200&sort=-date&fields=id,date,side,win,game_n,gd_f,team_kills,riot_match_id`
+          `${PB}/api/collections/matches/records?perPage=200&sort=-date&fields=id,date,side,win,game_n,gd_f,team_kills,riot_match_id,player_stats,our_champs,duration`
         ).then(r => r.json())
+        const pbMatches = pbRes.items || []
+
+        // Mostra área de resultados agora — cards aparecem conforme são encontrados
+        this.matchPairs  = []
+        this.cards       = []
+        this.showResults = true
+
+        // ── 5. Summary por partida (cache agressivo, cards progressivos) ───
+        const n = uniqueIds.length
+
+        for (let i = 0; i < n; i++) {
+          const matchId = uniqueIds[i]
+          let summary = RiotApi.cache.get(`riot-summary-${matchId}`)
+
+          if (!summary) {
+            this.setStatus(`Verificando ${i + 1}/${n} (${this.cards.length} do time)…`)
+            const match = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}`, this.apiKey, { onStatus })
+            await RiotApi.sleep(80)
+
+            const participants = match.info?.participants ?? []
+            if (!participants.find(p => p.puuid === puuid)) {
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
+              continue
+            }
+
+            if (RiotApi.countRosterOnSameTeam(participants, knownPuuids) < 5) {
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
+              continue
+            }
+
+            this.setStatus(`Timeline — partida do time ${this.cards.length + 1}…`)
+            const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}/timeline`, this.apiKey, { onStatus })
+            await RiotApi.sleep(80)
+
+            const stats = extractMatchStats(match, timeline, { knownPuuidSet: knownPuuids, puuidToName })
+            if (!stats) {
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
+              continue
+            }
+
+            summary = {
+              teamComplete: true,
+              ourChamps:   stats.ourChampKeys,
+              enemyChamps: stats.enemyChampKeys,
+              stats,
+            }
+            RiotApi.cache.set(`riot-summary-${matchId}`, summary)
+          }
+
+          if (!summary.teamComplete) continue
+          if ((summary.stats?.duration ?? 99) < 10) continue  // remake
+
+          // Adiciona o card imediatamente — UI atualiza em tempo real
+          this._addCard(matchId, summary, pbMatches)
+        }
+
+        if (!this.cards.length) {
+          this.showResults = false
+          this.setStatus('Nenhuma partida com o time completo encontrada no período.')
+          return
+        }
         this.setStatus('')
-        this._renderResults(details, pbRes.items || [], puuidToName)
 
       } catch (e) {
         this.setStatus(e.message, 'error')
@@ -106,148 +292,220 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    _renderResults(details, pbMatches, puuidToName) {
-      this.matchPairs = []
-      this.cards      = []
-      for (const { riotId, match, timeline, puuid } of details) {
-        const stats = this._extractStats(match, timeline, puuid, puuidToName)
-        if (!stats) continue
-        const pb        = this._findPbMatch(stats, pbMatches)
-        const hasData   = pb && pb.gd_f != null && pb.team_kills != null && !!pb.riot_match_id
-        const canImport = pb && !hasData
-        this.matchPairs.push({ riotId, stats, snapshot: { match, timeline }, pbId: pb?.id ?? null, canImport })
-        this.cards.push({ riotId, stats, pb, hasData, canImport })
+    _buildWeeks(startStr, endStr) {
+      const weeks = []
+      const end = new Date(endStr)
+      end.setHours(23, 59, 59, 999)
+      let cur = new Date(startStr)
+      while (cur <= end) {
+        const weekEnd = new Date(cur)
+        weekEnd.setDate(weekEnd.getDate() + 6)
+        weekEnd.setHours(23, 59, 59, 999)
+        if (weekEnd > end) weekEnd.setTime(end.getTime())
+        weeks.push({
+          startTime: Math.floor(cur.getTime() / 1000),
+          endTime:   Math.floor(weekEnd.getTime() / 1000),
+          label:     cur.toISOString().slice(0, 10),
+        })
+        cur.setDate(cur.getDate() + 7)
       }
-      this.showResults = true
+      return weeks
     },
 
-    _extractStats(match, timeline, puuid, puuidToName) {
-      const info    = match.info
-      const me      = info.participants.find(p => p.puuid === puuid)
-      if (!me) return null
-      const teamId  = me.teamId
-      const allOur  = info.participants.filter(p => p.teamId === teamId)
-      const allEnm  = info.participants.filter(p => p.teamId !== teamId)
-      const ourTeam = info.teams.find(t => t.teamId === teamId)
-      const ourIds  = new Set(allOur.map(p => p.participantId))
-      const dur     = Math.round(info.gameDuration / 60) || 1
+    // ── Cache delegates ──────────────────────────────────────────────────
+    _cacheCount() { return RiotApi.cache.count() },
 
-      const teamKills   = ourTeam.objectives.champion.kills
-      const teamDeaths  = allOur.reduce((s, p) => s + (p.deaths  ?? 0), 0)
-      const teamAssists = allOur.reduce((s, p) => s + (p.assists ?? 0), 0)
-      const totalGold   = allOur.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
-      const damage      = allOur.reduce((s, p) => s + (p.totalDamageDealtToChampions ?? 0), 0)
-      const dmgTaken    = allOur.reduce((s, p) => s + (p.totalDamageTaken ?? 0), 0)
-      const wards       = allOur.reduce((s, p) => s + (p.wardsPlaced ?? 0), 0)
-      const visionScore = allOur.reduce((s, p) => s + (p.visionScore ?? 0), 0)
-      const csTotal     = allOur.reduce((s, p) => s + (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0), 0)
+    clearCache() {
+      const count = RiotApi.cache.clear()
+      this.setStatus(`Cache limpo (${count} entradas removidas).`, 'ok')
+    },
 
-      const o = ourTeam?.objectives
-      const objFlow = o ? [
-        o.tower?.kills ?? 0, o.horde?.kills ?? 0, o.riftHerald?.kills ?? 0,
-        o.dragon?.kills ?? 0, o.baron?.kills ?? 0, o.inhibitor?.kills ?? 0, o.nexus?.kills ?? 0,
-      ].join('/') : ''
+    // Retorna nomes de campeões do registro manual:
+    // prefere player_stats (Riot API key), cai back em our_champs (DDragon display name).
+    _pbChampNames(pb) {
+      if (!pb) return []
+      if (pb.player_stats?.length >= 5) return pb.player_stats.map(p => p.champion)
+      if (pb.our_champs?.length  >= 5) return pb.our_champs
+      return []
+    },
 
-      // Gold diffs from timeline
-      const frames = timeline?.info?.frames
-      const calcGd = (min) => {
-        const f = frames?.[min]
-        if (!f?.participantFrames) return null
-        let our = 0, enm = 0
-        for (const [pid, pf] of Object.entries(f.participantFrames)) {
-          if (ourIds.has(+pid)) our += pf.totalGold ?? 0
-          else                  enm += pf.totalGold ?? 0
-        }
-        return our - enm
-      }
-      let gdF = totalGold - allEnm.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
-      if (frames?.length) {
-        const last = frames[frames.length - 1]
-        if (last?.participantFrames) {
-          let our = 0, enm = 0
-          for (const [pid, pf] of Object.entries(last.participantFrames)) {
-            if (ourIds.has(+pid)) our += pf.totalGold ?? 0
-            else                  enm += pf.totalGold ?? 0
-          }
-          gdF = our - enm
-        }
-      }
+    // ── Add single card (called progressively as each team match is found) ──
+    _addCard(riotId, summary, pbMatches) {
+      const stats = summary.stats
 
-      // Player stats
-      const sorted = [...allOur].sort((a, b) =>
-        (this.POS_ORDER[a.teamPosition] ?? 99) - (this.POS_ORDER[b.teamPosition] ?? 99)
-      )
-      const playerStats = sorted.map(p => {
-        const kda = p.deaths === 0
-          ? (p.kills + p.assists)
-          : Math.round(((p.kills + p.assists) / p.deaths) * 100) / 100
-        return {
-          name:        puuidToName[p.puuid] ?? null,
-          role:        p.teamPosition || p.individualPosition || null,
-          champion:    p.championName,
-          kills:       p.kills       ?? 0,
-          deaths:      p.deaths      ?? 0,
-          assists:     p.assists     ?? 0,
-          cs:          (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0),
-          damage:      p.totalDamageDealtToChampions ?? 0,
-          damageTaken: p.totalDamageTaken ?? 0,
-          gold:        p.goldEarned  ?? 0,
-          visionScore: p.visionScore ?? 0,
-          wardsPlaced: p.wardsPlaced ?? 0,
-          level:       p.champLevel  ?? null,
-          kda,
-          firstBlood:  p.firstBloodKill ?? false,
-        }
+      if (pbMatches.some(m => m.riot_match_id === riotId)) return
+
+      const candidates = this._rankPbCandidates(stats, summary, pbMatches)
+      const best       = candidates[0] ?? null
+      const autoSafe   = best != null && best.confidence >= 3
+      const canImport  = best != null
+
+      this.matchPairs.push({ riotId, stats, pbId: best?.pb?.id ?? null, canImport })
+      const pb = best?.pb ?? null
+      this.cards.push({
+        riotId,
+        stats,
+        summary,
+        pb,
+        confidence:   best?.confidence ?? 0,
+        confLabel:    best?.label ?? 'Sem registro',
+        champScore:   best?.champScore ?? 0,
+        confDetail:   best?.detail ?? '',
+        candidates,
+        hasData:      false,
+        autoSafe,
+        canImport,
+        manualPbId:   best?.pb?.id ?? null,
+        pbChampNames: this._pbChampNames(pb),
+        riotChamps:   stats.playerStats.map(p => ({
+          champion: p.champion,
+          name:     p.name,
+          kda:      `${p.kills}/${p.deaths}/${p.assists}`,
+        })),
       })
-
-      // MVP suggestion
-      let mvp = null, bestMvpScore = -Infinity
-      for (const p of allOur) {
-        const name = puuidToName[p.puuid]
-        if (!name) continue
-        const score = (p.kills ?? 0) * 2 + (p.assists ?? 0) - (p.deaths ?? 0) * 0.5
-        if (score > bestMvpScore) { bestMvpScore = score; mvp = name }
-      }
-
-      // MVC = champion of the MVP player
-      const mvpParticipant = allOur.find(p => puuidToName[p.puuid] === mvp)
-      const mvcChampName   = mvpParticipant?.championName ?? null
-
-      return {
-        team_kills: teamKills, team_deaths: teamDeaths, team_assists: teamAssists,
-        total_gold: totalGold, damage,
-        da_di:        dmgTaken > 0 ? Math.round((damage / dmgTaken) * 100) / 100 : null,
-        gold_per_min: Math.round(totalGold / dur),
-        wards_per_min: Math.round((wards / dur) * 10) / 10,
-        vision_score: visionScore,
-        cs_total: csTotal, cs_per_min: Math.round((csTotal / dur) * 10) / 10,
-        first_blood: ourTeam?.objectives?.champion?.first ?? false,
-        first_tower: ourTeam?.objectives?.tower?.first    ?? false,
-        obj_flow: objFlow,
-        gd_f: gdF, gd_10: calcGd(10), gd_20: calcGd(20),
-        duration: dur,
-        win:  ourTeam.win,
-        side: teamId === 100 ? 'Blue' : 'Red',
-        date: new Date(info.gameStartTimestamp ?? info.gameCreation).toISOString().slice(0, 10),
-        playerStats, mvp, mvcChampName,
-      }
     },
 
-    _findPbMatch(stats, pbMatches) {
-      const exact = pbMatches.filter(m =>
-        m.date?.slice(0,10) === stats.date && m.side === stats.side && m.win === stats.win)
-      if (exact.length === 1) return exact[0]
-      const sameDay = pbMatches.filter(m => m.date?.slice(0,10) === stats.date)
-      if (sameDay.length === 1) return sameDay[0]
-      return null
+    _rankPbCandidates(stats, summary, pbMatches) {
+      const ourNorm   = (summary.ourChamps   ?? stats.ourChampKeys ?? stats.playerStats.map(p => p.champion))
+        .map(normChampKey).filter(Boolean)
+      const enemyNorm = (summary.enemyChamps ?? stats.enemyChampKeys ?? [])
+        .map(normChampKey).filter(Boolean)
+
+      return pbMatches
+        .filter(m => !m.riot_match_id)
+        .map(m => {
+          const pbChamps = this._pbChampNames(m).map(normChampKey).filter(Boolean)
+          let champScore = 0
+          if (pbChamps.length === 5) {
+            champScore = ourNorm.filter(c => pbChamps.includes(c)).length
+          }
+
+          const dateDiff = Math.abs(
+            new Date(m.date?.slice(0,10)).getTime() - new Date(stats.date).getTime()
+          ) / 86400000
+          const sideMatch = m.side === stats.side
+          const winMatch  = m.win  === stats.win
+
+          let confidence, label, detail
+          if (champScore === 5) {
+            confidence = 4; label = 'Garantido'; detail = ''
+          } else if (champScore >= 3) {
+            confidence = 3; label = 'Alta confiança'
+            detail = `Campeões: ${champScore}/5 coincidem — faltam ${5 - champScore} para Garantido`
+          } else if (champScore >= 2) {
+            confidence = 2; label = 'Confiança média'
+            const missing = ourNorm.filter(c => !pbChamps.includes(c))
+            detail = `Campeões: ${champScore}/5 coincidem — falta 1 para Alta confiança`
+                   + (missing.length ? ` (sem match: ${missing.join(', ')})` : '')
+          } else if (dateDiff === 0 && sideMatch && winMatch) {
+            if (pbChamps.length === 5 && champScore === 0) {
+              confidence = 1; label = 'Baixa confiança'
+              detail = 'Data, lado e vitória coincidem — campeões no registro não correspondem (verifique)'
+            } else if (pbChamps.length === 5 && champScore === 1) {
+              confidence = 2; label = 'Confiança média'
+              detail = `Data, lado e vitória coincidem — apenas 1/5 campeões correspondem`
+            } else {
+              confidence = 3; label = 'Alta confiança'
+              if (pbChamps.length === 0) {
+                detail = 'Data, lado e vitória coincidem — sem campeões no registro para confirmar'
+              } else {
+                detail = `Data, lado e vitória coincidem — campeões incompletos no registro (${pbChamps.length}/5 preenchidos)`
+              }
+            }
+          } else if (dateDiff <= 1 && sideMatch && winMatch) {
+            confidence = 2; label = 'Confiança média'
+            detail = `Data ±1 dia — Riot: ${stats.date} · Manual: ${m.date?.slice(0,10)} (possível virada de meia-noite)`
+          } else if (dateDiff <= 1 && (sideMatch || winMatch)) {
+            confidence = 1; label = 'Baixa confiança'
+            const sideTxt = !sideMatch ? `lado diverge (Riot: ${stats.side} · Manual: ${m.side ?? '—'})` : null
+            const winTxt  = !winMatch  ? `vitória diverge (Riot: ${stats.win ? 'V' : 'D'} · Manual: ${m.win ? 'V' : 'D'})` : null
+            detail = [sideTxt, winTxt].filter(Boolean).join(' · ')
+          } else {
+            confidence = 0; label = 'Sem sinal'; detail = ''
+          }
+
+          return { pb: m, confidence, label, detail, champScore, dateDiff, sideMatch, winMatch }
+        })
+        .filter(c => c.confidence > 0)
+        .sort((a, b) => b.confidence - a.confidence)
     },
 
-    // ── Import ─────────────────────────────────────────────────────────────
+    pbSelectOptions(card) {
+      const riotNorms = card.riotChamps.map(r => normChampKey(r.champion))
+      const fmt = m => {
+        const gameN = m.game_n != null ? `J${m.game_n}` : '—'
+        const date  = m.date?.slice(0,10) ?? '—'
+        const wr    = m.win ? 'V' : 'D'
+        const side  = m.side ?? '—'
+        const dur   = m.duration ? ` · ${m.duration}min` : ''
+        return `${gameN} · ${date} · ${wr} · ${side}${dur}`
+      }
+      const champHint = m => {
+        const champs = this._pbChampNames(m)
+        if (!champs.length) return ''
+        const hits = champs.filter(c => riotNorms.includes(normChampKey(c))).length
+        return ` · ${hits}/5 champs`
+      }
+      const candIds = new Set(card.candidates.map(c => c.pb.id))
+      return [
+        ...card.candidates.map(c => ({ id: c.pb.id, label: `[${c.label}${champHint(c.pb)}] ${fmt(c.pb)}` })),
+        ...this.unpairedPbMatches.filter(m => !candIds.has(m.id)).map(m => ({ id: m.id, label: fmt(m) })),
+      ]
+    },
+
+    selectPb(card) {
+      const pbId = card.manualPbId
+      const pair = this.matchPairs.find(p => p.riotId === card.riotId)
+
+      if (!pbId) {
+        card.pb         = null
+        card.confidence = 0
+        card.confLabel  = 'Sem registro'
+        card.canImport  = false
+        card.autoSafe   = false
+        if (pair) { pair.pbId = null; pair.canImport = false }
+        return
+      }
+
+      const cand = card.candidates.find(c => c.pb.id === pbId)
+      if (cand) {
+        card.pb         = cand.pb
+        card.confidence = cand.confidence
+        card.confLabel  = cand.label
+        card.confDetail = cand.detail ?? ''
+        card.champScore = cand.champScore
+      } else {
+        card.pb         = this.unpairedPbMatches.find(m => m.id === pbId) ?? null
+        card.confidence = 0
+        card.confLabel  = 'Manual'
+        card.confDetail = ''
+        card.champScore = 0
+      }
+
+      card.pbChampNames = this._pbChampNames(card.pb)
+      card.canImport = true
+      card.autoSafe  = card.confidence >= 3
+      if (pair) { pair.pbId = pbId; pair.canImport = true }
+    },
+
+    // ── Import — full JSON fetched here, never cached in localStorage ──────
     async importSingle(riotId) {
       const pair = this.matchPairs.find(p => p.riotId === riotId)
-      if (!pair?.pbId) return
+      const card = this.cards.find(c => c.riotId === riotId)
+      const pbId = card?.manualPbId ?? pair?.pbId ?? null
+      if (!pbId || !pair) return
+
+      const base     = RiotApi.baseUrl(this.region)
+      const onStatus = m => this.setStatus(m)
+      this.setStatus('Baixando dados completos para importar…')
       try {
-        await this._patchPb(pair.pbId, riotId, pair.stats, pair.snapshot)
+        const match    = await RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}`, this.apiKey, { onStatus })
+        await RiotApi.sleep(80)
+        const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}/timeline`, this.apiKey, { onStatus })
+
+        const payload = RiotApi.buildMatchPayload(pair.stats, { riotId, snapshot: { match, timeline } })
+        await api.col('matches').update(pbId, payload)
+
         this.setStatus('Importado. Atualizando…', 'ok')
         await this.loadMissing()
         await this.fetchMatches()
@@ -255,61 +513,28 @@ document.addEventListener('alpine:init', () => {
     },
 
     async importAll() {
-      const toImport = this.matchPairs.filter(p => p.canImport && p.pbId)
-      if (!toImport.length) { this.setStatus('Nenhuma partida identificada para importar.'); return }
-      this.setStatus(`Importando ${toImport.length} partidas…`)
+      const safeCards = this.cards.filter(c => c.autoSafe && c.manualPbId && !c.hasData)
+      if (!safeCards.length) { this.setStatus('Nenhuma partida segura para importar automaticamente.'); return }
+      this.setStatus(`Baixando e importando ${safeCards.length} partidas…`)
       try {
-        for (const pair of toImport) {
-          await this._patchPb(pair.pbId, pair.riotId, pair.stats, pair.snapshot)
-          await this._sleep(50)
+        const base     = RiotApi.baseUrl(this.region)
+        const onStatus = m => this.setStatus(m)
+        for (const card of safeCards) {
+          const pair = this.matchPairs.find(p => p.riotId === card.riotId)
+          if (!pair) continue
+          this.setStatus(`Importando ${card.riotId.slice(-6)}…`)
+          const match    = await RiotApi.fetch(`${base}/lol/match/v5/matches/${card.riotId}`, this.apiKey, { onStatus })
+          await RiotApi.sleep(80)
+          const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${card.riotId}/timeline`, this.apiKey, { onStatus })
+
+          const payload = RiotApi.buildMatchPayload(pair.stats, { riotId: card.riotId, snapshot: { match, timeline } })
+          await api.col('matches').update(card.manualPbId, payload)
+          await RiotApi.sleep(80)
         }
-        this.setStatus(`Concluído — ${toImport.length} partidas importadas.`, 'ok')
+        this.setStatus(`Concluído — ${safeCards.length} partidas importadas.`, 'ok')
         await this.loadMissing()
         await this.fetchMatches()
       } catch (e) { this.setStatus(e.message, 'error') }
-    },
-
-    async _patchPb(id, riotId, stats, snapshot) {
-      const payload = {
-        riot_match_id:       riotId,
-        riot_match_snapshot: stripSnapshot(snapshot),
-        player_stats:        stats.playerStats,
-        team_kills:          stats.team_kills,
-        team_deaths:         stats.team_deaths,
-        team_assists:        stats.team_assists,
-        total_gold:          stats.total_gold,
-        damage:              stats.damage,
-        da_di:               stats.da_di,
-        gold_per_min:        stats.gold_per_min,
-        wards_per_min:       stats.wards_per_min,
-        vision_score:        stats.vision_score,
-        cs_total:            stats.cs_total,
-        cs_per_min:          stats.cs_per_min,
-        first_blood:         stats.first_blood,
-        first_tower:         stats.first_tower,
-        obj_flow:            stats.obj_flow,
-        gd_f:                stats.gd_f,
-        gd_10:               stats.gd_10,
-        gd_20:               stats.gd_20,
-        duration:            stats.duration,
-      }
-      if (stats.mvp) payload.mvp = stats.mvp
-
-      const res = await fetch(`${PB}/api/collections/matches/records/${id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
-      })
-      if (!res.ok) throw new Error(`Falha ao salvar registro ${id}: ${res.status}`)
-    },
-
-    async _riotFetch(url) {
-      const res = await fetch(url, { headers: { 'X-Riot-Token': this.apiKey } })
-      if (res.status === 403) throw new Error('Chave de API inválida ou expirada.')
-      if (res.status === 404) throw new Error('Conta não encontrada.')
-      if (res.status === 429) throw new Error('Limite de requisições atingido. Aguarde e tente novamente.')
-      if (!res.ok) throw new Error(`Erro na API da Riot: ${res.status}`)
-      return res.json()
     },
 
     // ── Helpers ────────────────────────────────────────────────────────────
@@ -324,6 +549,5 @@ document.addEventListener('alpine:init', () => {
 
     fmtGdf(v)  { return (v >= 0 ? '+' : '') + v.toLocaleString('en') },
     gdfCls(v)  { return v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-400' },
-    _sleep(ms) { return new Promise(r => setTimeout(r, ms)) },
   }))
 })

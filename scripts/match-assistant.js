@@ -1,6 +1,3 @@
-const RIOT_BASE = 'https://americas.api.riotgames.com'
-const POS_ORDER = { TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4 }
-
 // ── Drawer HTML injected before </body> on any page that includes this script ─
 ;(() => {
   const drawer = document.createElement('div')
@@ -147,7 +144,6 @@ document.addEventListener('alpine:init', () => {
     loading:    false,
     status:     '',
     cards:      [],
-    puuids:     {},   // riot_id → puuid (session cache)
 
     saveKey() {
       localStorage.setItem('riot-api-key', this.apiKey)
@@ -165,72 +161,47 @@ document.addEventListener('alpine:init', () => {
       this.fetch()
     },
 
+    // ── Lazy-load snapshot on demand ────────────────────────────────────
+    async _ensureSnapshot(card) {
+      if (card._snapshot) return card._snapshot
+      const base = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
+      const [match, timeline] = await Promise.all([
+        RiotApi.fetch(`${base}/lol/match/v5/matches/${card.matchId}`, this.apiKey),
+        RiotApi.fetch(`${base}/lol/match/v5/matches/${card.matchId}/timeline`, this.apiKey),
+      ])
+      card._snapshot = { match, timeline }
+      return card._snapshot
+    },
+
     // Apply card: dispatch event (caught by matchForm if present) + localStorage fallback
-    use(card) {
+    async use(card) {
+      try {
+        await this._ensureSnapshot(card)
+      } catch (e) {
+        console.error('[match-assistant] Falha ao buscar snapshot:', e)
+      }
       const { _snapshot, ...prefill } = card
       if (location.pathname.includes('match-form')) {
-        // Already on the form — pass snapshot inline so it doesn't leak to the next session
         window.dispatchEvent(new CustomEvent('apply-match', { detail: { ...prefill, _snapshot }, bubbles: true }))
       } else {
         localStorage.setItem('match-assistant-prefill', JSON.stringify(prefill))
-        if (_snapshot) localStorage.setItem('match-assistant-snapshot', JSON.stringify(_snapshot))
+        if (_snapshot) {
+          try {
+            localStorage.setItem('match-assistant-snapshot', JSON.stringify(stripSnapshot(_snapshot)))
+          } catch (e) {
+            console.warn('[match-assistant] Falha ao salvar snapshot no localStorage:', e)
+          }
+        }
         window.dispatchEvent(new CustomEvent('apply-match', { detail: prefill, bubbles: true }))
         location.href = '/pages/match-form.html'
       }
       this.open = false
     },
 
-    // ── Riot API fetch helper ─────────────────────────────────────────────
-    async _riotFetch(url) {
-      const res = await fetch(url, { headers: { 'X-Riot-Token': this.apiKey } })
-      if (res.status === 401 || res.status === 403) this.keyExpired = true
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(`Riot API ${res.status}: ${body?.status?.message ?? url}`)
-      }
-      return res.json()
-    },
-
-    // ── Resolve PUUID: session cache → DB cache → Riot API (saves back) ───
-    async _resolvePuuid(player) {
-      if (this.puuids[player.riot_id])  return this.puuids[player.riot_id]
-      if (player.puuid) {
-        this.puuids[player.riot_id] = player.puuid
-        return player.puuid
-      }
-      const [gameName, tagLine] = player.riot_id.split('#')
-      const data = await this._riotFetch(
-        `${RIOT_BASE}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`
-      )
-      this.puuids[player.riot_id] = data.puuid
-      api.col('players').update(player.id, { puuid: data.puuid }).catch(() => {})
-      return data.puuid
-    },
-
-    async _fetchMatchIds(puuid, count = 20, extra = '') {
-      return this._riotFetch(
-        `${RIOT_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?count=${count}${extra}`
-      )
-    },
-
-    _countRosterOnSameTeam(participants, knownPuuidSet) {
-      const counts = {}
-      for (const p of participants) {
-        if (knownPuuidSet.has(p.puuid)) counts[p.teamId] = (counts[p.teamId] ?? 0) + 1
-      }
-      const vals = Object.values(counts)
-      return vals.length ? Math.max(...vals) : 0
-    },
-
-    _findOurTeam(info, knownPuuidSet) {
-      const our = info.participants?.find(p => knownPuuidSet.has(p.puuid))
-      return info.teams?.find(t => t.teamId === our?.teamId) ?? null
-    },
-
-    _buildPuuidToName(roster) {
+    _buildPuuidToName(roster, puuidMap) {
       const map = {}
       for (const m of roster) {
-        const puuid = this.puuids[m.riot_id] ?? m.puuid
+        const puuid = puuidMap?.[m.riot_id] ?? m.puuid
         if (puuid) map[puuid] = m.name
       }
       return map
@@ -250,12 +221,12 @@ document.addEventListener('alpine:init', () => {
         }
       } catch (e) {
         console.error(e)
+        if (e.expired) this.keyExpired = true
         this.status = 'Erro: ' + e.message
       }
       this.loading = false
     },
 
-    // ── Edit mode: date-filtered, minimal API calls ───────────────────────
     // ── Load already-associated Riot matchIds from PocketBase ────────────
     async _loadAssociatedMatchIds() {
       try {
@@ -266,22 +237,94 @@ document.addEventListener('alpine:init', () => {
         })
         return new Set(res.items.map(m => m.riot_match_id))
       } catch (e) {
-        return new Set()   // graceful fallback — never block the search
+        return new Set()
       }
     },
 
+    // ── Resolve roster PUUIDs via RiotApi ────────────────────────────────
+    // Returns { puuids: string[], puuidMap: { riot_id → puuid } }
+    async _resolveRoster(roster) {
+      const base    = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
+      const results = await Promise.allSettled(
+        roster.map(m => RiotApi.resolvePuuid(m.riot_id, this.apiKey, base, {
+          playerId:      m.id,
+          existingPuuid: m.puuid,
+        }))
+      )
+      const puuids   = []
+      const puuidMap = {}
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i]
+        if (r.status === 'fulfilled' && r.value) {
+          puuids.push(r.value)
+          puuidMap[roster[i].riot_id] = r.value
+        } else if (r.status === 'rejected' && r.reason?.expired) {
+          this.keyExpired = true
+        }
+      }
+      return { puuids, puuidMap }
+    },
+
+    // ── Process a single match ID → card (with cache awareness) ─────────
+    async _processMatchId(matchId, knownPuuidSet, puuidToName, opts = {}) {
+      const base = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
+
+      // Check summary cache first (shared with import-tool)
+      const cached = RiotApi.cache.get(`riot-summary-${matchId}`)
+      if (cached) {
+        if (!cached.teamComplete) return null   // already known to be non-team match
+        if (cached.stats) {
+          // Win filter in edit mode
+          if (opts.winFilter != null && cached.stats.win !== opts.winFilter) return null
+          return this._buildCardFromStats(matchId, cached.stats)
+        }
+      }
+
+      // Fetch match data from API
+      const match    = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}`, this.apiKey)
+      const teamSize = RiotApi.countRosterOnSameTeam(match.info?.participants ?? [], knownPuuidSet)
+      if (teamSize < 5) {
+        RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now() })
+        return null
+      }
+
+      // Win filter in edit mode
+      if (opts.winFilter != null) {
+        const our = match.info?.participants?.find(p => knownPuuidSet.has(p.puuid))
+        const ourTeam = match.info?.teams?.find(t => t.teamId === our?.teamId)
+        if (ourTeam?.win !== opts.winFilter) return null
+      }
+
+      await RiotApi.sleep(80)
+      const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}/timeline`, this.apiKey)
+      const stats = extractMatchStats(match, timeline, { knownPuuidSet, puuidToName })
+      if (!stats) return null
+
+      // Cache the summary for future use
+      const ourChampKeys   = stats.ourChampKeys ?? []
+      const enemyChampKeys = stats.enemyChampKeys ?? []
+      RiotApi.cache.set(`riot-summary-${matchId}`, {
+        teamComplete: true,
+        stats,
+        ourChamps: ourChampKeys,
+        enemyChamps: enemyChampKeys,
+        _ts: Date.now(),
+      })
+
+      return this._buildCardFromStats(matchId, stats)
+    },
+
+    // ── Edit mode: date-filtered, minimal API calls ───────────────────────
     async _fetchEdit() {
       this.status = 'Carregando jogadores…'
       const playersRes = await api.col('players').list({ perPage: 50, filter: 'riot_id != ""' })
       const roster     = playersRes.items
       if (!roster.length) { this.status = 'Nenhum jogador com riot_id no banco.'; return }
 
-      // Resolve all PUUIDs in parallel (needed for union ID search)
       this.status = 'Resolvendo contas…'
-      const puuidResults  = await Promise.allSettled(roster.map(m => this._resolvePuuid(m)))
-      const knownPuuids   = puuidResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean)
+      const { puuids: knownPuuids, puuidMap } = await this._resolveRoster(roster)
       const knownPuuidSet = new Set(knownPuuids)
-      const puuidToName   = this._buildPuuidToName(roster)
+      const puuidToName   = this._buildPuuidToName(roster, puuidMap)
       if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
 
       // Date ± 1 day → Unix seconds
@@ -289,11 +332,13 @@ document.addEventListener('alpine:init', () => {
       const startTime = Math.floor((base.getTime() - 86400000) / 1000)
       const endTime   = Math.floor((base.getTime() + 86400000) / 1000)
 
-      // Fetch IDs for ALL players in parallel → union (handles subs / roster changes)
+      const riotBase = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
+
+      // Fetch IDs for ALL players in parallel → union
       this.status = 'Buscando partidas no período…'
       const idResults = await Promise.allSettled(
         knownPuuids.map(p =>
-          this._riotFetch(`${RIOT_BASE}/lol/match/v5/matches/by-puuid/${p}/ids?startTime=${startTime}&endTime=${endTime}&count=20`)
+          RiotApi.fetch(`${riotBase}/lol/match/v5/matches/by-puuid/${p}/ids?startTime=${startTime}&endTime=${endTime}&count=20`, this.apiKey)
         )
       )
       const seen = new Set()
@@ -308,24 +353,12 @@ document.addEventListener('alpine:init', () => {
 
       for (let i = 0; i < ids.length; i++) {
         this.status = `Verificando ${i + 1}/${ids.length}…`
-        if (associated.has(ids[i])) continue   // já associada a outra partida
+        if (associated.has(ids[i])) continue
         try {
-          const match    = await this._riotFetch(`${RIOT_BASE}/lol/match/v5/matches/${ids[i]}`)
-          const teamSize = this._countRosterOnSameTeam(match.info?.participants ?? [], knownPuuidSet)
-          if (teamSize < 5) { await new Promise(r => setTimeout(r, 50)); continue }
-
-          // Win filter when available
-          if (this.filters.win != null) {
-            const ourTeam = this._findOurTeam(match.info, knownPuuidSet)
-            if (ourTeam?.win !== this.filters.win) { await new Promise(r => setTimeout(r, 50)); continue }
-          }
-
-          await new Promise(r => setTimeout(r, 80))
-          const timeline = await this._riotFetch(`${RIOT_BASE}/lol/match/v5/matches/${ids[i]}/timeline`)
-          const card = this._buildCard(match, timeline, knownPuuidSet, puuidToName)
+          const card = await this._processMatchId(ids[i], knownPuuidSet, puuidToName, { winFilter: this.filters.win })
           if (card) this.cards.push(card)
         } catch (e) { console.warn('Skipping', ids[i], e.message) }
-        await new Promise(r => setTimeout(r, 80))
+        await RiotApi.sleep(80)
       }
 
       this.status = this.cards.length
@@ -341,14 +374,18 @@ document.addEventListener('alpine:init', () => {
       if (!roster.length) { this.status = 'Nenhum jogador com riot_id no banco.'; return }
 
       this.status = 'Resolvendo contas…'
-      const puuidResults = await Promise.allSettled(roster.map(m => this._resolvePuuid(m)))
-      const knownPuuids  = puuidResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean)
+      const { puuids: knownPuuids, puuidMap } = await this._resolveRoster(roster)
       const knownPuuidSet = new Set(knownPuuids)
-
       if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
 
+      const riotBase = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
+
       this.status = 'Buscando partidas recentes…'
-      const idResults = await Promise.allSettled(knownPuuids.map(p => this._fetchMatchIds(p, 20)))
+      const idResults = await Promise.allSettled(
+        knownPuuids.map(p =>
+          RiotApi.fetch(`${riotBase}/lol/match/v5/matches/by-puuid/${p}/ids?count=20`, this.apiKey)
+        )
+      )
 
       const seen   = new Set()
       const allIds = []
@@ -361,23 +398,17 @@ document.addEventListener('alpine:init', () => {
 
       if (!allIds.length) { this.status = 'Nenhuma partida encontrada.'; return }
 
-      const puuidToName = this._buildPuuidToName(roster)
+      const puuidToName = this._buildPuuidToName(roster, puuidMap)
       const associated  = await this._loadAssociatedMatchIds()
 
       for (let i = 0; i < allIds.length; i++) {
         this.status = `Verificando ${i + 1}/${allIds.length}…`
-        if (associated.has(allIds[i])) continue   // already logged
+        if (associated.has(allIds[i])) continue
         try {
-          const match    = await this._riotFetch(`${RIOT_BASE}/lol/match/v5/matches/${allIds[i]}`)
-          const teamSize = this._countRosterOnSameTeam(match.info?.participants ?? [], knownPuuidSet)
-          if (teamSize < 5) { await new Promise(r => setTimeout(r, 50)); continue }
-
-          await new Promise(r => setTimeout(r, 80))
-          const timeline = await this._riotFetch(`${RIOT_BASE}/lol/match/v5/matches/${allIds[i]}/timeline`)
-          const card = this._buildCard(match, timeline, knownPuuidSet, puuidToName)
+          const card = await this._processMatchId(allIds[i], knownPuuidSet, puuidToName)
           if (card) this.cards.push(card)
         } catch (e) { console.warn('Skipping', allIds[i], e.message) }
-        await new Promise(r => setTimeout(r, 80))
+        await RiotApi.sleep(80)
       }
 
       this.status = this.cards.length
@@ -385,46 +416,8 @@ document.addEventListener('alpine:init', () => {
         : 'Nenhuma partida com 5 membros do time encontrada.'
     },
 
-    // ── Sort participants by lane position ────────────────────────────────
-    _sortByPosition(participants) {
-      return [...participants].sort((a, b) => {
-        const ai = POS_ORDER[a.teamPosition] ?? POS_ORDER[a.individualPosition] ?? 99
-        const bi = POS_ORDER[b.teamPosition] ?? POS_ORDER[b.individualPosition] ?? 99
-        return ai - bi
-      })
-    },
-
-    _calcGdAtMinute(timeline, ourParticipantIds, minute) {
-      const frames = timeline?.info?.frames
-      if (!frames || frames.length <= minute) return null
-      const frame = frames[minute]
-      if (!frame?.participantFrames) return null
-      const ourSet = new Set(ourParticipantIds)
-      let ourGold = 0, enemyGold = 0
-      for (const [pidStr, pf] of Object.entries(frame.participantFrames)) {
-        const pid = parseInt(pidStr, 10)
-        if (ourSet.has(pid)) ourGold += pf.totalGold ?? 0
-        else                 enemyGold += pf.totalGold ?? 0
-      }
-      return ourGold - enemyGold
-    },
-
-    _buildObjFlow(teamObj) {
-      if (!teamObj) return ''
-      const t  = teamObj.tower?.kills      ?? 0
-      const v  = teamObj.horde?.kills      ?? 0
-      const g  = teamObj.riftHerald?.kills ?? 0
-      const d  = teamObj.dragon?.kills     ?? 0
-      const b  = teamObj.baron?.kills      ?? 0
-      const ih = teamObj.inhibitor?.kills  ?? 0
-      const n  = teamObj.nexus?.kills      ?? 0
-      return `${t}/${v}/${g}/${d}/${b}/${ih}/${n}`
-    },
-
+    // _resolveChamp: DDragon key → {name, key} for UI display
     _resolveChamp(championId) {
-      // Riot API returns the internal DDragon id (e.g. "AurelionSol", "Nunu", "DrMundo").
-      // Match by key first (exact), then name, then case-insensitive key for edge cases
-      // like "FiddleSticks" (Riot) vs "Fiddlesticks" (DDragon).
       const id = championId ?? ''
       const lower = id.toLowerCase()
       const found = Alpine.store('champions').list.find(c => c.key === id)
@@ -433,134 +426,42 @@ document.addEventListener('alpine:init', () => {
       return { name: found?.name ?? id, key: found?.key ?? id }
     },
 
-    _identifyTopPlayer(sortedOurParticipants, puuidToName) {
-      for (const p of sortedOurParticipants) {
-        const pos = p.teamPosition || p.individualPosition
-        if (pos === 'TOP') return puuidToName[p.puuid] ?? ''
-      }
-      return ''
-    },
-
-    _suggestMvp(ourParticipants, puuidToName) {
-      let best = null, bestScore = -Infinity
-      for (const p of ourParticipants) {
-        const name = puuidToName[p.puuid]
-        if (!name) continue
-        const score = (p.kills ?? 0) * 2 + (p.assists ?? 0) - (p.deaths ?? 0) * 0.5
-        if (score > bestScore) { bestScore = score; best = name }
-      }
-      return best ?? ''
-    },
-
-    _buildCard(match, timeline, knownPuuidSet, puuidToName) {
-      const info = match?.info
-      if (!info) return null
-
-      const participants    = info.participants ?? []
-      const ourParticipants = participants.filter(p => knownPuuidSet.has(p.puuid))
-      if (!ourParticipants.length) return null
-
-      const ourTeamId = ourParticipants[0].teamId
-      const ourTeam   = info.teams?.find(t => t.teamId === ourTeamId)
-      const allOur    = participants.filter(p => p.teamId === ourTeamId)
-      const allEnemy  = participants.filter(p => p.teamId !== ourTeamId)
-      const ourParticipantIds = allOur.map(p => p.participantId)
-
-      const win      = ourTeam?.win ?? false
-      const side     = ourTeamId === 100 ? 'Blue' : 'Red'
-      const date     = info.gameStartTimestamp
-        ? new Date(info.gameStartTimestamp).toISOString().slice(0, 10)
-        : ''
-      const duration = info.gameDuration ? Math.round(info.gameDuration / 60) : null
-
-      const sortedOur   = this._sortByPosition(allOur)
-      const sortedEnemy = this._sortByPosition(allEnemy)
-      const ourChamps   = sortedOur.map(p => this._resolveChamp(p.championName))
-      const enemyChamps = sortedEnemy.map(p => this._resolveChamp(p.championName))
-
-      const gd10 = this._calcGdAtMinute(timeline, ourParticipantIds, 10)
-      const gd20 = this._calcGdAtMinute(timeline, ourParticipantIds, 20)
-
-      let gdF = null
-      const frames = timeline?.info?.frames
-      if (frames?.length) {
-        const last   = frames[frames.length - 1]
-        const ourSet = new Set(ourParticipantIds)
-        if (last?.participantFrames) {
-          let ourG = 0, enmG = 0
-          for (const [pidStr, pf] of Object.entries(last.participantFrames)) {
-            const pid = parseInt(pidStr, 10)
-            if (ourSet.has(pid)) ourG += pf.totalGold ?? 0
-            else                 enmG += pf.totalGold ?? 0
-          }
-          gdF = ourG - enmG
-        }
-      }
-
-      const teamKills  = allOur.reduce((s, p) => s + (p.kills   ?? 0), 0)
-      const teamDeaths = allOur.reduce((s, p) => s + (p.deaths  ?? 0), 0)
-      const teamAssists = allOur.reduce((s, p) => s + (p.assists ?? 0), 0)
-      const totalGold  = allOur.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
-      const damage     = allOur.reduce((s, p) => s + (p.totalDamageDealtToChampions ?? 0), 0)
-      const goldPerMin = duration ? Math.round(totalGold / duration) : null
-
-      const totalWards  = allOur.reduce((s, p) => s + (p.wardsPlaced ?? 0), 0)
-      const wardsPerMin = duration ? Math.round((totalWards / duration) * 10) / 10 : null
-
-      const damageTaken = allOur.reduce((s, p) => s + (p.totalDamageTaken ?? 0), 0)
-      const dadi = damageTaken > 0 ? Math.round((damage / damageTaken) * 100) / 100 : null
-
-      const visionScore = allOur.reduce((s, p) => s + (p.visionScore ?? 0), 0)
-      const csTotal     = allOur.reduce((s, p) => s + (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0), 0)
-      const csPerMin    = duration ? Math.round((csTotal / duration) * 10) / 10 : null
-      const firstBlood  = ourTeam?.objectives?.champion?.first ?? false
-      const firstTower  = ourTeam?.objectives?.tower?.first    ?? false
-
-      const playerStats = allOur.map(p => {
-        const champ = this._resolveChamp(p.championName)
-        const kda = p.deaths === 0
-          ? (p.kills + p.assists)
-          : Math.round(((p.kills + p.assists) / p.deaths) * 100) / 100
-        return {
-          name:        puuidToName[p.puuid] ?? null,
-          role:        p.teamPosition || p.individualPosition || null,
-          champion:    champ.name,
-          kills:       p.kills       ?? 0,
-          deaths:      p.deaths      ?? 0,
-          assists:     p.assists     ?? 0,
-          cs:          (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0),
-          damage:      p.totalDamageDealtToChampions ?? 0,
-          damageTaken: p.totalDamageTaken ?? 0,
-          gold:        p.goldEarned  ?? 0,
-          visionScore: p.visionScore ?? 0,
-          wardsPlaced: p.wardsPlaced ?? 0,
-          level:       p.champLevel  ?? null,
-          kda,
-          firstBlood:  p.firstBloodKill ?? false,
-        }
-      })
-
-      const objFlow   = this._buildObjFlow(ourTeam?.objectives)
-      const topPlayer    = this._identifyTopPlayer(sortedOur, puuidToName)
-      const mvp          = this._suggestMvp(allOur, puuidToName)
-      const mvpParticipant = allOur.find(p => puuidToName[p.puuid] === mvp)
-      const mvcChamp     = mvpParticipant ? this._resolveChamp(mvpParticipant.championName) : null
+    _buildCardFromStats(matchId, stats) {
+      const ourChamps   = (stats.ourChampKeys ?? []).map(k => this._resolveChamp(k))
+      const enemyChamps = (stats.enemyChampKeys ?? []).map(k => this._resolveChamp(k))
+      const mvcChamp    = stats.mvcChampKey ? this._resolveChamp(stats.mvcChampKey) : null
 
       return {
-        matchId: match.metadata?.matchId ?? '',
-        date, win, side, duration,
-        ourChamps, enemyChamps,
-        topPlayer, mvp,
+        matchId,
+        date:         stats.date,
+        win:          stats.win,
+        side:         stats.side,
+        duration:     stats.duration,
+        ourChamps,
+        enemyChamps,
+        topPlayer:    stats.topPlayer,
+        mvp:          stats.mvp,
         mvcChampName: mvcChamp?.name ?? '',
         mvcChampKey:  mvcChamp?.key  ?? '',
-        teamKills, teamDeaths, teamAssists,
-        gd10, gd20, gdF,
-        totalGold, goldPerMin, damage, dadi, wardsPerMin,
-        visionScore, csTotal, csPerMin,
-        firstBlood, firstTower,
-        objFlow,
-        playerStats,
-        _snapshot: { match, timeline },
+        teamKills:    stats.team_kills,
+        teamDeaths:   stats.team_deaths,
+        teamAssists:  stats.team_assists,
+        gd10:         stats.gd_10,
+        gd20:         stats.gd_20,
+        gdF:          stats.gd_f,
+        totalGold:    stats.total_gold,
+        goldPerMin:   stats.gold_per_min,
+        damage:       stats.damage,
+        dadi:         stats.da_di,
+        wardsPerMin:  stats.wards_per_min,
+        visionScore:  stats.vision_score,
+        csTotal:      stats.cs_total,
+        csPerMin:     stats.cs_per_min,
+        firstBlood:   stats.first_blood,
+        firstTower:   stats.first_tower,
+        objFlow:      stats.obj_flow,
+        playerStats:  stats.playerStats,
+        _snapshot:    null,   // lazy-loaded on use()
       }
     },
 

@@ -6,6 +6,7 @@
   <title>Detalhes da Partida – Clash Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/riot-api.js"></script>
   <style>
     .jv-key    { color: #94a3b8; }
     .jv-str    { color: #86efac; }
@@ -183,148 +184,40 @@
         },
 
         // ── Repair missing snapshot ────────────────────────────────────────
-        _clusterFromMatchId(matchId) {
-          const CLUSTER = {
-            BR1:'americas', NA1:'americas', LAN:'americas', LAS:'americas',
-            EUW1:'europe',  EUNE1:'europe', TR1:'europe',   RU:'europe',
-            KR:'asia',      JP1:'asia',
-            OC1:'sea',      PH2:'sea',      SG2:'sea',      TH2:'sea', TW2:'sea', VN2:'sea',
-          }
-          return CLUSTER[matchId.split('_')[0]] ?? 'americas'
-        },
-
         async repairSnapshot() {
           if (!this.apiKey || this.repairing) return
           localStorage.setItem('riot-api-key', this.apiKey)
           this.repairing = true
           this.repairStatus = 'Buscando partida…'
           try {
-            const base    = `https://${this._clusterFromMatchId(this.match.riot_match_id)}.api.riotgames.com`
-            const headers = { 'X-Riot-Token': this.apiKey }
-            const riotId  = this.match.riot_match_id
+            const riotId = this.match.riot_match_id
+            const base   = RiotApi.baseUrl(RiotApi.clusterFromMatchId(riotId))
 
             const [match, timeline] = await Promise.all([
-              fetch(`${base}/lol/match/v5/matches/${riotId}`, { headers }).then(r => { if (!r.ok) throw new Error(`Riot ${r.status}`); return r.json() }),
-              fetch(`${base}/lol/match/v5/matches/${riotId}/timeline`, { headers }).then(r => { if (!r.ok) throw new Error(`Riot ${r.status}`); return r.json() }),
+              RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}`, this.apiKey),
+              RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}/timeline`, this.apiKey),
             ])
 
             this.repairStatus = 'Calculando estatísticas…'
-            const info      = match.info
-            const ourTeamId = this.match.side === 'Blue' ? 100 : 200
-            const allOur    = info.participants.filter(p => p.teamId === ourTeamId)
-            const ourTeam   = info.teams.find(t => t.teamId === ourTeamId)
-            const ourIds    = new Set(allOur.map(p => p.participantId))
-            const dur       = Math.round(info.gameDuration / 60) || 1
-
-            const totalGold   = allOur.reduce((s, p) => s + (p.goldEarned ?? 0), 0)
-            const damage      = allOur.reduce((s, p) => s + (p.totalDamageDealtToChampions ?? 0), 0)
-            const dmgTaken    = allOur.reduce((s, p) => s + (p.totalDamageTaken ?? 0), 0)
-            const wards       = allOur.reduce((s, p) => s + (p.wardsPlaced ?? 0), 0)
-            const visionScore = allOur.reduce((s, p) => s + (p.visionScore ?? 0), 0)
-            const csTotal     = allOur.reduce((s, p) => s + (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0), 0)
-
-            const o = ourTeam?.objectives
-            const objFlow = o ? [
-              o.tower?.kills ?? 0, o.horde?.kills ?? 0, o.riftHerald?.kills ?? 0,
-              o.dragon?.kills ?? 0, o.baron?.kills ?? 0, o.inhibitor?.kills ?? 0, o.nexus?.kills ?? 0,
-            ].join('/') : ''
-
-            const frames = timeline?.info?.frames
-            const calcGd = (min) => {
-              const f = frames?.[min]
-              if (!f?.participantFrames) return null
-              let our = 0, enm = 0
-              for (const [pid, pf] of Object.entries(f.participantFrames)) {
-                if (ourIds.has(+pid)) our += pf.totalGold ?? 0
-                else                  enm += pf.totalGold ?? 0
-              }
-              return our - enm
-            }
-            let gdF = null
-            if (frames?.length) {
-              const last = frames[frames.length - 1]
-              if (last?.participantFrames) {
-                let our = 0, enm = 0
-                for (const [pid, pf] of Object.entries(last.participantFrames)) {
-                  if (ourIds.has(+pid)) our += pf.totalGold ?? 0
-                  else                  enm += pf.totalGold ?? 0
-                }
-                gdF = our - enm
-              }
-            }
-
-            this.repairStatus = 'Buscando jogadores…'
             const puuidToName = {}
             try {
               const players = await api.col('players').list({ perPage: 50 })
               for (const p of players.items) { if (p.puuid) puuidToName[p.puuid] = p.name }
             } catch (_) {}
 
-            const POS_ORDER = { TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4 }
-            const sorted = [...allOur].sort((a, b) => (POS_ORDER[a.teamPosition] ?? 99) - (POS_ORDER[b.teamPosition] ?? 99))
-            const champList = Alpine.store('champions').list
-            const resolveChamp = (id) => champList.find(c => c.key === id) ?? champList.find(c => c.name === id)
+            const stats   = extractMatchStats(match, timeline, { ourSide: this.match.side, puuidToName })
+            const payload = RiotApi.buildMatchPayload(stats, { snapshot: { match, timeline } })
 
-            const playerStats = sorted.map(p => {
-              const kda = p.deaths === 0
-                ? (p.kills + p.assists)
-                : Math.round(((p.kills + p.assists) / p.deaths) * 100) / 100
-              return {
-                name: puuidToName[p.puuid] ?? null,
-                role: p.teamPosition || p.individualPosition || null,
-                champion: p.championName,
-                kills: p.kills ?? 0, deaths: p.deaths ?? 0, assists: p.assists ?? 0,
-                cs: (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0),
-                damage: p.totalDamageDealtToChampions ?? 0,
-                damageTaken: p.totalDamageTaken ?? 0,
-                gold: p.goldEarned ?? 0,
-                visionScore: p.visionScore ?? 0,
-                wardsPlaced: p.wardsPlaced ?? 0,
-                level: p.champLevel ?? null,
-                kda, firstBlood: p.firstBloodKill ?? false,
-              }
-            })
-
-            // MVP suggestion
-            let mvpName = null, bestMvpScore = -Infinity
-            for (const p of allOur) {
-              const name = puuidToName[p.puuid]
-              if (!name) continue
-              const score = (p.kills ?? 0) * 2 + (p.assists ?? 0) - (p.deaths ?? 0) * 0.5
-              if (score > bestMvpScore) { bestMvpScore = score; mvpName = name }
+            // MVC (champion of the MVP)
+            const mvpName = stats.mvp || this.match.mvp
+            if (mvpName && stats.mvcChampKey) {
+              const champList = Alpine.store('champions').list
+              const mvc = champList.find(c => c.key === stats.mvcChampKey) ?? champList.find(c => c.name === stats.mvcChampKey)
+              if (mvc) payload.mvc = mvc.id
             }
-
-            // MVC = champion of the MVP player
-            const mvpPlayerName  = mvpName || this.match.mvp
-            const mvpParticipant = allOur.find(p => puuidToName[p.puuid] === mvpPlayerName)
-            const mvcFound       = mvpParticipant ? resolveChamp(mvpParticipant.championName) : null
+            if (!this.match.mvp && stats.mvp) payload.mvp = stats.mvp
 
             this.repairStatus = 'Salvando…'
-            const payload = {
-              riot_match_snapshot: stripSnapshot({ match, timeline }),
-              player_stats:   playerStats,
-              duration:       dur,
-              team_kills:     allOur.reduce((s, p) => s + (p.kills   ?? 0), 0),
-              team_deaths:    allOur.reduce((s, p) => s + (p.deaths  ?? 0), 0),
-              team_assists:   allOur.reduce((s, p) => s + (p.assists ?? 0), 0),
-              total_gold:     totalGold,
-              damage,
-              da_di:          dmgTaken > 0 ? Math.round((damage / dmgTaken) * 100) / 100 : undefined,
-              gold_per_min:   Math.round(totalGold / dur),
-              wards_per_min:  Math.round((wards / dur) * 10) / 10,
-              vision_score:   visionScore,
-              cs_total:       csTotal,
-              cs_per_min:     Math.round((csTotal / dur) * 10) / 10,
-              first_blood:    ourTeam?.objectives?.champion?.first ?? false,
-              first_tower:    ourTeam?.objectives?.tower?.first    ?? false,
-              obj_flow:       objFlow,
-              gd_10:          calcGd(10),
-              gd_20:          calcGd(20),
-              gd_f:           gdF,
-            }
-            if (mvcFound)          payload.mvc = mvcFound.id
-            if (!this.match.mvp && mvpName) payload.mvp = mvpName
-
             await api.col('matches').update(this.match.id, payload)
             this.repairStatus = 'Salvo. Recarregando…'
             location.reload()

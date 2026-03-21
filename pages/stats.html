@@ -16,8 +16,20 @@
   <main class="max-w-7xl mx-auto px-4 py-6">
 
     <!-- Header + Tabs -->
-    <div class="flex items-center justify-between mb-5">
-      <h1 class="text-xl font-bold">Estatísticas</h1>
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <div class="flex items-center gap-4">
+        <h1 class="text-xl font-bold">Estatísticas</h1>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-slate-400">Formação:</label>
+          <select x-model="filterFormation"
+                  class="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+            <option value="">Todas</option>
+            <template x-for="f in formations" :key="f.id">
+              <option :value="f.id" x-text="f.name"></option>
+            </template>
+          </select>
+        </div>
+      </div>
       <div class="flex gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
         <button @click="tab('team')"
                 class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
@@ -29,8 +41,14 @@
                 :class="activeTab === 'players' ? 'bg-slate-800 text-yellow-400' : 'text-slate-400 hover:text-slate-200'">
           Jogadores
         </button>
+        <button @click="tab('champions')"
+                class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                :class="activeTab === 'champions' ? 'bg-slate-800 text-yellow-400' : 'text-slate-400 hover:text-slate-200'">
+          Campeões
+        </button>
       </div>
     </div>
+
 
     <!-- CI legend -->
     <p class="text-xs text-slate-500 mb-5">
@@ -77,10 +95,52 @@
         </div>
 
       </div>
+
+      <!-- ── Mortes Cedo ── -->
+      <div class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-200 mb-3">Mortes Cedo — Impacto do First Blood</h3>
+        <div id="death-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      </div>
+
+      <!-- ── Gold Flow ── -->
+      <div class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-200 mb-1">Gold Flow — Vantagem ao Longo do Tempo</h3>
+        <p class="text-xs text-slate-500 mb-3">GD@5 calculado do snapshot da Riot API · GD@10/20/F dos campos armazenados</p>
+        <div id="gd-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3"></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <div class="relative h-52"><canvas id="c-gd-comparison"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ── Objetivos ── -->
+      <div class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-200 mb-3">Objetivos — Dragões · Estruturas Early · Tardios</h3>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div id="obj-dragons"    class="bg-slate-900 border border-slate-800 rounded-lg p-5"></div>
+          <div id="obj-structures" class="bg-slate-900 border border-slate-800 rounded-lg p-5"></div>
+          <div id="obj-late"       class="bg-slate-900 border border-slate-800 rounded-lg p-5"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ── JOGADORES ──────────────────────────────────────────────────────── -->
     <div x-show="activeTab === 'players'">
+
+      <!-- Mortes por Jogador (prioridade) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-5">
+        <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Mortes por Jogador — Quem está morrendo mais?</h3>
+        <p class="text-xs text-slate-500 mb-3">Ordenado por mortes desc · <span id="player-stats-n">0</span> partidas com dados Riot API</p>
+        <div id="player-death-table"></div>
+      </div>
+
+      <!-- Performance Geral -->
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-5">
+        <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Performance Geral por Jogador</h3>
+        <p class="text-xs text-slate-500 mb-3">KDA, dano, ouro e CS/min médios</p>
+        <div id="player-stats-table"></div>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
@@ -108,14 +168,14 @@
         </div>
 
       </div>
+    </div>
 
-      <div class="mt-5 bg-slate-900 border border-slate-800 rounded-lg p-4 text-xs text-slate-400 leading-relaxed">
-        <strong class="text-slate-300">Nota sobre disponibilidade de dados individuais:</strong>
-        O dataset registra MVP (melhor jogador) e MVC (melhor campeão) por partida, além de qual jogador ocupou o top lane.
-        GdN (Jungle), Conkreto (Mid), Digo (ADC) e Kelly (Support) jogam em todas as partidas, então as estatísticas individuais
-        deles não podem ser isoladas do desempenho coletivo sem rastreamento por campeão.
-        O top lane é rastreado porque revezou entre Klebão, Pixek e Nunes.
-        Expandir o modelo de dados para registrar picks e KDA por jogador por partida desbloquearia análises individuais mais ricas.
+    <!-- ── CAMPEÕES ───────────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'champions'">
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+        <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Performance por Campeão</h3>
+        <p class="text-xs text-slate-500 mb-3">Picks com N≥2 em partidas com dados Riot API · Ordenado por Win% desc</p>
+        <div id="champion-table"></div>
       </div>
     </div>
 
