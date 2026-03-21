@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pool de Campeões – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/champion-pool-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="championPoolPage" class="bg-slate-950 text-slate-100 min-h-screen pb-12">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <div>
+      <h1 class="text-xl font-bold">Pool de Campeões</h1>
+      <p class="text-xs text-slate-500 mt-1">
+        Gerencie a pool de campeões de cada jogador do time.
+      </p>
+    </div>
+
+    <!-- Player Tabs -->
+    <div class="mt-6">
+      <div class="flex gap-2 flex-wrap">
+        <template x-for="p in players" :key="p.id">
+          <button @click="selectPlayer(p)"
+                  :class="selectedPlayer && selectedPlayer.id === p.id
+                    ? 'bg-yellow-600 text-slate-100 font-medium'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                  class="px-4 py-2 rounded text-sm transition-colors">
+            <span x-text="`${p.name} (${p.role})`"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <!-- Pool Content -->
+    <div class="mt-6" x-show="selectedPlayer">
+
+      <!-- Add Champion Form -->
+      <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6">
+        <h2 class="text-sm font-semibold mb-3 text-slate-300">Adicionar Campeão</h2>
+        <div class="flex gap-3 items-end flex-wrap">
+          <!-- Champion Picker -->
+          <div class="flex-1 min-w-[15rem]" x-data="champPicker({ mode: 'id', onSelect(id) { championPoolPage.addChampId = id } })">
+            <label class="block text-xs text-slate-400 mb-1">Campeão</label>
+            <input type="text"
+                   x-model="query"
+                   @input="search()"
+                   @keydown.down.prevent="focusNext()"
+                   @keydown.up.prevent="focusPrev()"
+                   @keydown.enter.prevent="selectFocused()"
+                   placeholder="Digite para buscar…"
+                   class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
+            <div x-show="results.length" class="mt-1 bg-slate-800 border border-slate-700 rounded max-h-48 overflow-y-auto z-10">
+              <template x-for="(c, i) in results" :key="c.id">
+                <div @click="select(c)"
+                     @mouseenter="focused = i"
+                     :class="focused === i ? 'bg-yellow-600/20' : 'hover:bg-slate-700/50'"
+                     class="px-3 py-2 cursor-pointer transition-colors flex items-center gap-2">
+                  <img :src="Alpine.store('champions').imgUrl(c.key)"
+                       class="w-6 h-6 rounded-sm">
+                  <span class="text-sm" x-text="c.name"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Tier Select -->
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Tier</label>
+            <select x-model="addTier"
+                    class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+              <option value="star">⭐ Signature</option>
+              <option value="green">🟢 Confortável</option>
+              <option value="yellow">🟡 Situacional</option>
+            </select>
+          </div>
+
+          <!-- Add Button -->
+          <button @click="addEntry()"
+                  :disabled="!addChampId || saving"
+                  class="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium px-4 py-2 rounded transition-colors">
+            <span x-text="saving ? 'Adicionando…' : 'Adicionar'"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pool List -->
+      <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
+              <th class="text-left px-4 py-3">Campeão</th>
+              <th class="text-left px-4 py-3">Tier</th>
+              <th class="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="entry in pool" :key="entry.id">
+              <tr class="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-3">
+                    <img :src="Alpine.store('champions').imgUrl(entry.expand.champion.key)"
+                         class="w-8 h-8 rounded-sm">
+                    <span class="font-medium text-slate-200" x-text="entry.expand.champion.name"></span>
+                  </div>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex gap-2">
+                    <button @click="updateTier(entry, 'star')"
+                            :class="entry.tier === 'star' ? 'bg-yellow-600/30 text-yellow-300' : 'bg-slate-800 text-slate-400 hover:text-slate-100'"
+                            class="px-2 py-1 rounded text-xs transition-colors">⭐</button>
+                    <button @click="updateTier(entry, 'green')"
+                            :class="entry.tier === 'green' ? 'bg-green-600/30 text-green-300' : 'bg-slate-800 text-slate-400 hover:text-slate-100'"
+                            class="px-2 py-1 rounded text-xs transition-colors">🟢</button>
+                    <button @click="updateTier(entry, 'yellow')"
+                            :class="entry.tier === 'yellow' ? 'bg-amber-600/30 text-amber-300' : 'bg-slate-800 text-slate-400 hover:text-slate-100'"
+                            class="px-2 py-1 rounded text-xs transition-colors">🟡</button>
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <button @click="removeEntry(entry.id)"
+                          class="text-xs text-red-500 hover:text-red-300 transition-colors">Remover</button>
+                </td>
+              </tr>
+            </template>
+
+            <tr x-show="!loading && pool.length === 0">
+              <td colspan="3" class="text-center text-slate-500 py-12">Nenhum campeão na pool.</td>
+            </tr>
+            <tr x-show="loading">
+              <td colspan="3" class="text-center text-slate-500 py-12">Carregando…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+  </main>
+
+</body>
+</html>

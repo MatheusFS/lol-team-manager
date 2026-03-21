@@ -6,11 +6,13 @@
   const PAGE_ITEMS = [
     { href: '/index.html',       label: '📋 Histórico' },
     { href: '/pages/stats.html', label: '📊 Estatísticas' },
-    { href: null,                label: '🗡️ Assistente de Draft' },
+    { href: '/pages/draft.html', label: '🗡️ Assistente de Draft' },
   ]
 
   const CONFIG_ITEMS = [
     { href: '/pages/champions.html', label: '👑 Campeões' },
+    { href: '/pages/players.html',   label: '👥 Jogadores' },
+    { href: '/pages/champion-pool.html', label: '🎯 Pool de Campeões' },
     { href: '/pages/import.html',    label: '📥 Importar' },
     { href: '/pages/team.html',      label: '🛡️ Formações' },
   ]
