@@ -390,6 +390,21 @@ function detectFormation(match, formations, players = []) {
   const knownRoles = ALL_ROLES.filter(r => byRole[r])
   if (!knownRoles.length) return { match: null, score: 0, total: 0, candidates: [] }
 
+  // ── Set-based matching (handles lane swaps) ──────────────────────────────
+  // If all 5 players resolved, try to match by player SET instead of role-by-role.
+  // A lane swap changes who is in which role, but the 5 players present are the same.
+  if (knownRoles.length === 5) {
+    const matchPlayerSet = new Set(ALL_ROLES.map(r => byRole[r]))
+    const setMatches = formations.filter(f =>
+      ALL_ROLES.every(r => matchPlayerSet.has(f[r]))
+    )
+    if (setMatches.length === 1) {
+      return { match: setMatches[0], score: 5, total: 5, candidates: [] }
+    }
+    // If multiple formations with same 5 players, fall through to role-based scoring
+  }
+
+  // ── Role-based scoring (fallback / partial) ──────────────────────────────
   const scored = formations.map(f => {
     const hits = knownRoles.filter(r => f[r] === byRole[r]).length
     return { formation: f, score: hits }
