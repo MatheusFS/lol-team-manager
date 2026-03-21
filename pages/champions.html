@@ -35,17 +35,36 @@
       </div>
     </div>
 
-    <!-- Meta import (shown when CORS blocks Lolalytics) -->
+    <!-- Meta import (shown when CORS blocks op.gg and Lolalytics) -->
     <div x-show="metaStatus === 'cors'" x-cloak class="mb-4 bg-slate-900 border border-orange-800 rounded-lg p-4">
+      <div class="mb-3">
+        <p class="text-sm text-orange-300 font-medium mb-2">
+          ⚠️ Dados de meta indisponíveis (CORS bloqueado)
+        </p>
+        <p class="text-xs text-orange-200 mb-3">
+          Para carregar sugestões de tier, você precisa fornecer dados de meta (winrate/pickrate).
+          <strong>Como obter:</strong>
+        </p>
+        <ol class="text-xs text-orange-100 space-y-1 ml-4 list-decimal">
+          <li>Abra <a href="https://www.op.gg/lol/champions" target="_blank" class="underline hover:text-white">op.gg/lol/champions</a> ou <a href="https://lolalytics.com/lol/tierlist" target="_blank" class="underline hover:text-white">lolalytics.com</a></li>
+          <li>Abra o DevTools (F12) → Console</li>
+          <li>Cole o seguinte comando e copie o resultado:
+            <code class="block bg-slate-800 p-2 rounded mt-1 text-orange-200 overflow-x-auto">
+copy(JSON.stringify(Object.fromEntries(/* copie dos dados da tabela */)))
+            </code>
+            Ou procure por um botão "Exportar" ou "Copy JSON" na página
+          </li>
+          <li>Cole o JSON abaixo e clique "Importar Meta"</li>
+        </ol>
+      </div>
       <p class="text-xs text-orange-300 mb-2">
-        Lolalytics bloqueou a requisição (CORS). Cole abaixo um JSON com dados de meta por campeão
-        <code class="text-orange-200">{"aatrox": {"winrate": 51.2, "pickrate": 5.1, "lane": "top"}, ...}</code>
-        e clique "Importar Meta" antes de buscar sugestões novamente.
+        Formato esperado:
+        <code class="bg-slate-800 text-orange-200 px-1 rounded">{"aatrox": {"winrate": 51.2, "pickrate": 5.1}, "ahri": {"winrate": 48.5, "pickrate": 3.2}, ...}</code>
       </p>
       <div class="flex gap-2">
-        <textarea x-model="metaJson" rows="3" placeholder='{"aatrox": {"winrate": 51.2, "pickrate": 5.1, "lane": "top"}, ...}'
+        <textarea x-model="metaJson" rows="4" placeholder='{"aatrox": {"winrate": 51.2, "pickrate": 5.1}, "ahri": {"winrate": 48.5, "pickrate": 3.2}, ...}'
                   class="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-orange-500"></textarea>
-        <button @click="importMetaManual()" class="bg-orange-700 hover:bg-orange-600 text-xs font-medium px-3 py-2 rounded self-end transition-colors">
+        <button @click="importMetaManual()" class="bg-orange-700 hover:bg-orange-600 text-xs font-medium px-3 py-2 rounded self-end transition-colors h-fit">
           Importar Meta
         </button>
       </div>
@@ -125,7 +144,7 @@
               </td>
 
               <!-- Name -->
-              <td class="px-2 py-1.5 font-medium text-slate-200" x-text="champ.name"></td>
+              <td class="px-2 py-1.5 font-medium text-slate-200 w-20" x-text="champ.name"></td>
 
               <!-- Class -->
               <td class="px-2 py-1.5">
@@ -155,7 +174,7 @@
                       :class="{
                         'text-red-400':    champ.damage_type && champ.damage_type.startsWith('AD'),
                         'text-blue-400':   champ.damage_type && champ.damage_type.startsWith('AP'),
-                        'text-purple-400': champ.damage_type === 'Mixed',
+                        'text-purple-400': champ.damage_type?.startsWith('Mixed'),
                         'text-slate-600':  !champ.damage_type,
                       }"></span>
               </td>
