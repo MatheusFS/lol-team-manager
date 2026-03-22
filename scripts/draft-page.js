@@ -26,23 +26,19 @@ const DRAFT_SEQUENCE = [
   { type: 'pick', side: 'red',  idx: 4 },  // 19 R5
 ]
 
-// ── Champion pool tier sort order ────────────────────────────────────────────
-const POOL_TIER_ORDER = { star: 0, green: 1, yellow: 2 }
-
-// ── Comp type counter relationships ──────────────────────────────────────────
-// Arrow direction in the image = beats. e.g. PICK → ENGAGE means Pick beats Engage.
-const COMP_BEATS = {
-  Engage:  ['Split', 'Siege'],
-  Protect: ['Engage', 'Pick'],
-  Pick:    ['Engage', 'Split'],
-  Siege:   ['Protect', 'Pick'],
-  Split:   ['Siege'],
-  Mix:     [],
+// ── Formation field name mapping (role → PocketBase field name) ──────────────
+const FORMATION_FIELDS = {
+  top: 'top',
+  jng: 'jungle',
+  mid: 'mid',
+  adc: 'adc',
+  sup: 'support',
 }
 
 // ── Alpine component ──────────────────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
   Alpine.data('draftPage', () => ({
+
     // ── State ─────────────────────────────────────────────────────────────────
     bluePicks: [],   // Array(5) of champion records | null
     redPicks:  [],
@@ -52,7 +48,16 @@ document.addEventListener('alpine:init', () => {
     currentStep: 0,     // 0-19; index into DRAFT_SEQUENCE
     ourSide: 'blue',    // 'blue' | 'red'
 
-    // ── Formation / pool data ──────────────────────────────────────────────────
+    // ── Formations ────────────────────────────────────────────────────────────
+    formations:          [],
+    selectedFormationId: null,
+
+    // ── Role overrides ────────────────────────────────────────────────────────
+    // Manual role assignment per slot: { 'blue:0': 'top', 'blue:2': 'jng', ... }
+    // Keys use format `${side}:${idx}`. Only tracked for our side.
+    pickRoles: {},
+
+    // ── Formation / pool data ─────────────────────────────────────────────────
     formation:        null,  // active formation (expanded player relations)
     champPool:        {},    // champId → [{ playerName, role, poolTier }]
     playerChampStats: {},    // "playerName:champKeyNorm" → { n, wins }
@@ -74,8 +79,8 @@ document.addEventListener('alpine:init', () => {
       this.redBans   = Array(5).fill(null)
       this._loadFromStorage()
       this.loaded = true
+      await this._loadFormations()
       this._loadFormationData()  // non-blocking — recommendations improve progressively
-      // Auto-save on any state change (after initial load to avoid spurious writes)
       this.$nextTick(() => {
         this.$watch('bluePicks',   () => this._saveToStorage())
         this.$watch('redPicks',    () => this._saveToStorage())
@@ -83,6 +88,13 @@ document.addEventListener('alpine:init', () => {
         this.$watch('redBans',     () => this._saveToStorage())
         this.$watch('currentStep', () => this._saveToStorage())
         this.$watch('ourSide',     () => this._saveToStorage())
+        this.$watch('pickRoles',   () => this._saveToStorage())
+        // When formation/pool data finishes loading, force Alpine to re-evaluate
+        // ourRecs (and other getters that depend on champPool/playerChampStats).
+        this.$watch('formationLoaded', () => {
+          this.bluePicks = [...this.bluePicks]
+          this.redPicks  = [...this.redPicks]
+        })
       })
     },
 
@@ -92,6 +104,7 @@ document.addEventListener('alpine:init', () => {
       this.blueBans    = Array(5).fill(null)
       this.redBans     = Array(5).fill(null)
       this.currentStep = 0
+      this.pickRoles   = {}
       localStorage.removeItem('draft-state')
     },
 
@@ -114,16 +127,16 @@ document.addEventListener('alpine:init', () => {
     },
 
     importDraft() {
-      const input = document.createElement('input')
-      input.type  = 'file'
-      input.accept = '.json,application/json'
+      const input    = document.createElement('input')
+      input.type     = 'file'
+      input.accept   = '.json,application/json'
       input.onchange = async e => {
         const file = e.target.files[0]
         if (!file) return
         try {
           const text  = await file.text()
           const state = JSON.parse(text)
-          const champs = Alpine.store('champions').list
+          const champs  = Alpine.store('champions').list
           const resolve = id => (id ? champs.find(c => c.id === id) ?? null : null)
           this.bluePicks   = (state.bluePicks  ?? Array(5).fill(null)).map(resolve)
           this.redPicks    = (state.redPicks   ?? Array(5).fill(null)).map(resolve)
@@ -149,6 +162,7 @@ document.addEventListener('alpine:init', () => {
           redBans:     this.redBans.map(c => c?.id ?? null),
           currentStep: this.currentStep,
           ourSide:     this.ourSide,
+          pickRoles:   this.pickRoles,
         }))
       } catch (_) {}
     },
@@ -169,27 +183,50 @@ document.addEventListener('alpine:init', () => {
         restore('redBans',   'redBans')
         if (typeof state.currentStep === 'number') this.currentStep = state.currentStep
         if (state.ourSide === 'blue' || state.ourSide === 'red') this.ourSide = state.ourSide
+        if (state.pickRoles && typeof state.pickRoles === 'object') this.pickRoles = state.pickRoles
       } catch (_) {}
+    },
+
+    // ── Load formations list ───────────────────────────────────────────────────
+    async _loadFormations() {
+      try {
+        const fRes = await api.col('formations').list({
+          sort: '-active,name', perPage: 100,
+          expand: 'top,jungle,mid,adc,support',
+        })
+        this.formations = fRes.items
+        const active = fRes.items.find(f => f.active)
+        this.selectedFormationId = active?.id ?? fRes.items[0]?.id ?? null
+      } catch (e) {
+        console.warn('[draft] _loadFormations failed:', e)
+      }
     },
 
     // ── Formation + pool + WR data ────────────────────────────────────────────
     async _loadFormationData() {
       try {
-        // 1. Active formation (with expanded player relations)
-        const fRes = await api.col('formations').list({
-          sort: '-active,name', perPage: 100,
-          expand: 'top,jng,mid,adc,sup',
-        })
-        this.formation = fRes.items.find(f => f.active) ?? fRes.items[0] ?? null
+        if (!this.selectedFormationId) {
+          const fRes = await api.col('formations').list({
+            sort: '-active,name', perPage: 100,
+            expand: 'top,jungle,mid,adc,support',
+          })
+          this.formation = fRes.items.find(f => f.active) ?? fRes.items[0] ?? null
+        } else {
+          this.formation = await api.col('formations').get(this.selectedFormationId, {
+            expand: 'top,jungle,mid,adc,support',
+          })
+        }
 
-        const roleForPlayer = {}  // playerId → role label
-        const playerNames   = {}  // playerId → player name
+        // Build role/player lookups from the formation
+        const roleForPlayer = {}   // playerId → role
+        const playerNames   = {}   // playerId → player name
         for (const role of ['top', 'jng', 'mid', 'adc', 'sup']) {
-          const p = this.formation?.expand?.[role]
+          const fieldName = FORMATION_FIELDS[role]
+          const p = this.formation?.expand?.[fieldName]
           if (p) { roleForPlayer[p.id] = role; playerNames[p.id] = p.name }
         }
 
-        // 2. Champion pool for formation players
+        // Champion pool for formation players
         const playerIds = Object.keys(roleForPlayer)
         if (playerIds.length) {
           const poolRes = await api.col('champion_pool').list({
@@ -199,19 +236,19 @@ document.addEventListener('alpine:init', () => {
           })
           const pool = {}
           for (const entry of poolRes.items) {
-            const cid = entry.champion  // PocketBase champion relation ID
+            const cid = entry.champion
             const pid = entry.player
             if (!pool[cid]) pool[cid] = []
             pool[cid].push({
               playerName: entry.expand?.player?.name ?? playerNames[pid] ?? '?',
               role:       roleForPlayer[pid] ?? '?',
-              poolTier:   entry.tier,  // 'star' | 'green' | 'yellow'
+              poolTier:   entry.tier,
             })
           }
           this.champPool = pool
         }
 
-        // 3. Per-player per-champion win rates from match history
+        // Per-player per-champion win rates from match history
         const matchRes = await api.col('matches').list({
           perPage: 500, fields: 'win,player_stats',
         })
@@ -227,10 +264,16 @@ document.addEventListener('alpine:init', () => {
         }
         this.playerChampStats = stats
       } catch (e) {
-        console.warn('[draft] _loadFormationData falhou:', e)
+        console.warn('[draft] _loadFormationData failed:', e)
       } finally {
         this.formationLoaded = true
       }
+    },
+
+    // Change the selected formation and reload formation data
+    async changeFormation(formationId) {
+      this.selectedFormationId = formationId
+      await this._loadFormationData()
     },
 
     // ── Modal ─────────────────────────────────────────────────────────────────
@@ -260,7 +303,14 @@ document.addEventListener('alpine:init', () => {
       const { type, side, idx } = this.activeSlot
       const arr = this._arr(type, side)
       arr[idx] = champ
-      // Force Alpine reactivity for arrays (replace the array reference)
+      // Auto-confirm role when champion has exactly one viable role
+      if (type === 'pick') {
+        const roles = parseViableRoles(champ)
+        if (roles.length === 1) {
+          this.pickRoles = { ...this.pickRoles, [`${side}:${idx}`]: roles[0] }
+        }
+      }
+      // Force Alpine reactivity (replace array reference)
       if (type === 'ban') {
         if (side === 'blue') this.blueBans = [...this.blueBans]
         else                 this.redBans  = [...this.redBans]
@@ -268,7 +318,7 @@ document.addEventListener('alpine:init', () => {
         if (side === 'blue') this.bluePicks = [...this.bluePicks]
         else                 this.redPicks  = [...this.redPicks]
       }
-      // Advance step if this was the current step
+      // Advance draft step if this filled the current step
       const cur = DRAFT_SEQUENCE[this.currentStep]
       if (cur && cur.type === type && cur.side === side && cur.idx === idx) {
         this._advanceStep()
@@ -289,11 +339,15 @@ document.addEventListener('alpine:init', () => {
     },
 
     quickPick(champ) {
-      // Fill the next empty pick slot for our side
       const arr = this.ourSide === 'blue' ? this.bluePicks : this.redPicks
       const idx = arr.findIndex(c => !c)
       if (idx === -1) return
       arr[idx] = champ
+      // Auto-confirm role when champion has exactly one viable role
+      const roles = parseViableRoles(champ)
+      if (roles.length === 1) {
+        this.pickRoles = { ...this.pickRoles, [`${this.ourSide}:${idx}`]: roles[0] }
+      }
       if (this.ourSide === 'blue') this.bluePicks = [...this.bluePicks]
       else                         this.redPicks  = [...this.redPicks]
     },
@@ -336,12 +390,26 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Analysis getters (reactive) ───────────────────────────────────────────
-    get ourPicks()     { return this.ourSide === 'blue' ? this.bluePicks : this.redPicks },
-    get enemyPicks()   { return this.ourSide === 'blue' ? this.redPicks  : this.bluePicks },
-    get ourAnalysis()  { return this._analyzeTeam(this.ourPicks) },
-    get enemyAnalysis(){ return this._analyzeTeam(this.enemyPicks) },
-    get ourRecs()      { return this._getRecommendations(this.ourAnalysis) },
-    get matchup()      { return this.matchupResult(this.ourAnalysis.compType, this.enemyAnalysis.compType) },
+    get ourPicks()      { return this.ourSide === 'blue' ? this.bluePicks : this.redPicks },
+    get enemyPicks()    { return this.ourSide === 'blue' ? this.redPicks  : this.bluePicks },
+    get ourAnalysis()   { return analyzeTeam(this.ourPicks) },
+    get enemyAnalysis() { return analyzeTeam(this.enemyPicks) },
+
+    get ourRecs() {
+      const overrides = (this.ourSide === 'blue' ? this.bluePicks : this.redPicks)
+        .map((_, i) => this.pickRoles[`${this.ourSide}:${i}`] ?? null)
+      return buildRecommendations(
+        this.ourAnalysis,
+        this.enemyAnalysis,
+        this.ourPicks,
+        overrides,
+        this._recContext(),
+      )
+    },
+
+    get matchup() {
+      return this.matchupResult(this.ourAnalysis.compType, this.enemyAnalysis.compType)
+    },
 
     // ── Comp matchup ──────────────────────────────────────────────────────────
     matchupResult(ourComp, enemyComp) {
@@ -351,223 +419,29 @@ document.addEventListener('alpine:init', () => {
       return 'neutral'
     },
 
-    // ── Core analysis ─────────────────────────────────────────────────────────
-    _analyzeTeam(picks) {
-      const filled = picks.filter(Boolean)
-      if (!filled.length) return { picks: filled, count: 0, compType: null, voteList: [], scaling: [null, null, null], classCounts: {}, damageCounts: {}, heuristics: {}, gaps: [], overallScore: 0 }
+    // ── Role override toggle ───────────────────────────────────────────────────
+    // If the slot already has that role, remove the override (toggle off).
+    setPickRole(side, idx, role) {
+      const key = `${side}:${idx}`
+      if (this.pickRoles[key] === role) {
+        const updated = { ...this.pickRoles }
+        delete updated[key]
+        this.pickRoles = updated
+      } else {
+        this.pickRoles = { ...this.pickRoles, [key]: role }
+      }
+      this._saveToStorage()
+    },
 
-      const comp       = this._buildCompVector(filled)
-      const counts     = this._buildCounts(filled)
-      const heuristics = this._buildHeuristics(filled, comp, counts)
-      const weights    = { frontline: 1.5, dps: 1.5, engage: 1.2, peel: 0.8, damageSplit: 1.0, coherence: 1.0 }
-      const maxScore   = Object.values(weights).reduce((s, w) => s + w * 3, 0)
-      const rawScore   = Object.entries(heuristics).reduce((s, [k, h]) => s + (weights[k] ?? 1) * h.score, 0)
-      const gaps       = Object.entries(heuristics)
-        .filter(([, h]) => h.score < 2)
-        .sort(([, a], [, b]) => a.score - b.score)
-        .map(([k]) => k)
-
+    // ── Context builder for recommendation engine ─────────────────────────────
+    _recContext() {
       return {
-        picks:        filled,
-        count:        filled.length,
-        compType:     comp.compType,
-        voteList:     comp.voteList,
-        scaling:      comp.scaling,
-        classCounts:  counts.classCounts,
-        damageCounts: counts.damageCounts,
-        heuristics,
-        gaps,
-        overallScore: rawScore / maxScore,
-      }
-    },
-
-    _buildCompVector(picks) {
-      const votes  = {}
-      const totals = [0, 0, 0], counts = [0, 0, 0]
-      for (const c of picks) {
-        if (c.comp_type)   votes[c.comp_type]   = (votes[c.comp_type]   ?? 0) + 2
-        if (c.comp_type_2) votes[c.comp_type_2] = (votes[c.comp_type_2] ?? 0) + 1
-        for (let i = 0; i < 3; i++) {
-          const v = c[['early', 'mid', 'late'][i]]
-          if (v != null) { totals[i] += v; counts[i]++ }
-        }
-      }
-      const maxV     = Object.values(votes).length ? Math.max(...Object.values(votes)) : 0
-      const winners  = Object.keys(votes).filter(k => votes[k] === maxV)
-      const compType = winners.length === 1 ? winners[0] : (winners.length > 1 ? 'Mix' : null)
-      const scaling  = totals.map((t, i) => counts[i] ? t / counts[i] : null)
-      const voteList = Object.entries(votes).map(([type, n]) => ({ type, n })).sort((a, b) => b.n - a.n)
-      return { compType, scaling, voteList }
-    },
-
-    _buildCounts(picks) {
-      const classCounts  = Object.fromEntries(CHAMPION_CLASSES.map(c => [c, 0]))
-      const damageCounts = { AD_high: 0, AD_low: 0, AP_high: 0, AP_low: 0, Mixed_high: 0, Mixed_low: 0 }
-      for (const c of picks) {
-        if (c.class && c.class in classCounts) classCounts[c.class]++
-        const dt = c.damage_type
-        if (dt) {
-          if (dt === 'Mixed') damageCounts.Mixed_low++  // legacy fallback
-          else if (dt in damageCounts) damageCounts[dt]++
-        }
-      }
-      return { classCounts, damageCounts }
-    },
-
-    _buildHeuristics(picks, comp, { classCounts, damageCounts }) {
-      const sc = (n, t) => n === 0 ? t[0] : n === 1 ? t[1] : t[2]
-
-      const frontlineRaw = classCounts.Tank + Math.floor(classCounts.Fighter / 2)
-      const frontline    = { score: sc(frontlineRaw, [0, 2, 3]), label: 'Frontline' }
-
-      const dpsRaw = classCounts.Marksman
-        + classCounts.Assassin
-        + picks.filter(c => c.class === 'Mage' && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high')).length
-      const dps = { score: sc(dpsRaw, [0, 2, 3]), label: 'DPS' }
-
-      const engageRaw = picks.filter(c =>
-        c.comp_type === 'Engage' || c.comp_type_2 === 'Engage' ||
-        c.comp_type === 'Pick'   || c.comp_type_2 === 'Pick'
-      ).length
-      const engage = {
-        score: sc(engageRaw, [0, 2, 3]),
-        label: 'Engage',
-      }
-
-      const peel = { score: sc(classCounts.Support, [0, 2, 3]), label: 'Proteção' }
-
-      const dc = damageCounts
-      const hasAD = (dc.AD_high >= 1 || dc.Mixed_high >= 1) && (dc.AD_low >= 1 || dc.Mixed_low >= 1)
-      const hasAP = (dc.AP_high >= 1 || dc.Mixed_high >= 1) && (dc.AP_low >= 1 || dc.Mixed_low >= 1)
-      const damageSplit = { score: (hasAD && hasAP) ? 3 : 0, label: 'Dano Split' }
-
-      let coherenceScore = 3
-      const ct = comp.compType
-      if      (ct === 'Siege')   coherenceScore = (dc.AP_high >= 1 || dc.Mixed_high >= 1 || classCounts.Mage + classCounts.Marksman >= 2) ? 3 : 1
-      else if (ct === 'Split')   coherenceScore = (classCounts.Fighter >= 1 && (dc.AD_high >= 1 || dc.AD_low >= 1)) ? 3 : 1
-      else if (ct === 'Protect') coherenceScore = (classCounts.Marksman >= 1 && classCounts.Support >= 1) ? 3 : 1
-      else if (ct === 'Engage')  coherenceScore = classCounts.Tank >= 1 ? 3 : 1
-      else if (ct === 'Pick')    coherenceScore = (classCounts.Assassin >= 1 || picks.some(c => c.comp_type === 'Pick')) ? 3 : 1
-      const coherence = { score: coherenceScore, label: 'Coerência' }
-
-      const color = s => s >= 3 ? 'green' : s >= 2 ? 'yellow' : 'red'
-      const add   = h => ({ ...h, color: color(h.score) })
-
-      return {
-        frontline:   add(frontline),
-        dps:         add(dps),
-        engage:      add(engage),
-        peel:        add(peel),
-        damageSplit: add(damageSplit),
-        coherence:   add(coherence),
-      }
-    },
-
-    // ── Recommendations ───────────────────────────────────────────────────────
-    _getRecommendations(analysis) {
-      if (!analysis || analysis.count === 5 || !analysis.gaps.length) return []
-      const used      = this._usedIds()
-      const tierOrder = Object.fromEntries(TIERS.map((t, i) => [t, i]))
-      const pool      = Alpine.store('champions').list
-        .filter(c => !used.has(c.id))
-        .sort((a, b) => (tierOrder[a.tier] ?? 5) - (tierOrder[b.tier] ?? 5))
-
-      return analysis.gaps.slice(0, 3).map(gap => {
-        const filterFn = this._gapFilter(gap, analysis)
-        const allValid = pool.filter(filterFn)
-
-        // Partition: champions in team pool first, then global fallback
-        const inPool    = allValid.filter(c => this.champPool?.[c.id]?.length > 0)
-        const notInPool = allValid.filter(c => !this.champPool?.[c.id]?.length)
-        inPool.sort((a, b) => this._candidateScore(a) - this._candidateScore(b))
-
-        const candidates = [...inPool, ...notInPool].slice(0, 5)
-        if (!candidates.length) return null
-        return { reason: this._gapLabel(gap, analysis), classes: this._gapClasses(gap, analysis), candidates }
-      }).filter(Boolean)
-    },
-
-    // Lower score = better candidate (pool tier × 10 − best WR)
-    _candidateScore(champ) {
-      const entries = this.champPool?.[champ.id] ?? []
-      if (!entries.length) return 999
-      const bestTier = Math.min(...entries.map(e => POOL_TIER_ORDER[e.poolTier] ?? 2))
-      const bestWR   = Math.max(...entries.map(e => {
-        const s = this.playerChampStats?.[`${e.playerName}:${normChampKey(champ.key)}`]
-        return (s && s.n >= 3) ? s.wins / s.n : 0
-      }))
-      return bestTier * 10 - bestWR
-    },
-
-    _gapFilter(gap, analysis) {
-      const dc = analysis.damageCounts
-      switch (gap) {
-        case 'frontline':   return c => c.class === 'Tank'
-        case 'dps':         return c => c.class === 'Marksman'
-          || (c.class === 'Assassin' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high'))
-          || (c.class === 'Mage'     && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'))
-        case 'engage':      return c => c.comp_type === 'Engage' || c.comp_type_2 === 'Engage' || c.comp_type === 'Pick' || c.comp_type_2 === 'Pick'
-        case 'peel':        return c => c.class === 'Support'
-        case 'damageSplit': {
-          const hasAD = (dc.AD_high >= 1 || dc.Mixed_high >= 1) && (dc.AD_low >= 1 || dc.Mixed_low >= 1)
-          const hasAP = (dc.AP_high >= 1 || dc.Mixed_high >= 1) && (dc.AP_low >= 1 || dc.Mixed_low >= 1)
-          if (!hasAD) return c => c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high'
-          if (!hasAP) return c => c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'
-          return () => false
-        }
-        case 'coherence': {
-          const ct = analysis.compType
-          if (ct === 'Siege')   return c => c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'
-          if (ct === 'Split')   return c => c.class === 'Fighter' && (c.damage_type === 'AD_high' || c.damage_type === 'AD_low')
-          if (ct === 'Protect') return c => c.class === 'Marksman' || c.class === 'Support'
-          if (ct === 'Engage')  return c => c.class === 'Tank'
-          if (ct === 'Pick')    return c => c.class === 'Assassin'
-          return () => false
-        }
-        default: return () => false
-      }
-    },
-
-    _gapLabel(gap, analysis) {
-      const dc = analysis.damageCounts
-      switch (gap) {
-        case 'frontline':   return 'Falta frontline (Tank)'
-        case 'dps':         return 'Falta DPS (carry ou mago de dano)'
-        case 'engage':      return 'Falta engage ou pick'
-        case 'peel':        return 'Falta proteção (Support)'
-        case 'damageSplit': {
-          const hasAD = (dc.AD_high >= 1 || dc.Mixed_high >= 1) && (dc.AD_low >= 1 || dc.Mixed_low >= 1)
-          const hasAP = (dc.AP_high >= 1 || dc.Mixed_high >= 1) && (dc.AP_low >= 1 || dc.Mixed_low >= 1)
-          if (!hasAD && !hasAP) return 'Falta damage split (nenhum tipo completo)'
-          if (!hasAD)           return 'Falta dano físico (AD carry + suporte AD)'
-          return                       'Falta dano mágico (AP carry + suporte AP)'
-        }
-        case 'coherence':   return `Comp incoerente para ${analysis.compType ?? 'tipo escolhido'}`
-        default: return gap
-      }
-    },
-
-    _gapClasses(gap, analysis) {
-      switch (gap) {
-        case 'frontline':   return ['Tank']
-        case 'dps':         return ['Marksman', 'Assassin', 'Mage']
-        case 'engage':      return ['comp: Engage', 'comp: Pick']
-        case 'peel':        return ['Support']
-        case 'damageSplit': {
-          const dc = analysis.damageCounts
-          const hasAD = (dc.AD_high >= 1 || dc.Mixed_high >= 1) && (dc.AD_low >= 1 || dc.Mixed_low >= 1)
-          return !hasAD ? ['Marksman', 'Fighter AD'] : ['Mage', 'Suporte AP']
-        }
-        case 'coherence': {
-          const ct = analysis.compType
-          if (ct === 'Siege')   return ['Mage', 'Marksman']
-          if (ct === 'Split')   return ['Fighter']
-          if (ct === 'Protect') return ['Marksman', 'Support']
-          if (ct === 'Engage')  return ['Tank']
-          if (ct === 'Pick')    return ['Assassin']
-          return []
-        }
-        default: return []
+        champPool:        this.champPool,
+        playerChampStats: this.playerChampStats,
+        formation:        this.formation,
+        formationFields:  FORMATION_FIELDS,
+        usedIds:          this._usedIds(),
+        championsList:    Alpine.store('champions').list,
       }
     },
 
@@ -589,25 +463,42 @@ document.addEventListener('alpine:init', () => {
       return { S: 'text-yellow-300', A: 'text-green-400', B: 'text-slate-300', C: 'text-orange-400', D: 'text-red-400' }[tier] ?? 'text-slate-600'
     },
 
-    damageColor(dt) {
-      if (!dt) return 'text-slate-600'
-      if (dt.startsWith('AD'))    return 'text-red-400'
-      if (dt.startsWith('AP'))    return 'text-blue-400'
-      if (dt.startsWith('Mixed')) return 'text-purple-400'
-      return 'text-slate-500'
+    // Winrate color: follows stats-page scheme
+    // 60%+ = Green, 40-60% = Yellow, <40% = Red, null/undefined = Slate
+    wrColor(wrPct) {
+      if (wrPct == null || wrPct === undefined) return 'text-slate-400'
+      const wr = Number(wrPct)
+      if (wr >= 60) return 'text-green-400'
+      if (wr >= 40) return 'text-yellow-400'
+      return 'text-red-400'
     },
 
-    compEmoji(type) { return COMP_EMOJI[type] ?? '' },
+    damageClass(dt) { return DAMAGE_TYPE_CLASSES[dt] ?? 'bg-slate-700 text-slate-400' },
+    damageLabel(dt) { return DAMAGE_TYPE_LABELS[dt]  ?? dt ?? '' },
+    compEmoji(type) { return COMP_EMOJI[type]         ?? '' },
 
     // Pool entries for a champion, sorted star → green → yellow
     champPoolInfo(champId) {
       return (this.champPool?.[champId] ?? [])
         .slice()
-        .sort((a, b) => (POOL_TIER_ORDER[a.poolTier] ?? 2) - (POOL_TIER_ORDER[b.poolTier] ?? 2))
+        .sort((a, b) => (POOL_TIER_ORDER_REC[a.poolTier] ?? 2) - (POOL_TIER_ORDER_REC[b.poolTier] ?? 2))
+    },
+
+    // Pool entries for a champion filtered by role (for rec lines)
+    champPoolInfoForRole(champId, role) {
+      return (this.champPool?.[champId] ?? [])
+        .filter(e => e.role === role)
+        .slice()
+        .sort((a, b) => (POOL_TIER_ORDER_REC[a.poolTier] ?? 2) - (POOL_TIER_ORDER_REC[b.poolTier] ?? 2))
     },
 
     poolTierIcon(tier) {
       return { star: '★', green: '●', yellow: '◐' }[tier] ?? '?'
+    },
+
+    roleLabel(role) {
+      return { top: 'TOP', jng: 'JNG', mid: 'MID', adc: 'ADC', sup: 'SUP' }[role]
+        ?? role.toUpperCase()
     },
 
     // Win rate for a player on a specific champion (null if < 3 games)
@@ -617,10 +508,16 @@ document.addEventListener('alpine:init', () => {
       return { pct: Math.round(s.wins / s.n * 100), n: s.n }
     },
 
+    // Player name for a role in the active formation (used in templates)
+    formationPlayerForRole(role) {
+      const fieldName = FORMATION_FIELDS[role]
+      return this.formation?.expand?.[fieldName]?.name ?? null
+    },
+
     // ── Internals ─────────────────────────────────────────────────────────────
     _arr(type, side) {
-      if (type === 'ban')  return side === 'blue' ? this.blueBans  : this.redBans
-      return                      side === 'blue' ? this.bluePicks : this.redPicks
+      if (type === 'ban') return side === 'blue' ? this.blueBans  : this.redBans
+      return                     side === 'blue' ? this.bluePicks : this.redPicks
     },
 
     _usedIds() {

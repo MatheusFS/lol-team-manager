@@ -40,7 +40,7 @@ Migrated from `Match Reviews - Clash History.csv`.
 | `enemy_champs` | json | `["Vladimir", "Xin Zhao", ...]` |
 | `comp_type` | select | Protect / Pick / Split / Siege / Engage / Mix |
 | `comp_subtype` | select (multi) | Atoms: Siege, Protect, Engage, Split, Pick, Dive, Reset, Mix |
-| `scaling` | text | 🔴🟡🟢 early/mid/late |
+| `scaling` | text | 🟥🟨🟩 early/mid/late |
 | `enemy_type` | select | same values as `comp_type` |
 | `enemy_scaling` | text | |
 | `duration` | number | Minutes |

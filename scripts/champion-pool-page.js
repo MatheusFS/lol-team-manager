@@ -1,47 +1,4 @@
 document.addEventListener('alpine:init', () => {
-  Alpine.data('champPicker', ({ mode = 'name', onSelect } = {}) => ({
-    query: '',
-    results: [],
-    focused: -1,
-
-    async init() {
-      await Alpine.store('champions').load()
-    },
-
-    search() {
-      if (!this.query.trim()) {
-        this.results = []
-        this.focused = -1
-        return
-      }
-      this.results = Alpine.store('champions').search(this.query)
-      this.focused = -1
-    },
-
-    select(champ) {
-      if (mode === 'id') {
-        onSelect(champ.id)
-      }
-      this.query = ''
-      this.results = []
-      this.focused = -1
-    },
-
-    selectFocused() {
-      if (this.focused >= 0 && this.focused < this.results.length) {
-        this.select(this.results[this.focused])
-      }
-    },
-
-    focusNext() {
-      if (this.focused < this.results.length - 1) this.focused++
-    },
-
-    focusPrev() {
-      if (this.focused > 0) this.focused--
-    },
-  }))
-
   Alpine.data('championPoolPage', () => ({
     players: [],
     selectedPlayer: null,

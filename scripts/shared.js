@@ -39,12 +39,52 @@ const COMP_TYPES = COMP_TYPE_DEFS.map(d => d.value)
 const COMP_EMOJI = Object.fromEntries(COMP_TYPE_DEFS.map(d => [d.value, d.emoji]))
 const CHAMPION_CLASSES = ['Fighter','Mage','Tank','Assassin','Marksman','Support']
 const DAMAGE_TYPES    = ['AD_high','AD_low','AP_high','AP_low','Mixed_high','Mixed_low']
+
+// ── Damage type display helpers ───────────────────────────────────────────────
+// Label: only the type family (intensity communicated by badge color tone)
+const DAMAGE_TYPE_LABELS = {
+  'AD_high':    'AD',
+  'AD_low':     'AD',
+  'AP_high':    'AP',
+  'AP_low':     'AP',
+  'Mixed_high': 'MIX',
+  'Mixed_low':  'MIX',
+  'Mixed':      'MIX', // legacy
+}
+// Badge classes: dark bg + light text = high intensity; light bg + dark text = low intensity
+const DAMAGE_TYPE_CLASSES = {
+  'AD_high':    'bg-red-700 text-red-100',
+  'AD_low':     'bg-red-200 text-red-800',
+  'AP_high':    'bg-blue-700 text-blue-100',
+  'AP_low':     'bg-blue-200 text-blue-800',
+  'Mixed_high': 'bg-purple-700 text-purple-100',
+  'Mixed_low':  'bg-purple-200 text-purple-800',
+  'Mixed':      'bg-purple-200 text-purple-800', // legacy
+}
+// Select option labels: show intensity in text since native <select> ignores bg colors
+const DAMAGE_TYPE_OPTION_LABELS = {
+  'AD_high':    'AD Forte',
+  'AD_low':     'AD Fraco',
+  'AP_high':    'AP Forte',
+  'AP_low':     'AP Fraco',
+  'Mixed_high': 'MIX Forte',
+  'Mixed_low':  'MIX Fraco',
+}
 const TIERS           = ['S','A','B','C','D']
-const SCALE_COLORS = ['🔴','🟡','🟢']
+// Arrow direction = beats. e.g. PICK → ENGAGE means Pick beats Engage.
+const COMP_BEATS = {
+  Engage:  ['Split', 'Siege'],
+  Protect: ['Engage', 'Pick'],
+  Pick:    ['Engage', 'Split'],
+  Siege:   ['Protect', 'Pick'],
+  Split:   ['Siege'],
+  Mix:     [],
+}
+const SCALE_COLORS = ['🟥','🟨','🟩']
 const SCALE_SLOTS  = ['Early','Mid','Late']
 const PHASES       = ['early','mid','late']
 
-// ── Componente Alpine reutilizável: seletor de força (🔴🟡🟢) ─────────────────
+// ── Componente Alpine reutilizável: seletor de força ─────────────────
 document.addEventListener('alpine:init', () => {
   Alpine.data('scaleSelector', () => ({
     value: null,

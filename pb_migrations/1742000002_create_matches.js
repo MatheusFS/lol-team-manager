@@ -35,7 +35,7 @@ migrate((app) => {
                 values: ["Siege", "Protect", "Engage", "Split", "Pick", "Dive", "Reset", "Mix"],
                 maxSelect: 4,
             },
-            { type: "text", name: "scaling" },       // 🔴🟡🟢 early/mid/late
+            { type: "text", name: "scaling" },
 
             // Enemy strategy
             {

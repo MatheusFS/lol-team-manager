@@ -58,8 +58,8 @@ document.addEventListener('alpine:init', () => {
 
     async save() {
       if (!this.form.name.trim()) return alert('Preencha o nome da formação.')
-      for (const role of ['top', 'jng', 'mid', 'adc', 'sup']) {
-        if (!this.form[role]) return alert(`Selecione o jogador de ${role}.`)
+      for (const field of ['top', 'jungle', 'mid', 'adc', 'support']) {
+        if (!this.form[field]) return alert(`Selecione o jogador de ${field}.`)
       }
 
       this.saving = true
@@ -75,10 +75,10 @@ document.addEventListener('alpine:init', () => {
         const payload = {
           name: this.form.name.trim(),
           top: this.form.top,
-          jng: this.form.jng,
+          jungle: this.form.jungle,
           mid: this.form.mid,
           adc: this.form.adc,
-          sup: this.form.sup,
+          support: this.form.support,
           active: this.form.active,
         }
 

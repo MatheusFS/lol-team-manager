@@ -73,7 +73,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     scalingToStr(arr) {
-      const C = ['🔴','🟡','🟢']
+      const C = ['🟥','🟨','🟩']
       return arr.every(s => s.ci !== null) ? arr.map(s => C[s.ci]).join('') : ''
     },
 
@@ -127,7 +127,7 @@ document.addEventListener('alpine:init', () => {
 
 
     _loadScaling(str, arr) {
-      const C = ['🔴','🟡','🟢']
+      const C = ['🟥','🟨','🟩']
       ;[...str].slice(0, 3).forEach((ch, si) => {
         const ci = C.indexOf(ch)
         if (ci !== -1) arr[si].ci = ci
@@ -135,58 +135,8 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Champion slot search ───────────────────────────────────────────────
-    searchChamp(slot) {
-      slot.name    = ''
-      slot.key     = ''
-      slot.results = Alpine.store('champions').search(slot.query)
-      slot.open    = slot.query.length > 0 && slot.results.length > 0
-    },
-
-    pickChamp(slot, champ) {
-      slot.name    = champ.name
-      slot.key     = champ.key ?? ''
-      slot.query   = champ.name
-      slot.results = []
-      slot.open    = false
-    },
-
-    onSlotFocus(slot) {
-      if (slot.query) {
-        slot.results = Alpine.store('champions').search(slot.query)
-        slot.open    = slot.results.length > 0
-      }
-    },
-
-    onSlotBlur(slot) {
-      setTimeout(() => { slot.open = false }, 150)
-    },
-
-    // ── MVC champion search ────────────────────────────────────────────────
-    searchMvc() {
-      this.mvcResults = Alpine.store('champions').search(this.mvcQuery)
-      this.mvcOpen    = this.mvcQuery.length > 0 && this.mvcResults.length > 0
-    },
-
-    onMvcFocus() {
-      const q = this.mvcDisplay || this.mvcQuery
-      if (q) {
-        this.mvcResults = Alpine.store('champions').search(q)
-        this.mvcOpen    = this.mvcResults.length > 0
-      }
-    },
-
-    pickMvc(champ) {
-      this.mvcId      = champ.id
-      this.mvcKey     = champ.key ?? ''
-      this.mvcDisplay = champ.name
-      this.mvcQuery   = ''
-      this.mvcResults = []
-      this.mvcOpen    = false
-    },
-
-    onMvcBlur() {
-      setTimeout(() => { this.mvcOpen = false }, 150)
-    },
+    // ── Champion selection ────────────────────────────────────────────────────
+    // Handled by champPicker component - no methods needed here
 
     // ── Load match ─────────────────────────────────────────────────────────
     async loadMatch() {
@@ -376,38 +326,16 @@ document.addEventListener('alpine:init', () => {
 
     // ── Strategy suggestion from champion data (display-only reference) ────
     _computeSuggestion(slots) {
-      const phases = ['early', 'mid', 'late']
-      const votes  = {}
-      const totals = [0, 0, 0], counts = [0, 0, 0]
       const champions = []
-
       for (const slot of slots) {
         if (!slot.name) continue
         const c = Alpine.store('champions').list.find(ch => ch.name === slot.name)
-        champions.push({
-          name:        slot.name,
-          key:         slot.key,
-          comp_type:   c?.comp_type   ?? null,
-          comp_type_2: c?.comp_type_2 ?? null,
-          early:       c?.early       ?? null,
-          mid:         c?.mid         ?? null,
-          late:        c?.late        ?? null,
-        })
-        if (c?.comp_type)   votes[c.comp_type]   = (votes[c.comp_type]   ?? 0) + 2  // primário vale 2
-        if (c?.comp_type_2) votes[c.comp_type_2] = (votes[c.comp_type_2] ?? 0) + 1  // secundário vale 1
-        for (let i = 0; i < 3; i++) {
-          if (c?.[phases[i]] != null) { totals[i] += c[phases[i]]; counts[i]++ }
-        }
+        if (!c) continue
+        champions.push(c)
       }
-
       if (!champions.length) return null
 
-      const maxVotes = Object.values(votes).length ? Math.max(...Object.values(votes)) : 0
-      const winners  = Object.keys(votes).filter(k => votes[k] === maxVotes)
-      const compType = winners.length === 1 ? winners[0] : (winners.length > 1 ? 'Mix' : null)
-      const scaling  = totals.map((t, i) => counts[i] ? (t / counts[i] >= 7/5 ? 2 : t / counts[i] >= 3/5 ? 1 : 0) : null)
-      const voteList = Object.entries(votes).map(([type, n]) => ({ type, n })).sort((a, b) => b.n - a.n)
-
+      const { compType, scaling, voteList } = buildCompVector(champions)
       return { compType, scaling, voteList, champions }
     },
 

@@ -29,6 +29,8 @@
     select.field-input { cursor: pointer; }
   </style>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/champ-picker.js"></script>
+  <script src="/scripts/comp-analysis.js"></script>
   <script src="/scripts/riot-api.js"></script>
   <script src="/scripts/match-form.js"></script>
   <script src="/scripts/match-assistant.js"></script>
@@ -143,24 +145,29 @@
             <template x-for="(slot, i) in ourChamps" :key="i">
               <div class="flex items-center gap-2">
                 <span class="text-xs text-slate-500 w-12 text-right" x-text="ROLES[i]"></span>
-                <div class="relative flex-1">
+                <div class="relative flex-1" x-data="champPicker({ mode: 'slot', slot: slot, maxResults: 12 })">
                   <!-- icon overlay when champion is selected -->
                   <img x-show="slot.key"
                        :src="$store.champions.imgUrl(slot.key)"
                        class="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-5 h-5 rounded-sm object-cover pointer-events-none">
-                  <input type="text" x-model="slot.query"
-                         @input="searchChamp(slot)"
-                         @focus="onSlotFocus(slot)"
-                         @blur="onSlotBlur(slot)"
+                  <input type="text" x-model="query"
+                         @input="onInput()"
+                         @focus="onFocus()"
+                         @blur="onBlur()"
+                         @keydown.down.prevent="focusNext()"
+                         @keydown.up.prevent="focusPrev()"
+                         @keydown.enter.prevent="selectFocused()"
                          :placeholder="ROLES[i] + '…'"
                          :class="slot.key ? 'pl-8' : 'pl-2.5'"
                          class="w-full bg-slate-800 border border-slate-700 rounded py-1 text-sm focus:outline-none focus:border-yellow-500">
-                  <div x-show="slot.open"
+                  <div x-show="open"
                        class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-700 rounded max-h-40 overflow-y-auto shadow-xl">
-                    <template x-for="c in slot.results" :key="c.id">
+                    <template x-for="(c, idx) in results" :key="c.id">
                       <button type="button"
-                              class="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-slate-700 transition-colors"
-                              @mousedown.prevent="pickChamp(slot, c)">
+                              class="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm transition-colors"
+                              :class="focused === idx ? 'bg-yellow-600/20' : 'hover:bg-slate-700'"
+                              @mousedown.prevent="pick(c)"
+                              @mouseenter="focused = idx">
                         <img :src="$store.champions.imgUrl(c.key)"
                              class="w-6 h-6 rounded-sm object-cover flex-shrink-0">
                         <span x-text="c.name"></span>
@@ -180,23 +187,28 @@
             <template x-for="(slot, i) in enemyChamps" :key="i">
               <div class="flex items-center gap-2">
                 <span class="text-xs text-slate-500 w-12 text-right" x-text="ROLES[i]"></span>
-                <div class="relative flex-1">
+                <div class="relative flex-1" x-data="champPicker({ mode: 'slot', slot: slot, maxResults: 12 })">
                   <img x-show="slot.key"
                        :src="$store.champions.imgUrl(slot.key)"
                        class="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-5 h-5 rounded-sm object-cover pointer-events-none">
-                  <input type="text" x-model="slot.query"
-                         @input="searchChamp(slot)"
-                         @focus="onSlotFocus(slot)"
-                         @blur="onSlotBlur(slot)"
+                  <input type="text" x-model="query"
+                         @input="onInput()"
+                         @focus="onFocus()"
+                         @blur="onBlur()"
+                         @keydown.down.prevent="focusNext()"
+                         @keydown.up.prevent="focusPrev()"
+                         @keydown.enter.prevent="selectFocused()"
                          :placeholder="ROLES[i] + '…'"
                          :class="slot.key ? 'pl-8' : 'pl-2.5'"
                          class="w-full bg-slate-800 border border-slate-700 rounded py-1 text-sm focus:outline-none focus:border-yellow-500">
-                  <div x-show="slot.open"
+                  <div x-show="open"
                        class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-700 rounded max-h-40 overflow-y-auto shadow-xl">
-                    <template x-for="c in slot.results" :key="c.id">
+                    <template x-for="(c, idx) in results" :key="c.id">
                       <button type="button"
-                              class="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-slate-700 transition-colors"
-                              @mousedown.prevent="pickChamp(slot, c)">
+                              class="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm transition-colors"
+                              :class="focused === idx ? 'bg-yellow-600/20' : 'hover:bg-slate-700'"
+                              @mousedown.prevent="pick(c)"
+                              @mouseenter="focused = idx">
                         <img :src="$store.champions.imgUrl(c.key)"
                              class="w-6 h-6 rounded-sm object-cover flex-shrink-0">
                         <span x-text="c.name"></span>
