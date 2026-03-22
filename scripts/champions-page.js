@@ -398,6 +398,20 @@ document.addEventListener('alpine:init', () => {
 
     // ── Modal ────────────────────────────────────────────────────────────────
 
+    // Normalize role keys from legacy Title-case to lowercase short-form
+    _normalizeRoleKeys(value) {
+      const ROLE_MAP = { 'Top': 'top', 'Jungle': 'jng', 'Mid': 'mid', 'ADC': 'adc', 'Support': 'sup' }
+      if (Array.isArray(value)) {
+        return value.map(r => ROLE_MAP[r] || r)
+      }
+      if (value && typeof value === 'object') {
+        const out = {}
+        for (const [k, v] of Object.entries(value)) out[ROLE_MAP[k] || k] = v
+        return out
+      }
+      return value
+    },
+
     openModal(champ) {
       // edits are initialized from flat fields (the confirmed values)
       // Use '' (empty string) for select-bound fields so Alpine binds to <option value="">
@@ -407,23 +421,29 @@ document.addEventListener('alpine:init', () => {
       if (champ.tier_by_role) {
         if (typeof champ.tier_by_role === 'string') {
           try {
-            tierByRole = JSON.parse(champ.tier_by_role)
+            tierByRole = this._normalizeRoleKeys(JSON.parse(champ.tier_by_role))
           } catch {
             tierByRole = {}
           }
         } else if (typeof champ.tier_by_role === 'object') {
-          tierByRole = { ...champ.tier_by_role }
+          tierByRole = this._normalizeRoleKeys({ ...champ.tier_by_role })
         }
       }
 
-      console.log(`[openModal] ${champ.name}: tier_by_role type=${typeof champ.tier_by_role}, value=`, champ.tier_by_role, 'parsed=', tierByRole)
+      // Normalize suggested blob — it may have been saved with legacy role keys
+      const rawSuggested = champ.suggested || {}
+      const suggested = {
+        ...rawSuggested,
+        roles:        this._normalizeRoleKeys(rawSuggested.roles),
+        tier_by_role: this._normalizeRoleKeys(rawSuggested.tier_by_role),
+      }
 
       this.modal = {
         champ,
-        suggested: champ.suggested || {},
+        suggested,
         edits: {
           class:       champ.class       || '',
-          roles:       Array.isArray(champ.roles) ? [...champ.roles] : [],
+          roles:       this._normalizeRoleKeys(Array.isArray(champ.roles) ? [...champ.roles] : []),
           damage_type: champ.damage_type  || '',
           comp_fit:    champ.comp_type    || '',
           comp_fit_2:  champ.comp_type_2  || '',
