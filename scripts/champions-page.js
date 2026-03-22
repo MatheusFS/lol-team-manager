@@ -29,7 +29,9 @@ document.addEventListener('alpine:init', () => {
 
       if (this.filterClass) list = list.filter(c => c.class === this.filterClass)
       if (this.filterRole)  list = list.filter(c => Array.isArray(c.roles) && c.roles.includes(this.filterRole))
-      if (this.filterTier)  list = list.filter(c => c.tier === this.filterTier)
+      if (this.filterTier)  list = list.filter(c =>
+        c.tier_by_role && Object.values(c.tier_by_role).includes(this.filterTier)
+      )
 
       if (this.filterComp) {
         list = list.filter(c => c.comp_type === this.filterComp || c.comp_type_2 === this.filterComp)
