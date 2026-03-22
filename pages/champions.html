@@ -125,19 +125,16 @@
     <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-slate-800/60">
-          <tr class="text-xs text-slate-400 uppercase tracking-wider">
-            <th class="text-left px-2 py-2 w-8"></th>
-            <th class="text-left px-2 py-2">Nome</th>
-            <th class="text-left px-2 py-2 w-20">Classe</th>
-            <th class="text-left px-2 py-2 w-28">Roles</th>
-            <th class="text-left px-2 py-2 w-20">Dano</th>
-            <th class="text-left px-2 py-2 w-20">Comp</th>
-            <th class="text-center px-1 py-2 w-16">E</th>
-            <th class="text-center px-1 py-2 w-16">M</th>
-            <th class="text-center px-1 py-2 w-16">L</th>
-            <th class="text-center px-2 py-2 w-12">Tier</th>
-            <th class="text-center px-2 py-2 w-16"></th>
-          </tr>
+           <tr class="text-xs text-slate-400 uppercase tracking-wider">
+             <th class="text-left px-2 py-2 w-8"></th>
+             <th class="text-left px-2 py-2">Nome</th>
+             <th class="text-left px-2 py-2 w-20">Classe</th>
+             <th class="text-left px-2 py-2 w-20">Dano</th>
+             <th class="text-left px-2 py-2 w-20">Comp</th>
+             <th class="text-center px-2 py-2 w-20">Escala</th>
+             <th class="text-left px-2 py-2 w-24">Roles</th>
+             <th class="text-center px-2 py-2 w-16"></th>
+           </tr>
         </thead>
         <tbody>
           <template x-for="champ in filtered" :key="champ.id">
@@ -156,86 +153,74 @@
               <!-- Name -->
               <td class="px-2 py-1.5 font-medium text-slate-200 w-20" x-text="champ.name"></td>
 
-              <!-- Class -->
-              <td class="px-2 py-1.5">
-                <span x-text="champ.class || '—'"
-                      class="text-xs px-1.5 py-0.5 rounded"
-                      :class="champ.class ? 'bg-slate-700 text-slate-200' : 'text-slate-600'"></span>
-              </td>
+               <!-- Class -->
+               <td class="px-2 py-1.5">
+                 <span x-text="champ.class || '—'"
+                       class="text-xs px-1.5 py-0.5 rounded"
+                       :class="champ.class ? 'bg-slate-700 text-slate-200' : 'text-slate-600'"></span>
+               </td>
 
-              <!-- Roles -->
-              <td class="px-2 py-1.5">
-                <template x-if="Array.isArray(champ.roles) && champ.roles.length">
-                  <div class="flex flex-wrap gap-0.5">
-                    <template x-for="r in champ.roles" :key="r">
-                      <span x-text="roleLabel(r)" class="text-[10px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-300"></span>
-                    </template>
-                  </div>
-                </template>
-                <template x-if="!Array.isArray(champ.roles) || !champ.roles.length">
-                  <span class="text-slate-600 text-xs">—</span>
-                </template>
-              </td>
+               <!-- Damage type -->
+               <td class="px-2 py-1.5">
+                 <span x-show="champ.damage_type"
+                       class="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                       :class="DAMAGE_TYPE_CLASSES[champ.damage_type] ?? 'bg-slate-700 text-slate-400'"
+                       x-text="DAMAGE_TYPE_LABELS[champ.damage_type] ?? champ.damage_type"></span>
+                 <span x-show="!champ.damage_type" class="text-xs text-slate-600">—</span>
+               </td>
 
-              <!-- Damage type -->
-              <td class="px-2 py-1.5">
-                <span x-text="champ.damage_type || '—'"
-                      class="text-xs"
-                      :class="{
-                        'text-red-400':    champ.damage_type && champ.damage_type.startsWith('AD'),
-                        'text-blue-400':   champ.damage_type && champ.damage_type.startsWith('AP'),
-                        'text-purple-400': champ.damage_type?.startsWith('Mixed'),
-                        'text-slate-600':  !champ.damage_type,
-                      }"></span>
-              </td>
+               <!-- Comp type -->
+               <td class="px-2 py-1.5">
+                 <div class="flex flex-col gap-0.5">
+                   <span x-text="(COMP_EMOJI[champ.comp_type] || '') + ' ' + (champ.comp_type || '—')"
+                         class="text-xs"
+                         :class="champ.comp_type ? 'text-slate-200' : 'text-slate-600'"></span>
+                   <span x-show="champ.comp_type_2"
+                         x-text="(COMP_EMOJI[champ.comp_type_2] || '') + ' ' + champ.comp_type_2"
+                         class="text-[10px] text-slate-500"></span>
+                 </div>
+               </td>
 
-              <!-- Comp type -->
-              <td class="px-2 py-1.5">
-                <div class="flex flex-col gap-0.5">
-                  <span x-text="(COMP_EMOJI[champ.comp_type] || '') + ' ' + (champ.comp_type || '—')"
-                        class="text-xs"
-                        :class="champ.comp_type ? 'text-slate-200' : 'text-slate-600'"></span>
-                  <span x-show="champ.comp_type_2"
-                        x-text="(COMP_EMOJI[champ.comp_type_2] || '') + ' ' + champ.comp_type_2"
-                        class="text-[10px] text-slate-500"></span>
-                </div>
-              </td>
+               <!-- Escala (Early / Mid / Late) -->
+               <td class="px-2 py-1.5 text-center">
+                 <div class="flex justify-center gap-1">
+                   <span x-text="champ.early != null ? SCALE_COLORS[champ.early] : '—'"
+                         class="text-sm"
+                         :class="champ.early == null ? 'text-slate-600 text-xs' : ''"></span>
+                   <span x-text="champ.mid != null ? SCALE_COLORS[champ.mid] : '—'"
+                         class="text-sm"
+                         :class="champ.mid == null ? 'text-slate-600 text-xs' : ''"></span>
+                   <span x-text="champ.late != null ? SCALE_COLORS[champ.late] : '—'"
+                         class="text-sm"
+                         :class="champ.late == null ? 'text-slate-600 text-xs' : ''"></span>
+                 </div>
+               </td>
 
-              <!-- Early / Mid / Late -->
-              <template x-for="phase in PHASES" :key="phase">
-                <td class="px-1 py-1.5 text-center">
-                  <span x-text="champ[phase] != null ? SCALE_COLORS[champ[phase]] : '—'"
-                        class="text-sm"
-                        :class="champ[phase] == null ? 'text-slate-600 text-xs' : ''"></span>
+               <!-- Roles com Tier (cores dos badges refletem tiers) -->
+               <td class="px-2 py-1.5">
+                 <template x-if="Array.isArray(champ.roles) && champ.roles.length">
+                   <div class="flex flex-wrap gap-1">
+                     <template x-for="r in champ.roles" :key="r">
+                       <span x-text="roleLabel(r)" 
+                             class="text-[10px] px-2 py-0.5 rounded font-semibold"
+                             :class="{
+                               'text-yellow-300 bg-yellow-900/30': champ.tier_by_role?.[r] === 'S',
+                               'text-green-400 bg-green-900/30':   champ.tier_by_role?.[r] === 'A',
+                               'text-slate-300 bg-slate-700/50':   champ.tier_by_role?.[r] === 'B',
+                               'text-orange-400 bg-orange-900/30': champ.tier_by_role?.[r] === 'C',
+                               'text-red-400 bg-red-900/30':       champ.tier_by_role?.[r] === 'D',
+                               'text-slate-400 bg-slate-700/30':   !champ.tier_by_role?.[r],
+                             }"></span>
+                     </template>
+                   </div>
+                 </template>
+                 <template x-if="!Array.isArray(champ.roles) || !champ.roles.length">
+                   <span class="text-slate-600 text-xs">—</span>
+                 </template>
                 </td>
-              </template>
 
-              <!-- Tier -->
-              <td class="px-2 py-1.5 text-center">
-                <template x-if="champ.tier_by_role && Object.keys(champ.tier_by_role).length">
-                  <div class="flex gap-1 justify-center flex-wrap">
-                    <template x-for="(tier, role) in champ.tier_by_role" :key="role">
-                      <span :title="roleLabel(role)" class="text-xs font-bold">
-                        <span class="text-slate-500" x-text="roleLabel(role)"></span><span class="px-1 py-0.5 rounded"
-                              x-text="tier"
-                              :class="{
-                                'text-yellow-300 bg-yellow-900/20': tier === 'S',
-                                'text-green-400 bg-green-900/20':   tier === 'A',
-                                'text-slate-300 bg-slate-700/20':   tier === 'B',
-                                'text-orange-400 bg-orange-900/20': tier === 'C',
-                                'text-red-400 bg-red-900/20':       tier === 'D',
-                              }"></span>
-                      </span>
-                    </template>
-                  </div>
-                </template>
-                <template x-if="!champ.tier_by_role || !Object.keys(champ.tier_by_role).length">
-                  <span class="text-slate-600 text-xs">—</span>
-                </template>
-              </td>
-
-              <!-- Actions -->
-              <td class="px-2 py-1.5 text-center">
+               <!-- Actions -->
+               <td class="px-2 py-1.5 text-center">
                 <button @click="openModal(champ)"
                         class="text-xs text-yellow-500 hover:text-yellow-300 transition-colors">
                   Editar
@@ -327,12 +312,16 @@
           <!-- Damage type -->
           <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
             <span class="text-xs text-slate-400">Dano</span>
-            <span class="text-xs text-slate-500" x-text="modal.suggested.damage_type || '—'"></span>
+            <span x-show="modal.suggested.damage_type"
+                  class="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                  :class="DAMAGE_TYPE_CLASSES[modal.suggested.damage_type] ?? 'bg-slate-700 text-slate-400'"
+                  x-text="DAMAGE_TYPE_LABELS[modal.suggested.damage_type] ?? modal.suggested.damage_type"></span>
+            <span x-show="!modal.suggested.damage_type" class="text-xs text-slate-500">—</span>
             <select @change="modal.edits.damage_type = $event.target.value"
                     class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
               <option value="" :selected="!modal.edits.damage_type">—</option>
               <template x-for="dt in DAMAGE_TYPES" :key="dt">
-                <option :value="dt" :selected="modal.edits.damage_type === dt" x-text="dt"></option>
+                <option :value="dt" :selected="modal.edits.damage_type === dt" x-text="DAMAGE_TYPE_OPTION_LABELS[dt] ?? dt"></option>
               </template>
             </select>
             <button @click="acceptSuggestion('damage_type')" title="Aceitar sugestão"
@@ -395,12 +384,12 @@
             <template x-if="modal.edits.roles && modal.edits.roles.length">
               <div class="space-y-2">
                 <template x-for="role in modal.edits.roles" :key="role">
-                   <div class="flex items-center gap-3">
-                     <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="roleLabel(role)"></label>
-                    <div class="flex-1 flex items-center gap-2">
-                      <select @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
-                              :value="modal.edits.tier_by_role[role] || ''"
-                              class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                      <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="roleLabel(role)"></label>
+                     <div class="flex-1 flex items-center gap-2">
+                       <select x-init="$el.value = modal.edits.tier_by_role[role] || ''"
+                               @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
+                               class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
                         <option value="">—</option>
                         <template x-for="t in TIERS" :key="t">
                           <option :value="t" x-text="t"></option>
