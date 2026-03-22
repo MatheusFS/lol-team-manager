@@ -26,11 +26,10 @@
       </div>
       <div class="flex items-center gap-3">
         <span x-show="fetchProgress" x-text="fetchProgress" class="text-xs text-yellow-400"></span>
-        <span x-show="metaStatus === 'cors'" class="text-xs text-orange-400">Meta indisponível (CORS)</span>
-        <button @click="fetchSuggestions()" :disabled="fetching"
+        <button @click="importFromOpGG()" :disabled="fetching"
                 class="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-sm font-medium px-4 py-2 rounded transition-colors">
-          <span x-show="!fetching">Buscar Sugestões</span>
-          <span x-show="fetching">Buscando…</span>
+          <span x-show="!fetching">Importar via OP.GG</span>
+          <span x-show="fetching">Processando…</span>
         </button>
       </div>
     </div>
