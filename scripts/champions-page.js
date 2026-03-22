@@ -167,7 +167,15 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // ── Fetch Suggestions ────────────────────────────────────────────────────
+    // ── Import from OP.GG ──────────────────────────────────────────────────
+
+    importFromOpGG() {
+      // Show the meta import UI
+      this.metaStatus = 'cors'
+      this.metaJson = ''
+    },
+
+    // ── Fetch Suggestions (legacy, kept for reference) ────────────────────────────────────────────────────
 
     async fetchSuggestions() {
       this.fetching = true
@@ -300,33 +308,66 @@ document.addEventListener('alpine:init', () => {
         // Generate suggestions with the imported meta
         const suggestions = ChampionSuggest.suggestAll(ddragonData, metaData)
 
-        const total = this.champs.length
+        // Count how many champions will be updated
+        let updateCount = 0
+        const updates = new Map()
+
+        for (const champ of this.champs) {
+          const s = suggestions[champ.key]
+          if (!s) continue
+
+          // Build payload
+          const payload = { suggested: s, patch: version }
+          let willUpdate = false
+
+          if (!champ.class && s.class)                      { payload.class       = s.class;       willUpdate = true }
+          if (!champ.roles && s.roles)                      { payload.roles       = s.roles;       willUpdate = true }
+          if (!champ.damage_type && s.damage_type)          { payload.damage_type = s.damage_type; willUpdate = true }
+          if (!champ.tier_by_role && s.tier_by_role)        { payload.tier_by_role = s.tier_by_role; willUpdate = true }
+          if (!champ.comp_type && s.comp_fit)               { payload.comp_type   = s.comp_fit;    willUpdate = true }
+
+          // Always update suggested
+          willUpdate = true
+
+          if (willUpdate) {
+            updateCount++
+            updates.set(champ.id, { champ, payload })
+          }
+        }
+
+        // Ask for confirmation
+        if (updateCount === 0) {
+          alert('Nenhum campeão para atualizar (todos já têm dados preenchidos).')
+          return
+        }
+
+        const confirmed = confirm(`Atualizar ${updateCount} campeões com dados do OP.GG?\n\nIsso vai preencher dados vazios como class, roles, damage_type, tier_by_role e comp_type.`)
+        if (!confirmed) {
+          this.metaStatus = ''
+          return
+        }
+
+        // Apply updates
+        this.fetching = true
+        this.fetchProgress = 'Salvando dados…'
         let done = 0
         const BATCH = 10
+        const updatesList = Array.from(updates.values())
+        const total = updatesList.length
 
-        // Apply suggestions to each champion
         for (let i = 0; i < total; i += BATCH) {
-          const batch = this.champs.slice(i, i + BATCH)
-          await Promise.all(batch.map(async champ => {
-            const s = suggestions[champ.key]
-            if (!s) return
+          const batch = updatesList.slice(i, i + BATCH)
+          await Promise.all(batch.map(async ({ champ, payload }) => {
+            // Update local state
+            champ.suggested = payload.suggested
+            champ.patch = payload.patch
+            if (payload.class) champ.class = payload.class
+            if (payload.roles) champ.roles = payload.roles
+            if (payload.damage_type) champ.damage_type = payload.damage_type
+            if (payload.tier_by_role) champ.tier_by_role = payload.tier_by_role
+            if (payload.comp_type) champ.comp_type = payload.comp_type
 
-            console.log(`[importMetaManual] ${champ.name} (${champ.key}): suggestions=`, s)
-
-            // Store suggested blob for modal comparison
-            champ.suggested = s
-            champ.patch = version
-
-            // Only auto-fill flat fields if they're not yet set (don't overwrite manual edits)
-            const payload = { suggested: s, patch: version }
-            if (!champ.class)       { champ.class       = s.class;       payload.class       = s.class }
-            if (!champ.roles)       { champ.roles       = s.roles;       payload.roles       = s.roles }
-            if (!champ.damage_type) { champ.damage_type = s.damage_type; payload.damage_type = s.damage_type }
-            if (!champ.tier_by_role) { champ.tier_by_role = s.tier_by_role; payload.tier_by_role = s.tier_by_role }
-            if (!champ.comp_type)   { champ.comp_type   = s.comp_fit;    payload.comp_type   = s.comp_fit }
-
-            console.log(`[importMetaManual] ${champ.name}: payload=`, payload)
-
+            // Save to database
             await api.col('champions').update(champ.id, payload)
             done++
             this.fetchProgress = `${done}/${total}`
@@ -334,8 +375,9 @@ document.addEventListener('alpine:init', () => {
         }
 
         Alpine.store('champions').list = [...this.champs]
-        this.fetchProgress = 'Importação concluída!'
-        setTimeout(() => { this.fetchProgress = '' }, 2000)
+        this.fetchProgress = ''
+        this.metaStatus = ''
+        alert(`✅ ${updateCount} campeões atualizados com sucesso!`)
       } catch (e) {
         console.error('Falha ao processar meta importada', e)
         this.fetchProgress = 'Erro: ' + e.message
