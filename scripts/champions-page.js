@@ -52,6 +52,121 @@ document.addEventListener('alpine:init', () => {
       Alpine.store('champions').loaded = true
     },
 
+    // ── Copy Bookmarklet ────────────────────────────────────────────────
+
+    copyBookmarklet() {
+      const bookmarklet = `
+(function() {
+  const TIER_BG = 'M2 0h20v18.056L12 23 2 18.056z';
+  const TIER_PATHS = {
+    'M10.148': 'A',    // tier 1 (linhas até 25)
+    'M9.165': 'B',     // tier 2 (linhas até 96)
+    'm10.124': 'C',    // tier 3 (linhas até 171)
+    'M12.672': 'D',    // tier 4 (linhas até 220)
+    'm10.327': 'D',    // tier 5 (linhas abaixo de 220)
+  };
+  const ROLE_PATHS = {
+    'M5.14 2': 'Jungle',
+    'm19 3': 'Top',
+    'm15 3': 'Mid',
+    'M9 21': 'ADC',
+    'M12.833': 'Support',
+  };
+
+  const meta = {};
+  const unknownPaths = { tier: new Set(), role: new Set() };
+
+  const rows = document.querySelectorAll('main tbody tr');
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    if (!cells.length) return;
+
+    // Champion name from td:nth-of-type(2)
+    const nameEl = cells[1]?.querySelector('a, span') || cells[1];
+    const name = nameEl?.textContent?.trim()?.toLowerCase().replace(/[^a-z]/g, '') || '';
+    if (!name) return;
+
+    // Tier from td:nth-of-type(3) — check first few chars (discriminator prefix)
+    const tierAllPaths = Array.from(cells[2]?.querySelectorAll('svg g path[d]') || [])
+      .map(p => p.getAttribute('d'));
+    let tier = null;
+    for (const path of tierAllPaths) {
+      if (path && path !== TIER_BG) {
+        // Try to match by checking if path starts with known discriminator
+        let matched = null;
+        for (const [discrim, tierVal] of Object.entries(TIER_PATHS)) {
+          if (path.startsWith(discrim)) {
+            matched = tierVal;
+            break;
+          }
+        }
+        if (matched) {
+          tier = matched;
+        } else {
+          unknownPaths.tier.add(path);
+        }
+        break; // Use first non-background path
+      }
+    }
+
+    // Role from td:nth-of-type(4) — match by path start prefix
+    const roleAllPaths = Array.from(cells[3]?.querySelectorAll('svg path[d]') || [])
+      .map(p => p.getAttribute('d'));
+    let role = null;
+    for (const path of roleAllPaths) {
+      if (path) {
+        let matched = null;
+        for (const [discrim, roleVal] of Object.entries(ROLE_PATHS)) {
+          if (path.startsWith(discrim)) {
+            matched = roleVal;
+            break;
+          }
+        }
+        if (matched) {
+          role = matched;
+        } else {
+          unknownPaths.role.add(path);
+        }
+        break; // Use first path
+      }
+    }
+
+    // Accumulate by champion
+    if (tier && role) {
+      if (!meta[name]) meta[name] = {};
+      meta[name][role] = tier;
+    }
+  });
+
+  // Add unknown paths for debugging
+  if (unknownPaths.tier.size || unknownPaths.role.size) {
+    meta._unknown_paths = {
+      tier: [...unknownPaths.tier],
+      role: [...unknownPaths.role],
+    };
+  }
+
+  copy(JSON.stringify(meta));
+  alert('✅ JSON copiado! ' + Object.keys(meta).filter(k => k !== '_unknown_paths').length + ' campeões extraídos.\\n' + (meta._unknown_paths ? '⚠️ Alguns paths SVG não foram reconhecidos. Verifique _unknown_paths no JSON.' : ''));
+})();
+      `.trim()
+
+      try {
+        navigator.clipboard.writeText(bookmarklet).then(() => {
+          alert('✅ Comando copiado! Agora:\n1. Abra DevTools (F12) na aba op.gg\n2. Vá para Console\n3. Cole e pressione Enter\n4. O JSON será copiado automaticamente')
+        })
+      } catch {
+        // Fallback: copy via textarea
+        const ta = document.createElement('textarea')
+        ta.value = bookmarklet
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+        alert('✅ Comando copiado! Agora:\n1. Abra DevTools (F12) na aba op.gg\n2. Vá para Console\n3. Cole e pressione Enter\n4. O JSON será copiado automaticamente')
+      }
+    },
+
     // ── Fetch Suggestions ────────────────────────────────────────────────────
 
     async fetchSuggestions() {
@@ -63,9 +178,16 @@ document.addEventListener('alpine:init', () => {
         const version = _ddragonVersion
         const ddragonData = await ChampionSuggest.fetchDDragon(version)
 
-        this.fetchProgress = 'Buscando meta (Lolalytics)…'
         const patchNum = version.split('.').slice(0, 2).join('.')
-        let meta = await ChampionSuggest.fetchMeta(patchNum)
+        let meta = null
+
+        this.fetchProgress = 'Buscando meta (op.gg)…'
+        meta = await ChampionSuggest.fetchOpGG(patchNum)
+
+        if (!meta) {
+          this.fetchProgress = 'Buscando meta (Lolalytics)…'
+          meta = await ChampionSuggest.fetchMeta(patchNum)
+        }
 
         if (meta) {
           this.metaStatus = 'ok'
@@ -95,7 +217,7 @@ document.addEventListener('alpine:init', () => {
             if (!champ.class)       { champ.class       = s.class;       payload.class       = s.class }
             if (!champ.roles)       { champ.roles       = s.roles;       payload.roles       = s.roles }
             if (!champ.damage_type) { champ.damage_type = s.damage_type; payload.damage_type = s.damage_type }
-            if (!champ.tier)        { champ.tier        = s.tier;        payload.tier        = s.tier }
+            if (!champ.tier_by_role) { champ.tier_by_role = s.tier_by_role; payload.tier_by_role = s.tier_by_role }
             if (!champ.comp_type)   { champ.comp_type   = s.comp_fit;    payload.comp_type   = s.comp_fit }
 
             await api.col('champions').update(champ.id, payload)
@@ -117,12 +239,101 @@ document.addEventListener('alpine:init', () => {
 
     // ── Manual Meta Import ───────────────────────────────────────────────────
 
-    importMetaManual() {
+    async importMetaManual() {
       const patch = _ddragonVersion.split('.').slice(0, 2).join('.')
-      const result = ChampionSuggest.importMeta(this.metaJson, patch)
-      if (result) {
-        this.metaStatus = 'manual'
-        this.metaJson = ''
+
+      // Parse the JSON and extract unknown paths warning
+      let metaData = null
+      try {
+        metaData = JSON.parse(this.metaJson)
+      } catch {
+        alert('JSON inválido. Verifique a sintaxe.')
+        return
+      }
+
+      if (!metaData || typeof metaData !== 'object') {
+        alert('JSON inválido. Deve ser um objeto.')
+        return
+      }
+
+      // Warn about unknown paths if present
+      if (metaData._unknown_paths) {
+        const tierUnknown = Array.isArray(metaData._unknown_paths.tier) ? metaData._unknown_paths.tier : []
+        const roleUnknown = Array.isArray(metaData._unknown_paths.role) ? metaData._unknown_paths.role : []
+
+        if (tierUnknown.length || roleUnknown.length) {
+          const unknownList = [
+            tierUnknown.length ? `${tierUnknown.length} paths de tier` : '',
+            roleUnknown.length ? `${roleUnknown.length} paths de role` : '',
+          ].filter(Boolean).join(', ')
+          alert(`⚠️ Importação parcial: ${unknownList} não reconhecidos.\n\nSe quiser completar o dict, copie e envie:\n\ntier: ${JSON.stringify(tierUnknown)}\nrole: ${JSON.stringify(roleUnknown)}`)
+        }
+      }
+
+      // Remove internal fields before caching
+      delete metaData._unknown_paths
+
+      // Cache and proceed
+      const result = ChampionSuggest.importMeta(metaData, patch)
+      if (!result) {
+        alert('Falha ao processar JSON.')
+        return
+      }
+
+      this.fetching = true
+      this.fetchProgress = 'Processando sugestões de tier…'
+      this.metaStatus = 'manual'
+      this.metaJson = ''
+
+      try {
+        // Get DDragon data to compute suggestions
+        const version = _ddragonVersion
+        const ddragonData = await ChampionSuggest.fetchDDragon(version)
+
+        // Generate suggestions with the imported meta
+        const suggestions = ChampionSuggest.suggestAll(ddragonData, metaData)
+
+        const total = this.champs.length
+        let done = 0
+        const BATCH = 10
+
+        // Apply suggestions to each champion
+        for (let i = 0; i < total; i += BATCH) {
+          const batch = this.champs.slice(i, i + BATCH)
+          await Promise.all(batch.map(async champ => {
+            const s = suggestions[champ.key]
+            if (!s) return
+
+            console.log(`[importMetaManual] ${champ.name} (${champ.key}): suggestions=`, s)
+
+            // Store suggested blob for modal comparison
+            champ.suggested = s
+            champ.patch = version
+
+            // Only auto-fill flat fields if they're not yet set (don't overwrite manual edits)
+            const payload = { suggested: s, patch: version }
+            if (!champ.class)       { champ.class       = s.class;       payload.class       = s.class }
+            if (!champ.roles)       { champ.roles       = s.roles;       payload.roles       = s.roles }
+            if (!champ.damage_type) { champ.damage_type = s.damage_type; payload.damage_type = s.damage_type }
+            if (!champ.tier_by_role) { champ.tier_by_role = s.tier_by_role; payload.tier_by_role = s.tier_by_role }
+            if (!champ.comp_type)   { champ.comp_type   = s.comp_fit;    payload.comp_type   = s.comp_fit }
+
+            console.log(`[importMetaManual] ${champ.name}: payload=`, payload)
+
+            await api.col('champions').update(champ.id, payload)
+            done++
+            this.fetchProgress = `${done}/${total}`
+          }))
+        }
+
+        Alpine.store('champions').list = [...this.champs]
+        this.fetchProgress = 'Importação concluída!'
+        setTimeout(() => { this.fetchProgress = '' }, 2000)
+      } catch (e) {
+        console.error('Falha ao processar meta importada', e)
+        this.fetchProgress = 'Erro: ' + e.message
+      } finally {
+        this.fetching = false
       }
     },
 
@@ -143,7 +354,7 @@ document.addEventListener('alpine:init', () => {
           early:       champ.early        ?? null,
           mid:         champ.mid          ?? null,
           late:        champ.late         ?? null,
-          tier:        champ.tier         || '',
+          tier_by_role: champ.tier_by_role ? { ...champ.tier_by_role } : {},
         },
       }
     },
@@ -159,6 +370,8 @@ document.addEventListener('alpine:init', () => {
         this.modal.edits.roles = s.roles ? [...s.roles] : []
       } else if (field === 'comp_fit') {
         this.modal.edits.comp_fit = s.comp_fit || ''
+      } else if (field === 'tier_by_role') {
+        this.modal.edits.tier_by_role = s.tier_by_role ? { ...s.tier_by_role } : {}
       } else {
         this.modal.edits[field] = s[field] || ''
       }
@@ -176,7 +389,7 @@ document.addEventListener('alpine:init', () => {
         early:       null,
         mid:         null,
         late:        null,
-        tier:        s.tier        || '',
+        tier_by_role: s.tier_by_role ? { ...s.tier_by_role } : {},
       }
     },
 
@@ -206,7 +419,7 @@ document.addEventListener('alpine:init', () => {
         class:       edits.class      || null,
         roles:       edits.roles?.length ? edits.roles : null,
         damage_type: edits.damage_type || null,
-        tier:        edits.tier        || null,
+        tier_by_role: Object.keys(edits.tier_by_role || {}).length ? edits.tier_by_role : null,
       }
 
       this.saving = { ...this.saving, [champ.id]: 'saving' }

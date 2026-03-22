@@ -37,6 +37,56 @@ const ChampionSuggest = (() => {
     return json.data
   }
 
+  // ── op.gg meta fetch ────────────────────────────────────────────────────────
+  // Returns Map<champName, { winrate, pickrate, lane }> or null
+  async function fetchOpGG(patch) {
+    const cacheKey = `opgg-meta-${patch}`
+    const cached = _cache.get(cacheKey, ONE_DAY)
+    if (cached) return cached
+
+    try {
+      const url = 'https://op.gg/lol/champions'
+      const res = await fetch(url)
+      if (!res.ok) return null
+      const html = await res.text()
+      const meta = _parseOpGGTierlist(html)
+      if (meta && Object.keys(meta).length > 20) {
+        _cache.set(cacheKey, meta)
+        return meta
+      }
+    } catch { /* CORS or network error — expected */ }
+
+    return null
+  }
+
+  // Parse the op.gg champions tier list table
+  function _parseOpGGTierlist(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const rows = doc.querySelectorAll('table tbody tr')
+    if (!rows.length) return null
+
+    const meta = {}
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td')
+      if (cells.length < 4) continue
+
+      // op.gg columns: Rank | Champion | Win Rate | Pick Rate | Ban Rate | ... | Position
+      const nameEl = cells[1]?.querySelector('a, span') || cells[1]
+      const name = nameEl?.textContent?.trim()
+      if (!name) continue
+
+      const wr    = parseFloat(cells[2]?.textContent)
+      const pr    = parseFloat(cells[3]?.textContent)
+      const pos   = cells[cells.length - 2]?.textContent?.trim()?.toLowerCase()
+
+      if (!isNaN(wr)) {
+        const key = name.toLowerCase().replace(/[^a-z]/g, '')
+        meta[key] = { winrate: wr, pickrate: pr || 0, lane: pos || '' }
+      }
+    }
+    return Object.keys(meta).length ? meta : null
+  }
+
   // ── Lolalytics meta fetch ─────────────────────────────────────────────────
   // Returns Map<champName, { winrate, pickrate, banrate, games, lane }> or null
   async function fetchMeta(patch) {
@@ -106,7 +156,7 @@ const ChampionSuggest = (() => {
 
   // ── Suggestion rules ──────────────────────────────────────────────────────
 
-  function suggestOne(dd, metaEntry) {
+  function suggestOne(dd, metaEntry, metaByRole) {
     const tags   = dd.tags || []
     const info   = dd.info || {}
     const stats  = dd.stats || {}
@@ -154,15 +204,39 @@ const ChampionSuggest = (() => {
     else if (hasTag('Support') && def >= 5)        compFit = 'Protect'
     else if (hasTag('Fighter') && attack >= 7)     compFit = 'Split'
 
-    // tier (from meta)
-    let tier = null
-    if (metaEntry?.winrate && metaEntry?.pickrate >= 1) {
-      const wr = metaEntry.winrate
-      if (wr > 53)      tier = 'S'
-      else if (wr > 51) tier = 'A'
-      else if (wr > 49) tier = 'B'
-      else if (wr > 47) tier = 'C'
-      else              tier = 'D'
+    // Helper to compute tier from winrate
+    function computeTier(wr) {
+      if (!wr || isNaN(wr)) return null
+      if (wr > 53)      return 'S'
+      else if (wr > 51) return 'A'
+      else if (wr > 49) return 'B'
+      else if (wr > 47) return 'C'
+      else              return 'D'
+    }
+
+    // tier_by_role: compute tier for each role from metaByRole data
+    const tierByRole = {}
+    const finalRoles = metaRoles || [...roles]
+    if (metaByRole && typeof metaByRole === 'object') {
+      for (const role of finalRoles) {
+        const roleData = metaByRole[role]
+        if (roleData?.winrate && roleData?.pickrate >= 1) {
+          tierByRole[role] = computeTier(roleData.winrate)
+        }
+      }
+    } else if (metaEntry?.winrate && metaEntry?.pickrate >= 1) {
+      // Fallback: single meta entry applies to the role specified in it (if any)
+      const tier = computeTier(metaEntry.winrate)
+      if (metaEntry.lane && metaRoles) {
+        for (const role of metaRoles) {
+          tierByRole[role] = tier
+        }
+      } else {
+        // If no lane specified, apply to all roles as fallback
+        for (const role of finalRoles) {
+          tierByRole[role] = tier
+        }
+      }
     }
 
     // power_curve: null in V1 (needs per-champion game-length data)
@@ -173,22 +247,44 @@ const ChampionSuggest = (() => {
       roles:       metaRoles || [...roles],
       damage_type: damageType,
       comp_fit:    compFit,
-      tier,
+      tier_by_role: Object.keys(tierByRole).length ? tierByRole : null,
       power_curve: powerCurve,
     }
   }
 
   // ── Batch suggest ─────────────────────────────────────────────────────────
   // ddragonData: { [key]: champData } from fetchDDragon
-  // meta: { [nameKey]: { winrate, pickrate, ... } } or null
+  // meta: { [nameKey]: { winrate, pickrate, lane?, ... } } or null
   // Returns Map<champKey, suggestion>
   function suggestAll(ddragonData, meta) {
+    // First pass: group meta by champion (handling multiple role entries)
+    const metaByChamp = {}
+    if (meta) {
+      for (const [nameKey, data] of Object.entries(meta)) {
+        const role = (data.lane || '').toLowerCase()
+        const roleMap = { top: 'Top', jungle: 'Jungle', middle: 'Mid', mid: 'Mid', bottom: 'ADC', adc: 'ADC', support: 'Support' }
+        const mappedRole = roleMap[role] || null
+
+        if (!metaByChamp[nameKey]) {
+          metaByChamp[nameKey] = {}
+        }
+
+        // Store by role if lane info available, else store as default
+        if (mappedRole) {
+          metaByChamp[nameKey][mappedRole] = data
+        } else {
+          metaByChamp[nameKey]['_default'] = data
+        }
+      }
+    }
+
     const results = {}
     for (const [key, dd] of Object.entries(ddragonData)) {
       // Match meta entry by normalized name
       const normKey = key.toLowerCase().replace(/[^a-z]/g, '')
-      const metaEntry = meta?.[normKey] || null
-      results[key] = suggestOne(dd, metaEntry)
+      const metaEntry = metaByChamp[normKey]?._default || null
+      const metaByRole = metaByChamp[normKey] ? Object.fromEntries(Object.entries(metaByChamp[normKey]).filter(([k]) => k !== '_default')) : null
+      results[key] = suggestOne(dd, metaEntry, metaByRole)
     }
     return results
   }
@@ -196,6 +292,7 @@ const ChampionSuggest = (() => {
   // ── Public API ─────────────────────────────────────────────────────────────
   return {
     fetchDDragon,
+    fetchOpGG,
     fetchMeta,
     importMeta,
     getMetaCache,
