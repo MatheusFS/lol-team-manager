@@ -176,17 +176,21 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const version = _ddragonVersion
+        console.log('[fetchSuggestions] version:', version)
         const ddragonData = await ChampionSuggest.fetchDDragon(version)
+        console.log('[fetchSuggestions] ddragonData loaded, champions:', Object.keys(ddragonData).length)
 
         const patchNum = version.split('.').slice(0, 2).join('.')
         let meta = null
 
         this.fetchProgress = 'Buscando meta (op.gg)…'
         meta = await ChampionSuggest.fetchOpGG(patchNum)
+        console.log('[fetchSuggestions] fetchOpGG result:', meta)
 
         if (!meta) {
           this.fetchProgress = 'Buscando meta (Lolalytics)…'
           meta = await ChampionSuggest.fetchMeta(patchNum)
+          console.log('[fetchSuggestions] fetchMeta result:', meta)
         }
 
         if (meta) {
@@ -194,9 +198,12 @@ document.addEventListener('alpine:init', () => {
         } else {
           this.metaStatus = 'cors'
           meta = ChampionSuggest.getMetaCache(patchNum)
+          console.log('[fetchSuggestions] getMetaCache result:', meta)
         }
 
+        console.log('[fetchSuggestions] calling suggestAll with meta:', meta)
         const suggestions = ChampionSuggest.suggestAll(ddragonData, meta)
+        console.log('[fetchSuggestions] suggestAll completed, got suggestions for', Object.keys(suggestions).length, 'champs')
 
         const total = this.champs.length
         let done = 0
