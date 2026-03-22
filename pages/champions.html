@@ -387,13 +387,15 @@
                     <div class="flex items-center gap-3">
                       <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="roleLabel(role)"></label>
                      <div class="flex-1 flex items-center gap-2">
-                       <select x-effect="$el.value = modal.edits.tier_by_role?.[role] || ''"
+                       <select x-effect="$nextTick(() => $el.value = modal.edits.tier_by_role?.[role] || '')"
                                @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
                                class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
                          <option value="">—</option>
-                         <template x-for="t in TIERS" :key="t">
-                           <option :value="t" x-text="t"></option>
-                         </template>
+                         <option value="S">S</option>
+                         <option value="A">A</option>
+                         <option value="B">B</option>
+                         <option value="C">C</option>
+                         <option value="D">D</option>
                        </select>
                        <span class="text-[9px] text-slate-500"
                              x-show="modal.suggested.tier_by_role?.[role]"
