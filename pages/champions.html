@@ -383,24 +383,24 @@
             <div class="text-xs text-slate-400 font-semibold mb-2">Tiers por Posição</div>
             <template x-if="modal.edits.roles && modal.edits.roles.length">
               <div class="space-y-2">
-                <template x-for="role in modal.edits.roles" :key="role">
+                 <template x-for="role in modal.edits.roles" :key="role">
                     <div class="flex items-center gap-3">
                       <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="roleLabel(role)"></label>
                      <div class="flex-1 flex items-center gap-2">
-                       <select x-init="$el.value = modal.edits.tier_by_role[role] || ''"
+                       <select x-effect="$el.value = modal.edits.tier_by_role?.[role] || ''"
                                @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
                                class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
-                        <option value="">—</option>
-                        <template x-for="t in TIERS" :key="t">
-                          <option :value="t" x-text="t"></option>
-                        </template>
-                      </select>
-                      <span class="text-[9px] text-slate-500"
-                            x-show="modal.suggested.tier_by_role?.[role]"
-                            x-text="'(sugerido: ' + (modal.suggested.tier_by_role?.[role] || '—') + ')'"></span>
-                    </div>
-                  </div>
-                </template>
+                         <option value="">—</option>
+                         <template x-for="t in TIERS" :key="t">
+                           <option :value="t" x-text="t"></option>
+                         </template>
+                       </select>
+                       <span class="text-[9px] text-slate-500"
+                             x-show="modal.suggested.tier_by_role?.[role]"
+                             x-text="'(sugerido: ' + (modal.suggested.tier_by_role?.[role] || '—') + ')'"></span>
+                     </div>
+                   </div>
+                 </template>
               </div>
               <button @click="acceptSuggestion('tier_by_role')"
                       class="text-xs text-yellow-500 hover:text-yellow-300 mt-3 transition-colors">

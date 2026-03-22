@@ -321,11 +321,11 @@ document.addEventListener('alpine:init', () => {
           // Build payload
           const payload = { suggested: s, patch: version }
 
-          // OP.GG import: only update tier_by_role, class, roles, and damage_type
+          // OP.GG import: only update tier_by_role, class and roles
+          // damage_type heuristic is unreliable — saved only as suggestion for manual review
           // comp_type is a strategic decision, not determined by OP.GG meta
           if (s.class) payload.class = s.class
           if (s.roles) payload.roles = s.roles
-          if (s.damage_type) payload.damage_type = s.damage_type
           if (s.tier_by_role) payload.tier_by_role = s.tier_by_role
 
           console.log(`[importMetaManual] ${champ.name}: suggestion=`, s, 'payload=', payload)
@@ -340,7 +340,7 @@ document.addEventListener('alpine:init', () => {
           return
         }
 
-        const confirmed = confirm(`Atualizar ${updateCount} campeões com dados do OP.GG?\n\nIsso vai preencher dados vazios como class, roles, damage_type, tier_by_role e comp_type.`)
+        const confirmed = confirm(`Atualizar ${updateCount} campeões com dados do OP.GG?\n\nIsso vai preencher dados vazios como class, roles e tier_by_role.\n\nObs: damage_type é salvo apenas como sugestão (ver modal de revisão).`)
         if (!confirmed) {
           this.metaStatus = ''
           return
@@ -362,7 +362,6 @@ document.addEventListener('alpine:init', () => {
             champ.patch = payload.patch
             if (payload.class) champ.class = payload.class
             if (payload.roles) champ.roles = payload.roles
-            if (payload.damage_type) champ.damage_type = payload.damage_type
             if (payload.tier_by_role) champ.tier_by_role = payload.tier_by_role
             if (payload.comp_type) champ.comp_type = payload.comp_type
 
@@ -438,20 +437,30 @@ document.addEventListener('alpine:init', () => {
         tier_by_role: this._normalizeRoleKeys(rawSuggested.tier_by_role),
       }
 
+      const edits = {
+        class:       champ.class       || '',
+        roles:       this._normalizeRoleKeys(Array.isArray(champ.roles) ? [...champ.roles] : []),
+        damage_type: champ.damage_type  || '',
+        comp_fit:    champ.comp_type    || '',
+        comp_fit_2:  champ.comp_type_2  || '',
+        early:       champ.early        ?? null,
+        mid:         champ.mid          ?? null,
+        late:        champ.late         ?? null,
+        tier_by_role: tierByRole,
+      }
+
+      // Ensure tier_by_role has entries for all roles (even if empty)
+      // This ensures Alpine reactivity works correctly
+      for (const role of edits.roles) {
+        if (!(role in edits.tier_by_role)) {
+          edits.tier_by_role[role] = ''
+        }
+      }
+
       this.modal = {
         champ,
         suggested,
-        edits: {
-          class:       champ.class       || '',
-          roles:       this._normalizeRoleKeys(Array.isArray(champ.roles) ? [...champ.roles] : []),
-          damage_type: champ.damage_type  || '',
-          comp_fit:    champ.comp_type    || '',
-          comp_fit_2:  champ.comp_type_2  || '',
-          early:       champ.early        ?? null,
-          mid:         champ.mid          ?? null,
-          late:        champ.late         ?? null,
-          tier_by_role: tierByRole,
-        },
+        edits,
       }
     },
 
