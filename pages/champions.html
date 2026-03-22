@@ -393,23 +393,20 @@
           <div class="col-span-4">
             <div class="text-xs text-slate-400 font-semibold mb-2">Tiers por Posição</div>
             <template x-if="modal.edits.roles && modal.edits.roles.length">
-              <div class="flex flex-wrap gap-3">
+              <div class="space-y-2">
                 <template x-for="role in modal.edits.roles" :key="role">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[10px] text-slate-500 uppercase font-semibold" x-text="role"></label>
-                    <div class="flex flex-col gap-0.5">
-                      <!-- Suggested -->
-                      <span class="text-[9px] text-slate-600"
-                            x-text="modal.suggested.tier_by_role?.[role] || '—'"></span>
-                      <!-- Edit -->
-                      <select @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
-                              class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
-                        <option value="">—</option>
-                        <template x-for="t in TIERS" :key="t">
-                          <option :value="t" :selected="modal.edits.tier_by_role[role] === t" x-text="t"></option>
-                        </template>
-                      </select>
-                    </div>
+                  <div class="flex items-center gap-3">
+                    <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="role"></label>
+                    <select @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
+                            class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
+                      <option value="" x-show="!modal.edits.tier_by_role[role]">— (Sugerido: <span x-text="modal.suggested.tier_by_role?.[role] || '—'"></span>)</option>
+                      <template x-for="t in TIERS" :key="t">
+                        <option :value="t" :selected="modal.edits.tier_by_role[role] === t">
+                          <span x-text="t"></span>
+                          <span x-show="modal.suggested.tier_by_role?.[role] && modal.suggested.tier_by_role?.[role] !== t" x-text="' (sugerido: ' + modal.suggested.tier_by_role?.[role] + ')'"></span>
+                        </option>
+                      </template>
+                    </select>
                   </div>
                 </template>
               </div>

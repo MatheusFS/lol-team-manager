@@ -235,7 +235,9 @@ document.addEventListener('alpine:init', () => {
             if (!champ.tier_by_role) { champ.tier_by_role = s.tier_by_role; payload.tier_by_role = s.tier_by_role }
             if (!champ.comp_type)   { champ.comp_type   = s.comp_fit;    payload.comp_type   = s.comp_fit }
 
-            await api.col('champions').update(champ.id, payload)
+            const result = await api.col('champions').update(champ.id, payload)
+            // Update local object with API response for consistency
+            Object.assign(champ, result)
             done++
             this.fetchProgress = `${done}/${total}`
           }))
@@ -364,12 +366,18 @@ document.addEventListener('alpine:init', () => {
             if (payload.tier_by_role) champ.tier_by_role = payload.tier_by_role
             if (payload.comp_type) champ.comp_type = payload.comp_type
 
-            console.log(`[importMetaManual] Saving ${champ.name}: tier_by_role=${payload.tier_by_role}`)
+            console.log(`[importMetaManual] Before save - ${champ.name}: payload=`, payload)
 
-            // Save to database
-            await api.col('champions').update(champ.id, payload)
-
-            console.log(`[importMetaManual] Saved ${champ.name}: local tier_by_role=${champ.tier_by_role}`)
+            try {
+              // Save to database and update local object with API response
+              const result = await api.col('champions').update(champ.id, payload)
+              console.log(`[importMetaManual] After save - ${champ.name}: result.tier_by_role=`, result.tier_by_role)
+              // Update local champion object with API response to ensure consistency
+              Object.assign(champ, result)
+            } catch (e) {
+              console.error(`[importMetaManual] Error saving ${champ.name}:`, e)
+              throw e
+            }
 
             done++
             this.fetchProgress = `${done}/${total}`
@@ -393,6 +401,23 @@ document.addEventListener('alpine:init', () => {
     openModal(champ) {
       // edits are initialized from flat fields (the confirmed values)
       // Use '' (empty string) for select-bound fields so Alpine binds to <option value="">
+
+      // Handle tier_by_role which might be a string or object
+      let tierByRole = {}
+      if (champ.tier_by_role) {
+        if (typeof champ.tier_by_role === 'string') {
+          try {
+            tierByRole = JSON.parse(champ.tier_by_role)
+          } catch {
+            tierByRole = {}
+          }
+        } else if (typeof champ.tier_by_role === 'object') {
+          tierByRole = { ...champ.tier_by_role }
+        }
+      }
+
+      console.log(`[openModal] ${champ.name}: tier_by_role type=${typeof champ.tier_by_role}, value=`, champ.tier_by_role, 'parsed=', tierByRole)
+
       this.modal = {
         champ,
         suggested: champ.suggested || {},
@@ -405,7 +430,7 @@ document.addEventListener('alpine:init', () => {
           early:       champ.early        ?? null,
           mid:         champ.mid          ?? null,
           late:        champ.late         ?? null,
-          tier_by_role: champ.tier_by_role ? { ...champ.tier_by_role } : {},
+          tier_by_role: tierByRole,
         },
       }
     },
@@ -475,8 +500,8 @@ document.addEventListener('alpine:init', () => {
 
       this.saving = { ...this.saving, [champ.id]: 'saving' }
       try {
-        await api.col('champions').update(champ.id, payload)
-        Object.assign(champ, payload)
+        const result = await api.col('champions').update(champ.id, payload)
+        Object.assign(champ, result)
 
         const idx = Alpine.store('champions').list.findIndex(c => c.id === champ.id)
         if (idx >= 0) Object.assign(Alpine.store('champions').list[idx], champ)
