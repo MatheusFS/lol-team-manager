@@ -321,12 +321,12 @@ document.addEventListener('alpine:init', () => {
           // Build payload
           const payload = { suggested: s, patch: version }
 
-          // Always include all fields that have suggestions, regardless of current state
+          // OP.GG import: only update tier_by_role, class, roles, and damage_type
+          // comp_type is a strategic decision, not determined by OP.GG meta
           if (s.class) payload.class = s.class
           if (s.roles) payload.roles = s.roles
           if (s.damage_type) payload.damage_type = s.damage_type
           if (s.tier_by_role) payload.tier_by_role = s.tier_by_role
-          if (s.comp_fit) payload.comp_type = s.comp_fit
 
           console.log(`[importMetaManual] ${champ.name}: suggestion=`, s, 'payload=', payload)
 
