@@ -318,21 +318,18 @@ document.addEventListener('alpine:init', () => {
 
           // Build payload
           const payload = { suggested: s, patch: version }
-          let willUpdate = false
 
-          if (!champ.class && s.class)                      { payload.class       = s.class;       willUpdate = true }
-          if (!champ.roles && s.roles)                      { payload.roles       = s.roles;       willUpdate = true }
-          if (!champ.damage_type && s.damage_type)          { payload.damage_type = s.damage_type; willUpdate = true }
-          if (!champ.tier_by_role && s.tier_by_role)        { payload.tier_by_role = s.tier_by_role; willUpdate = true }
-          if (!champ.comp_type && s.comp_fit)               { payload.comp_type   = s.comp_fit;    willUpdate = true }
+          // Always include all fields that have suggestions, regardless of current state
+          if (s.class) payload.class = s.class
+          if (s.roles) payload.roles = s.roles
+          if (s.damage_type) payload.damage_type = s.damage_type
+          if (s.tier_by_role) payload.tier_by_role = s.tier_by_role
+          if (s.comp_fit) payload.comp_type = s.comp_fit
 
-          // Always update suggested
-          willUpdate = true
+          console.log(`[importMetaManual] ${champ.name}: suggestion=`, s, 'payload=', payload)
 
-          if (willUpdate) {
-            updateCount++
-            updates.set(champ.id, { champ, payload })
-          }
+          updateCount++
+          updates.set(champ.id, { champ, payload })
         }
 
         // Ask for confirmation
@@ -367,8 +364,13 @@ document.addEventListener('alpine:init', () => {
             if (payload.tier_by_role) champ.tier_by_role = payload.tier_by_role
             if (payload.comp_type) champ.comp_type = payload.comp_type
 
+            console.log(`[importMetaManual] Saving ${champ.name}: tier_by_role=${payload.tier_by_role}`)
+
             // Save to database
             await api.col('champions').update(champ.id, payload)
+
+            console.log(`[importMetaManual] Saved ${champ.name}: local tier_by_role=${champ.tier_by_role}`)
+
             done++
             this.fetchProgress = `${done}/${total}`
           }))
