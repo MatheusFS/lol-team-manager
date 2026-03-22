@@ -156,12 +156,11 @@ const ChampionSuggest = (() => {
 
   // ── Suggestion rules ──────────────────────────────────────────────────────
 
-  function suggestOne(dd, metaEntry, metaByRole) {
+  function suggestOne(dd, directTierByRole = null) {
     const tags   = dd.tags || []
     const info   = dd.info || {}
     const stats  = dd.stats || {}
     const tag0   = tags[0] || ''
-    const tag1   = tags[1] || ''
     const range  = stats.attackrange || 0
 
     // class
@@ -187,14 +186,6 @@ const ChampionSuggest = (() => {
     if (hasTag('Support'))   { roles.add('Support') }
     if (roles.size === 0) roles.add('Mid') // fallback
 
-    // If meta data available, prefer meta lane
-    let metaRoles = null
-    if (metaEntry?.lane) {
-      const laneMap = { top: 'Top', jungle: 'Jungle', middle: 'Mid', mid: 'Mid', bottom: 'ADC', adc: 'ADC', support: 'Support' }
-      const mapped = laneMap[metaEntry.lane]
-      if (mapped) metaRoles = [mapped]
-    }
-
     // comp_fit
     let compFit = 'Mix'
     const def = info.defense || 0
@@ -204,87 +195,52 @@ const ChampionSuggest = (() => {
     else if (hasTag('Support') && def >= 5)        compFit = 'Protect'
     else if (hasTag('Fighter') && attack >= 7)     compFit = 'Split'
 
-    // Helper to compute tier from winrate
-    function computeTier(wr) {
-      if (!wr || isNaN(wr)) return null
-      if (wr > 53)      return 'S'
-      else if (wr > 51) return 'A'
-      else if (wr > 49) return 'B'
-      else if (wr > 47) return 'C'
-      else              return 'D'
-    }
-
-    // tier_by_role: compute tier for each role from metaByRole data
-    const tierByRole = {}
-    const finalRoles = metaRoles || [...roles]
-    if (metaByRole && typeof metaByRole === 'object') {
-      for (const role of finalRoles) {
-        const roleData = metaByRole[role]
-        if (roleData?.winrate && roleData?.pickrate >= 1) {
-          tierByRole[role] = computeTier(roleData.winrate)
-        }
-      }
-    } else if (metaEntry?.winrate && metaEntry?.pickrate >= 1) {
-      // Fallback: single meta entry applies to the role specified in it (if any)
-      const tier = computeTier(metaEntry.winrate)
-      if (metaEntry.lane && metaRoles) {
-        for (const role of metaRoles) {
-          tierByRole[role] = tier
-        }
-      } else {
-        // If no lane specified, apply to all roles as fallback
-        for (const role of finalRoles) {
-          tierByRole[role] = tier
-        }
-      }
-    }
-
     // power_curve: null in V1 (needs per-champion game-length data)
     const powerCurve = null
 
     return {
       class:       champClass,
-      roles:       metaRoles || [...roles],
+      roles:       [...roles],
       damage_type: damageType,
       comp_fit:    compFit,
-      tier_by_role: Object.keys(tierByRole).length ? tierByRole : null,
+      tier_by_role: directTierByRole,
       power_curve: powerCurve,
+    }
+  }
+
+  // Helper to detect if data is in direct tier format: { "Top": "S", "Mid": "A", ... }
+  function isDirectTierFormat(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+    try {
+      return Object.values(data).every(v => typeof v === 'string' && /^[SABCD]$/.test(v))
+    } catch {
+      return false
     }
   }
 
   // ── Batch suggest ─────────────────────────────────────────────────────────
   // ddragonData: { [key]: champData } from fetchDDragon
-  // meta: { [nameKey]: { winrate, pickrate, lane?, ... } } or null
+  // meta: { [champName]: { role: tier } } format from op.gg bookmarklet or null
+  //       Example: { kayle: { Top: 'A', Mid: 'D' }, ahri: { Mid: 'A' } }
   // Returns Map<champKey, suggestion>
   function suggestAll(ddragonData, meta) {
-    // First pass: group meta by champion (handling multiple role entries)
-    const metaByChamp = {}
-    if (meta) {
-      for (const [nameKey, data] of Object.entries(meta)) {
-        const role = (data.lane || '').toLowerCase()
-        const roleMap = { top: 'Top', jungle: 'Jungle', middle: 'Mid', mid: 'Mid', bottom: 'ADC', adc: 'ADC', support: 'Support' }
-        const mappedRole = roleMap[role] || null
-
-        if (!metaByChamp[nameKey]) {
-          metaByChamp[nameKey] = {}
-        }
-
-        // Store by role if lane info available, else store as default
-        if (mappedRole) {
-          metaByChamp[nameKey][mappedRole] = data
-        } else {
-          metaByChamp[nameKey]['_default'] = data
-        }
-      }
-    }
-
     const results = {}
     for (const [key, dd] of Object.entries(ddragonData)) {
-      // Match meta entry by normalized name
-      const normKey = key.toLowerCase().replace(/[^a-z]/g, '')
-      const metaEntry = metaByChamp[normKey]?._default || null
-      const metaByRole = metaByChamp[normKey] ? Object.fromEntries(Object.entries(metaByChamp[normKey]).filter(([k]) => k !== '_default')) : null
-      results[key] = suggestOne(dd, metaEntry, metaByRole)
+      let directTierByRole = null
+
+      // Only process meta if it's not null
+      if (meta && typeof meta === 'object') {
+        // Match meta entry by normalized name (kayle -> kayle, AhriAh -> ahriahn)
+        const normKey = key.toLowerCase().replace(/[^a-z]/g, '')
+        const metaEntry = meta[normKey] || null
+
+        // Only process if it's the direct tier format { role: 'tier', ... }
+        if (isDirectTierFormat(metaEntry)) {
+          directTierByRole = metaEntry
+        }
+      }
+
+      results[key] = suggestOne(dd, directTierByRole)
     }
     return results
   }
