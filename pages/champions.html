@@ -35,40 +35,38 @@
       </div>
     </div>
 
-    <!-- Meta import (shown when CORS blocks op.gg and Lolalytics) -->
+    <!-- Meta import (shown when CORS blocks automatic fetch) -->
     <div x-show="metaStatus === 'cors'" x-cloak class="mb-4 bg-slate-900 border border-orange-800 rounded-lg p-4">
       <div class="mb-3">
         <p class="text-sm text-orange-300 font-medium mb-2">
-          ⚠️ Dados de meta indisponíveis (CORS bloqueado)
+          ⚠️ Importar dados de meta manualmente do op.gg
         </p>
         <p class="text-xs text-orange-200 mb-3">
-          Para carregar sugestões de tier, você precisa fornecer dados de meta (winrate/pickrate).
+          Use o bookmarklet abaixo para extrair tiers e roles direto da tabela de campeões do op.gg.
         </p>
 
-        <!-- Quick copy bookmarklet -->
-        <div class="bg-slate-800/50 border border-orange-700 rounded p-3 mb-3">
-          <p class="text-xs text-orange-300 font-semibold mb-2">🚀 Forma rápida:</p>
-          <p class="text-xs text-orange-100 mb-2">1. Abra <a href="https://www.op.gg/lol/champions" target="_blank" class="underline hover:text-white">op.gg/lol/champions</a> ou <a href="https://lolalytics.com/lol/tierlist" target="_blank" class="underline hover:text-white">lolalytics.com</a></p>
+        <!-- op.gg Quick copy bookmarklet (primary method) -->
+        <div class="bg-slate-800/50 border border-green-700 rounded p-3 mb-3">
+          <p class="text-xs text-green-300 font-semibold mb-2">✅ Recomendado: op.gg</p>
+          <p class="text-xs text-orange-100 mb-2">1. Abra <a href="https://www.op.gg/lol/champions" target="_blank" class="underline hover:text-white">op.gg/lol/champions</a></p>
           <p class="text-xs text-orange-100 mb-2">2. Abra DevTools (F12) → Console e cole:
-            <button @click="copyBookmarklet()" class="text-orange-300 hover:text-orange-100 underline text-xs font-semibold ml-1">copiar comando</button>
+            <button @click="copyBookmarklet()" class="text-green-300 hover:text-green-100 underline text-xs font-semibold ml-1">copiar comando</button>
           </p>
           <p class="text-xs text-orange-100">3. O JSON será copiado automaticamente → Cole abaixo e clique "Importar Meta"</p>
         </div>
 
-        <!-- Alternative manual method -->
-        <details class="mb-3">
-          <summary class="text-xs text-orange-400 cursor-pointer hover:text-orange-300 font-semibold">Forma manual (sem devtools)</summary>
-          <ol class="text-xs text-orange-100 space-y-1 ml-4 list-decimal mt-2">
-            <li>Abra <a href="https://www.op.gg/lol/champions" target="_blank" class="underline hover:text-white">op.gg</a> e procure por um botão "Exportar" ou "Copy JSON" (alguns sites têm)</li>
-            <li>Se não encontrar, use o devtools: selecione a tabela de campeões e exporte manualmente</li>
-            <li>Cole o JSON abaixo</li>
-          </ol>
+        <!-- Lolalytics alternative (disabled for now) -->
+        <details class="mb-3 opacity-50">
+          <summary class="text-xs text-slate-400 cursor-not-allowed font-semibold">Lolalytics (em breve)</summary>
+          <div class="text-xs text-slate-500 mt-2 p-2 bg-slate-800/30 rounded">
+            Método de importação via Lolalytics será adicionado em breve.
+          </div>
         </details>
       </div>
 
       <p class="text-xs text-orange-300 mb-2">
-        Formato esperado:
-        <code class="bg-slate-800 text-orange-200 px-1 rounded">{"aatrox": {"winrate": 51.2, "pickrate": 5.1}, "ahri": {...}, ...}</code>
+        Formato esperado (extraído do op.gg):
+        <code class="bg-slate-800 text-orange-200 px-1 rounded text-[10px]">{"aatrox": {"Top": "A", "Jungle": "D"}, "ahri": {"Mid": "A"}, ...}</code>
       </p>
       <div class="flex gap-2">
         <textarea x-model="metaJson" rows="4" placeholder='{"aatrox": {"winrate": 51.2, "pickrate": 5.1}, "ahri": {"winrate": 48.5, "pickrate": 3.2}, ...}'
@@ -219,8 +217,8 @@
                   <div class="flex gap-1 justify-center flex-wrap">
                     <template x-for="(tier, role) in champ.tier_by_role" :key="role">
                       <span :title="role"
-                            x-text="tier"
-                            class="text-xs font-bold px-1 py-0.5 rounded"
+                            x-text="role[0] + '/' + tier"
+                            class="text-xs font-bold px-1.5 py-0.5 rounded"
                             :class="{
                               'text-yellow-300 bg-yellow-900/20': tier === 'S',
                               'text-green-400 bg-green-900/20':   tier === 'A',
@@ -394,30 +392,35 @@
           <!-- Tier by Role -->
           <div class="col-span-4">
             <div class="text-xs text-slate-400 font-semibold mb-2">Tiers por Posição</div>
-            <div class="grid grid-cols-5 gap-1">
-              <template x-for="role in ROLES" :key="role">
-                <div class="flex flex-col gap-1">
-                  <label class="text-[10px] text-slate-500 uppercase text-center font-semibold" x-text="role"></label>
-                  <div class="flex flex-col gap-0.5">
-                    <!-- Suggested -->
-                    <span class="text-[9px] text-slate-600 text-center"
-                          x-text="modal.suggested.tier_by_role?.[role] || '—'"></span>
-                    <!-- Edit -->
-                    <select @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
-                            class="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-xs focus:outline-none focus:border-yellow-500">
-                      <option value="">—</option>
-                      <template x-for="t in TIERS" :key="t">
-                        <option :value="t" :selected="modal.edits.tier_by_role[role] === t" x-text="t"></option>
-                      </template>
-                    </select>
+            <template x-if="modal.edits.roles && modal.edits.roles.length">
+              <div class="flex flex-wrap gap-3">
+                <template x-for="role in modal.edits.roles" :key="role">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[10px] text-slate-500 uppercase font-semibold" x-text="role"></label>
+                    <div class="flex flex-col gap-0.5">
+                      <!-- Suggested -->
+                      <span class="text-[9px] text-slate-600"
+                            x-text="modal.suggested.tier_by_role?.[role] || '—'"></span>
+                      <!-- Edit -->
+                      <select @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
+                              class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-500 cursor-pointer">
+                        <option value="">—</option>
+                        <template x-for="t in TIERS" :key="t">
+                          <option :value="t" :selected="modal.edits.tier_by_role[role] === t" x-text="t"></option>
+                        </template>
+                      </select>
+                    </div>
                   </div>
-                </div>
-              </template>
-            </div>
-            <button @click="acceptSuggestion('tier_by_role')"
-                    class="text-xs text-yellow-500 hover:text-yellow-300 mt-2 transition-colors">
-              Aceitar Sugestões de Tier
-            </button>
+                </template>
+              </div>
+              <button @click="acceptSuggestion('tier_by_role')"
+                      class="text-xs text-yellow-500 hover:text-yellow-300 mt-3 transition-colors">
+                Aceitar Sugestões de Tier
+              </button>
+            </template>
+            <template x-if="!modal.edits.roles || !modal.edits.roles.length">
+              <div class="text-xs text-slate-600">Nenhuma role configurada para este campeão.</div>
+            </template>
           </div>
 
         </div>
