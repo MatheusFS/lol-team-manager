@@ -216,16 +216,17 @@
                 <template x-if="champ.tier_by_role && Object.keys(champ.tier_by_role).length">
                   <div class="flex gap-1 justify-center flex-wrap">
                     <template x-for="(tier, role) in champ.tier_by_role" :key="role">
-                      <span :title="role"
-                            x-text="role[0] + '/' + tier"
-                            class="text-xs font-bold px-1.5 py-0.5 rounded"
-                            :class="{
-                              'text-yellow-300 bg-yellow-900/20': tier === 'S',
-                              'text-green-400 bg-green-900/20':   tier === 'A',
-                              'text-slate-300 bg-slate-700/20':   tier === 'B',
-                              'text-orange-400 bg-orange-900/20': tier === 'C',
-                              'text-red-400 bg-red-900/20':       tier === 'D',
-                            }"></span>
+                      <span :title="role" class="text-xs font-bold">
+                        <span class="text-slate-500" x-text="role[0]"></span><span class="px-1 py-0.5 rounded"
+                              x-text="tier"
+                              :class="{
+                                'text-yellow-300 bg-yellow-900/20': tier === 'S',
+                                'text-green-400 bg-green-900/20':   tier === 'A',
+                                'text-slate-300 bg-slate-700/20':   tier === 'B',
+                                'text-orange-400 bg-orange-900/20': tier === 'C',
+                                'text-red-400 bg-red-900/20':       tier === 'D',
+                              }"></span>
+                      </span>
                     </template>
                   </div>
                 </template>
