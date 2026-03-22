@@ -178,13 +178,13 @@ const ChampionSuggest = (() => {
     const roles = new Set()
     const hasTag = t => tags.includes(t)
 
-    if (hasTag('Marksman'))  { roles.add('ADC');  if (hasTag('Assassin') || hasTag('Mage')) roles.add('Mid') }
-    if (hasTag('Assassin') && !hasTag('Marksman')) { roles.add('Mid'); roles.add('Jungle') }
-    if (hasTag('Fighter'))   { roles.add('Top');  roles.add('Jungle') }
-    if (hasTag('Tank') && range <= 300) { roles.add('Top'); roles.add('Jungle'); roles.add('Support') }
-    if (hasTag('Mage') && tag0 === 'Mage') { roles.add('Mid'); if (range >= 500) roles.add('Support') }
-    if (hasTag('Support'))   { roles.add('Support') }
-    if (roles.size === 0) roles.add('Mid') // fallback
+    if (hasTag('Marksman'))  { roles.add('adc');  if (hasTag('Assassin') || hasTag('Mage')) roles.add('mid') }
+    if (hasTag('Assassin') && !hasTag('Marksman')) { roles.add('mid'); roles.add('jng') }
+    if (hasTag('Fighter'))   { roles.add('top');  roles.add('jng') }
+    if (hasTag('Tank') && range <= 300) { roles.add('top'); roles.add('jng'); roles.add('sup') }
+    if (hasTag('Mage') && tag0 === 'Mage') { roles.add('mid'); if (range >= 500) roles.add('sup') }
+    if (hasTag('Support'))   { roles.add('sup') }
+    if (roles.size === 0) roles.add('mid') // fallback
 
     // comp_fit
     let compFit = 'Mix'

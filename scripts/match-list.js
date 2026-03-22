@@ -70,7 +70,7 @@ document.addEventListener('alpine:init', () => {
       this.msg     = 'Carregando…'
       const filter = this.buildFilter()
       try {
-        const params = { sort: '-date,game_n', expand: 'mvc', perPage: 25, page: this.page }
+        const params = { sort: '-date,game_n', expand: 'mvc,formation,mvp', perPage: 25, page: this.page }
         if (filter) params.filter = filter
 
         const [matchRes, statsRes] = await Promise.all([

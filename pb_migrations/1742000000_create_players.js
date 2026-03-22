@@ -13,7 +13,7 @@ migrate((app) => {
                 type: "select",
                 name: "role",
                 required: true,
-                values: ["Top", "Jungle", "Mid", "ADC", "Support"],
+                values: ["top", "jng", "mid", "adc", "sup"],
                 maxSelect: 1,
             },
             {

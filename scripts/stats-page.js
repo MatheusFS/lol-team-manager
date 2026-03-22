@@ -489,19 +489,16 @@ function buildPlayerTable(M) {
     }
   }
 
-  const rows = PLAYERS
-    .map(name => {
-      const p = map[name]; if (!p) return null
-      return {
-        name, n: p.n,
-        wr:    p.wins / p.n,
-        kda:   p.kdaSum  / p.n,
-        dam:   p.damSum  / p.n,
-        gold:  p.goldSum / p.n,
-        csMin: p.durSum  ? p.csSum / p.durSum : 0,
-      }
-    })
-    .filter(Boolean)
+  const rows = Object.entries(map)
+    .map(([name, p]) => ({
+      name, n: p.n,
+      wr:    p.wins / p.n,
+      kda:   p.kdaSum  / p.n,
+      dam:   p.damSum  / p.n,
+      gold:  p.goldSum / p.n,
+      csMin: p.durSum  ? p.csSum / p.durSum : 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   const fmtK = v => `${(v/1000).toFixed(1)}k`
 
@@ -623,13 +620,16 @@ function buildChampionTable(M) {
 }
 
 function buildPlayerCharts(M) {
-  const mvpGames = M.filter(m => m.mvp)
-  const topGames = M.filter(m => m.top_player)
-  document.getElementById('mvp-n').textContent = mvpGames.length
-  document.getElementById('top-n').textContent = topGames.length
+  const mvpGames       = M.filter(m => m.expand?.mvp)
+  const formationGames = M.filter(m => m.expand?.formation)
+  document.getElementById('mvp-n').textContent       = mvpGames.length
+  document.getElementById('formation-n').textContent = formationGames.length
 
   const freq = {}
-  for (const m of mvpGames) freq[m.mvp] = (freq[m.mvp] ?? 0) + 1
+  for (const m of mvpGames) {
+    const name = m.expand.mvp.name
+    freq[name] = (freq[name] ?? 0) + 1
+  }
   const sortedMvp = Object.entries(freq).sort((a,b) => b[1]-a[1])
   Chart.getChart('c-mvp-freq')?.destroy()
   new Chart(document.getElementById('c-mvp-freq'), {
@@ -647,8 +647,8 @@ function buildPlayerCharts(M) {
     }}}},
   })
 
-  winRateChart('c-mvp-wr',    utils.groupWR(mvpGames, m => m.mvp))
-  winRateChart('c-top-player', utils.groupWR(topGames, m => m.top_player))
+  winRateChart('c-mvp-wr',   utils.groupWR(mvpGames,       m => m.expand?.mvp?.name))
+  winRateChart('c-formation', utils.groupWR(formationGames, m => m.expand?.formation?.name))
 
   const mvcFreq = {}
   for (const m of M) {
@@ -690,7 +690,7 @@ document.addEventListener('alpine:init', () => {
       const [, fData, data] = await Promise.all([
         Alpine.store('champions').load(),
         api.col('formations').list({ sort: '-active,name', perPage: 100 }),
-        api.col('matches').list({ perPage: 500, expand: 'mvc' }),
+        api.col('matches').list({ perPage: 500, expand: 'mvc,formation,mvp' }),
       ])
       this.formations = fData.items
       this.allMatches = data.items

@@ -66,11 +66,11 @@ document.addEventListener('alpine:init', () => {
     'm10.327': 'D',    // tier 5 (linhas abaixo de 220)
   };
   const ROLE_PATHS = {
-    'M5.14 2': 'Jungle',
-    'm19 3': 'Top',
-    'm15 3': 'Mid',
-    'M9 21': 'ADC',
-    'M12.833': 'Support',
+    'M5.14 2': 'jng',
+    'm19 3': 'top',
+    'm15 3': 'mid',
+    'M9 21': 'adc',
+    'M12.833': 'sup',
   };
 
   const meta = {};
@@ -474,6 +474,11 @@ document.addEventListener('alpine:init', () => {
       const idx = this.modal.edits.roles.indexOf(role)
       if (idx >= 0) this.modal.edits.roles.splice(idx, 1)
       else this.modal.edits.roles.push(role)
+    },
+
+    roleLabel(role) {
+      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
+      return map[role] || role
     },
 
     pickScale(phase, ci) {

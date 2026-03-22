@@ -2,9 +2,9 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('matchForm', () => ({
 
     // ── Constants ──────────────────────────────────────────────────────────
-    ROLES:        ['Top', 'Jungle', 'Mid', 'ADC', 'Support'],
-    PLAYERS:      ['Klebão','GdN','Conkreto','Digo','Kelly','Pixek','Nunes','Eden','Xuao'],
-    SUBTYPES:     ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix'],
+    ROLES:    ['top', 'jng', 'mid', 'adc', 'sup'],
+    SUBTYPES: ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix'],
+    players:  [],   // loaded dynamically from players collection
     // SCALE_COLORS, SCALE_SLOTS vêm de shared.js
 
     // ── Identity ───────────────────────────────────────────────────────────
@@ -79,11 +79,13 @@ document.addEventListener('alpine:init', () => {
 
     // ── Init ───────────────────────────────────────────────────────────────
     async init() {
-      const [, fData] = await Promise.all([
+      const [, fData, pData] = await Promise.all([
         Alpine.store('champions').load(),
         api.col('formations').list({ sort: '-active,name', perPage: 100 }),
+        api.col('players').list({ sort: 'name', perPage: 200 }),
       ])
       this.formations = fData.items
+      this.players    = pData.items
       const params = new URLSearchParams(location.search)
       this.editId  = params.get('id')
       this.isEdit  = !!this.editId
@@ -107,9 +109,11 @@ document.addEventListener('alpine:init', () => {
       }
 
       // When MVP changes, auto-update MVC to the champion played by that player
-      this.$watch('mvp', (playerName) => {
-        if (!playerName || !this.playerStats?.length) return
-        const stat = this.playerStats.find(s => s.name === playerName)
+      this.$watch('mvp', (playerId) => {
+        if (!playerId || !this.playerStats?.length) return
+        const player = this.players.find(p => p.id === playerId)
+        if (!player) return
+        const stat = this.playerStats.find(s => s.name === player.name)
         if (!stat?.champion) return
         const found = Alpine.store('champions').list.find(c => c.name === stat.champion)
                    ?? Alpine.store('champions').list.find(c => c.key === stat.champion)
@@ -280,14 +284,14 @@ document.addEventListener('alpine:init', () => {
           win:           this.win,
           side:          this.side       ?? undefined,
           formation:     this.formationId || undefined,
-          top_player:    str(this.topPlayer),
+          top_player:    this.topPlayer || undefined,
           comp_type:     str(this.compType),
           comp_subtype:  this.compSubtype.length ? this.compSubtype : undefined,
           scaling:       this.scalingToStr(this.scaling)      || undefined,
           enemy_type:    str(this.enemyType),
           enemy_scaling: this.scalingToStr(this.enemyScaling) || undefined,
           duration:      num(this.duration),
-          mvp:           str(this.mvp),
+          mvp:           this.mvp || undefined,
           mvc:           this.mvcId || undefined,
           team_kills:    num(this.teamKills),
           team_deaths:   num(this.teamDeaths),
@@ -424,7 +428,7 @@ document.addEventListener('alpine:init', () => {
       if (data.side)        this.side     = data.side
       if (data.duration)    this.duration = data.duration
 
-      if (data.topPlayer)   this.topPlayer = data.topPlayer
+      if (data.topPlayerId) this.topPlayer = data.topPlayerId
 
       const champsByName = Object.fromEntries(
         Alpine.store('champions').list.map(c => [c.name, c])
@@ -448,7 +452,7 @@ document.addEventListener('alpine:init', () => {
         })
       }
 
-      if (data.mvp) this.mvp = data.mvp
+      if (data.mvpId) this.mvp = data.mvpId
 
       if (data.mvcChampName) {
         const mvc = champsByName[data.mvcChampName]

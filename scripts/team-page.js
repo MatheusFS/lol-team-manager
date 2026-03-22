@@ -1,25 +1,39 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('teamPage', () => ({
     formations: [],
+    players: [],
     loading: false,
     modal: false,
     editId: null,
     saving: false,
     form: { name: '', top: '', jungle: '', mid: '', adc: '', support: '', active: false },
 
+    // ── Import scan ─────────────────────────────────────────────────────────
+    importPanel:   false,
+    importLoading: false,
+    importScan:    [],   // [{ fingerprint, roles, count, matchIds, name, active }]
+
     async init() {
-      await this.load()
+      const [pData] = await Promise.all([
+        api.col('players').list({ sort: 'name', perPage: 200 }),
+        this.load(),
+      ])
+      this.players = pData.items
     },
 
     async load() {
       this.loading = true
       try {
-        const data = await api.col('formations').list({ sort: '-active,name', perPage: 100 })
+        const data = await api.col('formations').list({ sort: '-active,name', perPage: 100, expand: 'top,jungle,mid,adc,support' })
         this.formations = data.items
       } catch (e) {
         console.error('[team] load failed:', e)
       }
       this.loading = false
+    },
+
+    playerName(id) {
+      return this.players.find(p => p.id === id)?.name ?? id
     },
 
     openNew() {
@@ -44,7 +58,7 @@ document.addEventListener('alpine:init', () => {
 
     async save() {
       if (!this.form.name.trim()) return alert('Preencha o nome da formação.')
-      for (const role of ['top', 'jungle', 'mid', 'adc', 'support']) {
+      for (const role of ['top', 'jng', 'mid', 'adc', 'sup']) {
         if (!this.form[role]) return alert(`Selecione o jogador de ${role}.`)
       }
 
@@ -61,10 +75,10 @@ document.addEventListener('alpine:init', () => {
         const payload = {
           name: this.form.name.trim(),
           top: this.form.top,
-          jungle: this.form.jungle,
+          jng: this.form.jng,
           mid: this.form.mid,
           adc: this.form.adc,
-          support: this.form.support,
+          sup: this.form.sup,
           active: this.form.active,
         }
 
@@ -98,5 +112,79 @@ document.addEventListener('alpine:init', () => {
       this.modal = false
       this.editId = null
     },
-  }))
+
+    // ── Import scan: discover distinct lineups from match data ─────────────
+    async runImportScan() {
+      this.importLoading = true
+      this.importPanel   = true
+      this.importScan    = []
+      try {
+        const data = await api.col('matches').list({ perPage: 500, filter: 'player_stats!=""' })
+
+        // Group matches by lineup fingerprint (player IDs)
+        const groups = {}
+        for (const m of data.items) {
+          const lineup = extractLineup(m, this.players)
+          const roles = ['top', 'jng', 'mid', 'adc', 'sup']
+          if (!roles.every(r => lineup[r])) continue
+
+          const fp = roles.map(r => lineup[r]).join('|')
+          if (!groups[fp]) groups[fp] = { roles: lineup, matchIds: [], count: 0 }
+          groups[fp].matchIds.push(m.id)
+          groups[fp].count++
+        }
+
+        // Filter out lineups that already exactly match a known formation
+        const knownFps = new Set(
+          this.formations.map(f =>
+            ['top','jng','mid','adc','sup'].map(r => f[r]).join('|')
+          )
+        )
+
+        this.importScan = Object.entries(groups)
+          .filter(([fp]) => !knownFps.has(fp))
+          .map(([fp, g]) => ({ fingerprint: fp, ...g, name: '', active: false }))
+          .sort((a, b) => b.count - a.count)
+
+      } catch (e) {
+        console.error('[team] import scan failed:', e)
+        alert('Erro ao varrer partidas.')
+      }
+      this.importLoading = false
+    },
+
+    async createFromImport(item) {
+      if (!item.name.trim()) return alert('Dê um nome para esta formação.')
+      try {
+        if (item.active) {
+          const current = this.formations.find(f => f.active)
+          if (current) await api.col('formations').update(current.id, { active: false })
+        }
+        await api.col('formations').create({
+          name:    item.name.trim(),
+          top:     item.roles.top,
+          jungle:  item.roles.jungle,
+          mid:     item.roles.mid,
+          adc:     item.roles.adc,
+          support: item.roles.support,
+          active:  item.active,
+        })
+        this.importScan = this.importScan.filter(i => i.fingerprint !== item.fingerprint)
+        await this.load()
+      } catch (e) {
+         console.error('[team] createFromImport failed:', e)
+         alert('Erro ao criar formação.')
+       }
+     },
+
+     roleLabel(role) {
+       const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP', 'jungle': 'JNG', 'support': 'SUP' }
+       return map[role] || role || '—'
+     },
+
+     formationField(role) {
+       const map = { 'top': 'top', 'jng': 'jungle', 'mid': 'mid', 'adc': 'adc', 'sup': 'support' }
+       return map[role] || role
+     },
+   }))
 })

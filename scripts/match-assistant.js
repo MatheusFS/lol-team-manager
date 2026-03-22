@@ -103,7 +103,7 @@
 
           <!-- Meta -->
           <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-400 mb-1">
-            <span x-show="card.topPlayer">Top: <span class="text-slate-200" x-text="card.topPlayer"></span></span>
+            <span x-show="card.topPlayer">TOP: <span class="text-slate-200" x-text="card.topPlayer"></span></span>
             <span x-show="card.mvp">MVP: <span class="text-slate-200" x-text="card.mvp"></span></span>
             <span x-show="card.mvcChampName">MVC: <span class="text-slate-200" x-text="card.mvcChampName"></span></span>
             <span x-show="card.teamKills != null">K/D: <span class="text-slate-200" x-text="card.teamKills + '/' + card.teamDeaths"></span></span>
@@ -199,12 +199,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     _buildPuuidToName(roster, puuidMap) {
-      const map = {}
+      const nameMap = {}, idMap = {}
       for (const m of roster) {
         const puuid = puuidMap?.[m.riot_id] ?? m.puuid
-        if (puuid) map[puuid] = m.name
+        if (puuid) { nameMap[puuid] = m.name; idMap[puuid] = m.id }
       }
-      return map
+      return { nameMap, idMap }
     },
 
     // ── Main fetch dispatcher ─────────────────────────────────────────────
@@ -266,7 +266,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Process a single match ID → card (with cache awareness) ─────────
-    async _processMatchId(matchId, knownPuuidSet, puuidToName, opts = {}) {
+    async _processMatchId(matchId, knownPuuidSet, puuidToName, puuidToId = {}, opts = {}) {
       const base = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
 
       // Check summary cache first (shared with import-tool)
@@ -297,7 +297,7 @@ document.addEventListener('alpine:init', () => {
 
       await RiotApi.sleep(80)
       const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}/timeline`, this.apiKey)
-      const stats = extractMatchStats(match, timeline, { knownPuuidSet, puuidToName })
+      const stats = extractMatchStats(match, timeline, { knownPuuidSet, puuidToName, puuidToId })
       if (!stats) return null
 
       // Cache the summary for future use
@@ -324,7 +324,7 @@ document.addEventListener('alpine:init', () => {
       this.status = 'Resolvendo contas…'
       const { puuids: knownPuuids, puuidMap } = await this._resolveRoster(roster)
       const knownPuuidSet = new Set(knownPuuids)
-      const puuidToName   = this._buildPuuidToName(roster, puuidMap)
+      const { nameMap: puuidToName, idMap: puuidToId } = this._buildPuuidToName(roster, puuidMap)
       if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
 
       // Date ± 1 day → Unix seconds
@@ -355,7 +355,7 @@ document.addEventListener('alpine:init', () => {
         this.status = `Verificando ${i + 1}/${ids.length}…`
         if (associated.has(ids[i])) continue
         try {
-          const card = await this._processMatchId(ids[i], knownPuuidSet, puuidToName, { winFilter: this.filters.win })
+          const card = await this._processMatchId(ids[i], knownPuuidSet, puuidToName, puuidToId, { winFilter: this.filters.win })
           if (card) this.cards.push(card)
         } catch (e) { console.warn('Skipping', ids[i], e.message) }
         await RiotApi.sleep(80)
@@ -381,6 +381,7 @@ document.addEventListener('alpine:init', () => {
       const riotBase = RiotApi.baseUrl(localStorage.getItem('riot-region') || 'BR1')
 
       this.status = 'Buscando partidas recentes…'
+
       const idResults = await Promise.allSettled(
         knownPuuids.map(p =>
           RiotApi.fetch(`${riotBase}/lol/match/v5/matches/by-puuid/${p}/ids?count=20`, this.apiKey)
@@ -398,14 +399,14 @@ document.addEventListener('alpine:init', () => {
 
       if (!allIds.length) { this.status = 'Nenhuma partida encontrada.'; return }
 
-      const puuidToName = this._buildPuuidToName(roster, puuidMap)
+      const { nameMap: puuidToName, idMap: puuidToId } = this._buildPuuidToName(roster, puuidMap)
       const associated  = await this._loadAssociatedMatchIds()
 
       for (let i = 0; i < allIds.length; i++) {
         this.status = `Verificando ${i + 1}/${allIds.length}…`
         if (associated.has(allIds[i])) continue
         try {
-          const card = await this._processMatchId(allIds[i], knownPuuidSet, puuidToName)
+          const card = await this._processMatchId(allIds[i], knownPuuidSet, puuidToName, puuidToId)
           if (card) this.cards.push(card)
         } catch (e) { console.warn('Skipping', allIds[i], e.message) }
         await RiotApi.sleep(80)
@@ -440,7 +441,9 @@ document.addEventListener('alpine:init', () => {
         ourChamps,
         enemyChamps,
         topPlayer:    stats.topPlayer,
+        topPlayerId:  stats.topPlayerId ?? null,
         mvp:          stats.mvp,
+        mvpId:        stats.mvpId ?? null,
         mvcChampName: mvcChamp?.name ?? '',
         mvcChampKey:  mvcChamp?.key  ?? '',
         teamKills:    stats.team_kills,

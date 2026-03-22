@@ -264,10 +264,11 @@ const RiotApi = (() => {
         gd_20:         stats.gd_20,
         duration:      stats.duration,
       }
-      if (riotId)    p.riot_match_id       = riotId
-      if (snapshot)  p.riot_match_snapshot  = stripSnapshot(snapshot)
-      if (stats.date) p.date               = stats.date + ' 00:00:00.000Z'
-      if (stats.mvp) p.mvp                 = stats.mvp
+      if (riotId)       p.riot_match_id      = riotId
+      if (snapshot)     p.riot_match_snapshot = stripSnapshot(snapshot)
+      if (stats.date)   p.date               = stats.date + ' 00:00:00.000Z'
+      if (stats.mvpId)  p.mvp                = stats.mvpId
+      if (stats.topPlayerId) p.top_player    = stats.topPlayerId
       return p
     },
 

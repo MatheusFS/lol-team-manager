@@ -141,5 +141,10 @@ document.addEventListener('alpine:init', () => {
         console.error('[championPoolPage] removeEntry failed:', e)
       }
     },
+
+    roleLabel(role) {
+      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
+      return map[role] || role || '—'
+    },
   }))
 })

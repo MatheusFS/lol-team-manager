@@ -65,7 +65,7 @@
 
       <p class="text-xs text-orange-300 mb-2">
         Formato esperado (extraído do op.gg):
-        <code class="bg-slate-800 text-orange-200 px-1 rounded text-[10px]">{"aatrox": {"Top": "A", "Jungle": "D"}, "ahri": {"Mid": "A"}, ...}</code>
+        <code class="bg-slate-800 text-orange-200 px-1 rounded text-[10px]">{"aatrox": {"top": "A", "jng": "D"}, "ahri": {"mid": "A"}, ...}</code>
       </p>
       <div class="flex gap-2">
         <textarea x-model="metaJson" rows="4" placeholder='{"aatrox": {"winrate": 51.2, "pickrate": 5.1}, "ahri": {"winrate": 48.5, "pickrate": 3.2}, ...}'
@@ -309,7 +309,7 @@
           <!-- Roles -->
           <div class="grid grid-cols-[100px_1fr_1fr_32px] gap-2 items-center">
             <span class="text-xs text-slate-400">Roles</span>
-            <span class="text-xs text-slate-500" x-text="(modal.suggested.roles || []).join(', ') || '—'"></span>
+            <span class="text-xs text-slate-500" x-text="(modal.suggested.roles || []).map(r => r.toUpperCase()).join(', ') || '—'"></span>
             <div class="flex flex-wrap gap-1">
               <template x-for="r in ROLES" :key="r">
                 <button @click="toggleRole(r)" type="button"
@@ -317,7 +317,7 @@
                         :class="modal.edits.roles.includes(r)
                           ? 'bg-yellow-600/30 border-yellow-500 text-yellow-300'
                           : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-500'"
-                        x-text="r"></button>
+                        x-text="roleLabel(r)"></button>
               </template>
             </div>
             <button @click="acceptSuggestion('roles')" title="Aceitar sugestão"
@@ -395,8 +395,8 @@
             <template x-if="modal.edits.roles && modal.edits.roles.length">
               <div class="space-y-2">
                 <template x-for="role in modal.edits.roles" :key="role">
-                  <div class="flex items-center gap-3">
-                    <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="role"></label>
+                   <div class="flex items-center gap-3">
+                     <label class="text-[10px] text-slate-500 uppercase font-semibold w-8" x-text="roleLabel(role)"></label>
                     <div class="flex-1 flex items-center gap-2">
                       <select @change="modal.edits.tier_by_role[role] = $event.target.value || ''"
                               :value="modal.edits.tier_by_role[role] || ''"

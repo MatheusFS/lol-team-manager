@@ -5,7 +5,7 @@ migrate((app) => {
     collection.fields.add(new Field({
         type: "select",
         name: "secondary_role",
-        values: ["Top", "Jungle", "Mid", "ADC", "Support"],
+        values: ["top", "jng", "mid", "adc", "sup"],
         maxSelect: 1,
     }))
 

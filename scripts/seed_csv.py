@@ -32,15 +32,15 @@ POOL     = ROOT / "Match Reviews - Clash Pool.csv"
 CHAMPS   = Path(__file__).parent / "champions.json"
 
 PLAYERS = [
-    {"name": "Klebão",   "role": "Top",     "is_sub": False},
-    {"name": "GdN",      "role": "Jungle",  "is_sub": False},
-    {"name": "Conkreto", "role": "Mid",     "is_sub": False},
-    {"name": "Digo",     "role": "ADC",     "is_sub": False},
-    {"name": "Kelly",    "role": "Support", "is_sub": False},
-    {"name": "Pixek",    "role": "Top",     "is_sub": True},
-    {"name": "Nunes",    "role": "Top",     "is_sub": True},
-    {"name": "Eden",     "role": "Support", "is_sub": True},
-    {"name": "Xuao",     "role": "ADC",     "is_sub": True},
+    {"name": "Klebão",   "role": "top",     "is_sub": False},
+    {"name": "GdN",      "role": "jng",  "is_sub": False},
+    {"name": "Conkreto", "role": "mid",     "is_sub": False},
+    {"name": "Digo",     "role": "adc",     "is_sub": False},
+    {"name": "Kelly",    "role": "sup", "is_sub": False},
+    {"name": "Pixek",    "role": "top",     "is_sub": True},
+    {"name": "Nunes",    "role": "top",     "is_sub": True},
+    {"name": "Eden",     "role": "sup", "is_sub": True},
+    {"name": "Xuao",     "role": "adc",     "is_sub": True},
 ]
 
 # Abbreviations and nicknames used in the CSV → canonical Riot name

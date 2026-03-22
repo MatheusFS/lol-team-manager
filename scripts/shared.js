@@ -2,7 +2,7 @@
 const PB = 'http://127.0.0.1:8090'
 
 // ── Domain constants ──────────────────────────────────────────────────────────
-const ROLES    = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
+const ROLES    = ['top', 'jng', 'mid', 'adc', 'sup']
 const SUBTYPES = ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix']
 
 // ── Player cache ──────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ const COMP_TYPE_DEFS = [
 const COMP_TYPES = COMP_TYPE_DEFS.map(d => d.value)
 const COMP_EMOJI = Object.fromEntries(COMP_TYPE_DEFS.map(d => [d.value, d.emoji]))
 const CHAMPION_CLASSES = ['Fighter','Mage','Tank','Assassin','Marksman','Support']
-const DAMAGE_TYPES    = ['AD_high','AD_low','AP_high','AP_low','Mixed']
+const DAMAGE_TYPES    = ['AD_high','AD_low','AP_high','AP_low','Mixed_high','Mixed_low']
 const TIERS           = ['S','A','B','C','D']
 const SCALE_COLORS = ['🔴','🟡','🟢']
 const SCALE_SLOTS  = ['Early','Mid','Late']
@@ -368,8 +368,8 @@ function buildPlayerLookup(players, puuidToId = {}) {
 }
 
 function detectFormation(match, formations, players = []) {
-  const ROLE_MAP = { TOP: 'top', JUNGLE: 'jungle', MIDDLE: 'mid', BOTTOM: 'adc', UTILITY: 'support' }
-  const ALL_ROLES = ['top', 'jungle', 'mid', 'adc', 'support']
+  const ROLE_MAP = { TOP: 'top', JUNGLE: 'jng', MIDDLE: 'mid', BOTTOM: 'adc', UTILITY: 'sup' }
+  const ALL_ROLES = ['top', 'jng', 'mid', 'adc', 'sup']
   const puuidToId = Object.fromEntries(players.filter(p => p.puuid).map(p => [p.puuid, p.id]))
   const findPlayerId = buildPlayerLookup(players, puuidToId)
 
@@ -422,11 +422,11 @@ function detectFormation(match, formations, players = []) {
 }
 
 // Extract role→player ID map from a match's player_stats (same ROLE_MAP as detectFormation).
-// Returns { top, jungle, mid, adc, support } — missing roles are null.
+// Returns { top, jng, mid, adc, sup } — missing roles are null.
 // players = array of player records { id, name } — required for ID-based lookup.
 function extractLineup(match, players = []) {
-  const ROLE_MAP = { TOP: 'top', JUNGLE: 'jungle', MIDDLE: 'mid', BOTTOM: 'adc', UTILITY: 'support' }
-  const lineup = { top: null, jungle: null, mid: null, adc: null, support: null }
+  const ROLE_MAP = { TOP: 'top', JUNGLE: 'jng', MIDDLE: 'mid', BOTTOM: 'adc', UTILITY: 'sup' }
+  const lineup = { top: null, jng: null, mid: null, adc: null, sup: null }
   const puuidToId = Object.fromEntries(players.filter(p => p.puuid).map(p => [p.puuid, p.id]))
   const findPlayerId = buildPlayerLookup(players, puuidToId)
   if (Array.isArray(match.player_stats)) {

@@ -91,5 +91,10 @@ document.addEventListener('alpine:init', () => {
       if (!str) return '—'
       return str.length > n ? str.slice(0, n) + '…' : str
     },
+
+    roleLabel(role) {
+      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
+      return map[role] || role || '—'
+    },
   }))
 })

@@ -90,7 +90,7 @@
             <th class="px-3 py-3 text-center">#</th>
             <th class="px-4 py-3 text-center">Resultado</th>
             <th class="px-3 py-3 text-center">Lado</th>
-            <th class="px-4 py-3 text-left">Top</th>
+            <th class="px-4 py-3 text-left">Formação</th>
             <th class="px-4 py-3 text-left">Comp</th>
             <th class="px-3 py-3 text-center">Min</th>
             <th class="px-4 py-3 text-left">MVP</th>
@@ -116,10 +116,10 @@
                 <span class="px-2 py-0.5 rounded text-xs font-bold" :class="resultBg(item.win)" x-text="item.win ? 'VITÓRIA' : 'DERROTA'"></span>
               </td>
               <td class="px-3 py-2.5 text-center" :class="sideCls(item.side)" x-text="sideIcon(item.side)"></td>
-              <td class="px-4 py-2.5 text-slate-300" x-text="item.top_player || '—'"></td>
+              <td class="px-4 py-2.5 text-slate-300" x-text="item.expand?.formation?.name || '—'"></td>
               <td class="px-4 py-2.5 text-slate-200" x-text="compLabel(item.comp_type) || '—'"></td>
               <td class="px-3 py-2.5 text-center text-slate-400" x-text="item.duration ?? '—'"></td>
-              <td class="px-4 py-2.5 text-slate-300" x-text="item.mvp || '—'"></td>
+              <td class="px-4 py-2.5 text-slate-300" x-text="item.expand?.mvp?.name || '—'"></td>
               <td class="px-4 py-2.5">
                 <div class="flex items-center gap-1.5">
                   <img x-show="mvcKey(item)" :src="champImg(mvcKey(item))"

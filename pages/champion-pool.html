@@ -31,7 +31,7 @@
                     ? 'bg-yellow-600 text-slate-100 font-medium'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
                   class="px-4 py-2 rounded text-sm transition-colors">
-            <span x-text="`${p.name} (${p.role}${p.secondary_role ? '/'+p.secondary_role : ''})`"></span>
+            <span x-text="`${p.name} (${roleLabel(p.role)}${p.secondary_role ? '/'+roleLabel(p.secondary_role) : ''})`"></span>
           </button>
         </template>
       </div>
@@ -99,13 +99,13 @@
         <button @click="filterRole = selectedPlayer.role"
                 :class="filterRole === selectedPlayer.role ? 'bg-yellow-600 text-slate-100 font-medium' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
                 class="px-4 py-2 rounded text-sm transition-colors"
-                x-text="selectedPlayer.role">
+                x-text="roleLabel(selectedPlayer.role)">
         </button>
         <template x-if="selectedPlayer.secondary_role">
           <button @click="filterRole = selectedPlayer.secondary_role"
                   :class="filterRole === selectedPlayer.secondary_role ? 'bg-yellow-600 text-slate-100 font-medium' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
                   class="px-4 py-2 rounded text-sm transition-colors"
-                  x-text="selectedPlayer.secondary_role">
+                  x-text="roleLabel(selectedPlayer.secondary_role)">
           </button>
         </template>
       </div>

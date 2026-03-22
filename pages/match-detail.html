@@ -112,7 +112,7 @@
           const id = new URLSearchParams(location.search).get('id')
           if (!id) { this.error = 'ID não informado.'; this.loading = false; return }
           try {
-            this.match = await api.col('matches').get(id, { expand: 'mvc' })
+            this.match = await api.col('matches').get(id, { expand: 'mvc,mvp,formation' })
           } catch (e) {
             this.error = 'Partida não encontrada.'
           }
@@ -158,7 +158,7 @@
         },
 
         roleLabel(role) {
-          const MAP = { TOP: 'Top', JUNGLE: 'Jg', MIDDLE: 'Mid', BOTTOM: 'ADC', UTILITY: 'Sup' }
+          const MAP = { TOP: 'TOP', JUNGLE: 'JNG', MIDDLE: 'MID', BOTTOM: 'ADC', UTILITY: 'SUP' }
           return MAP[role] ?? role ?? '—'
         },
 
@@ -199,23 +199,24 @@
             ])
 
             this.repairStatus = 'Calculando estatísticas…'
-            const puuidToName = {}
+            const puuidToName = {}, puuidToId = {}
             try {
               const players = await api.col('players').list({ perPage: 50 })
-              for (const p of players.items) { if (p.puuid) puuidToName[p.puuid] = p.name }
+              for (const p of players.items) {
+                if (p.puuid) { puuidToName[p.puuid] = p.name; puuidToId[p.puuid] = p.id }
+              }
             } catch (_) {}
 
-            const stats   = extractMatchStats(match, timeline, { ourSide: this.match.side, puuidToName })
+            const stats   = extractMatchStats(match, timeline, { ourSide: this.match.side, puuidToName, puuidToId })
             const payload = RiotApi.buildMatchPayload(stats, { snapshot: { match, timeline } })
 
             // MVC (champion of the MVP)
-            const mvpName = stats.mvp || this.match.mvp
-            if (mvpName && stats.mvcChampKey) {
+            if (stats.mvcChampKey) {
               const champList = Alpine.store('champions').list
               const mvc = champList.find(c => c.key === stats.mvcChampKey) ?? champList.find(c => c.name === stats.mvcChampKey)
               if (mvc) payload.mvc = mvc.id
             }
-            if (!this.match.mvp && stats.mvp) payload.mvp = stats.mvp
+            if (!this.match.mvp && stats.mvpId) payload.mvp = stats.mvpId
 
             this.repairStatus = 'Salvando…'
             await api.col('matches').update(this.match.id, payload)
@@ -332,7 +333,7 @@
             <!-- MVP / MVC -->
             <div>
               <div class="text-xs text-slate-500 mb-0.5">MVP</div>
-              <div class="text-slate-200" x-text="match.mvp || '—'"></div>
+              <div class="text-slate-200" x-text="match.expand?.mvp?.name || '—'"></div>
             </div>
             <div>
               <div class="text-xs text-slate-500 mb-0.5">MVC (Campeão)</div>

@@ -125,12 +125,8 @@ document.addEventListener('alpine:init', () => {
           )
         )
 
-        this.assignResult = {
-          assigned:       toUpdate.length,
-          skipped:        allMatches.filter(m => m.confidence === 'partial').length,
-          allMatches,
-          skippedMatches: allMatches.filter(m => m.confidence === 'partial'),
-        }
+        // Clear the message after successful import
+        this.assignResult = null
         this.unformationedCount = Math.max(0, this.unformationedCount - toUpdate.length)
       } catch (e) {
         console.error('[import] assignFormations failed:', e)
@@ -300,35 +296,49 @@ document.addEventListener('alpine:init', () => {
           const stats = Array.isArray(m.player_stats) ? m.player_stats
             : (typeof m.player_stats === 'string' ? JSON.parse(m.player_stats) : [])
           const mvcKey = m.expand?.mvc?.key ?? null
+          const needsMvp = !m.mvp
+          const needsFormation = !m.formation
 
           let confidence = 'partial', reason = ''
           let _mvpName = null, _formationName = null
 
-          // Only classify for MVP guarantee if mvp is currently empty
-          if (!m.mvp && mvcKey) {
-            const mvcEntry = stats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
-            if (mvcEntry) {
-              confidence = 'safe'
-              const resolvedId = findPlayerId(mvcEntry.name, mvcEntry.puuid)
-              _mvpName = resolvedId ? idToName[resolvedId] : mvcEntry.name
+          // ── MVP classification (only if mvp is empty) ──
+          if (needsMvp) {
+            if (mvcKey) {
+              const mvcEntry = stats.find(ps => normChampKey(ps.champion) === normChampKey(mvcKey))
+              if (mvcEntry) {
+                confidence = 'safe'
+                const resolvedId = findPlayerId(mvcEntry.name, mvcEntry.puuid)
+                _mvpName = resolvedId ? idToName[resolvedId] : mvcEntry.name
+              } else {
+                reason = `Campeão MVC "${mvcKey}" não encontrado em player_stats`
+              }
             } else {
-              reason = `Campeão MVC "${mvcKey}" não encontrado em player_stats`
+              reason = 'Sem MVC cadastrado — MVP pelo maior KDA'
             }
-          } else if (!m.mvp && !mvcKey) {
-            reason = 'Sem MVC cadastrado — MVP pelo maior KDA'
           }
 
-          // Show formation preview for safe items (and if formation is empty)
-          if (!m.formation && confidence === 'safe') {
+          // ── Formation classification (only if formation is empty) ──
+          if (needsFormation) {
+            if (!needsMvp) {
+              // MVP já preenchido → só falta formação → snapshot garante resolução → sempre Garantido
+              confidence = 'safe'
+            }
             const detection = detectFormation(m, formations, players)
             _formationName = detection.match?.name ?? null
-          } else if (!m.formation && !m.mvp && !reason) {
-            // For partial MVP cases without reason yet, still try formation preview
-            const detection = detectFormation(m, formations, players)
-            _formationName = detection.match?.name ?? null
+
+            // If formation not detected in preview, extract the 5 players for display
+            if (!_formationName) {
+              const lineup = extractLineup(m, players)
+              const ROLES = ['top', 'jng', 'mid', 'adc', 'sup']
+              const playerNames = ROLES.map(r => lineup[r] ? (idToName[lineup[r]] ?? '?') : '?').filter(n => n !== '?')
+              if (playerNames.length === 5) {
+                _formationName = playerNames.join(', ')
+              }
+            }
           }
 
-          return { ...m, confidence, reason, _mvpName, _formationName }
+          return { ...m, confidence, reason, _mvpName, _formationName, needsMvp, needsFormation }
         })
       } catch (_) {}
     },
@@ -342,7 +352,7 @@ document.addEventListener('alpine:init', () => {
             perPage: 200,
             filter: `(${idFilter}) && riot_match_snapshot != ""`,
             expand: 'mvc',
-            fields: 'id,player_stats,riot_match_snapshot,top_player,mvc,expand.mvc.key',
+            fields: 'id,player_stats,riot_match_snapshot,top_player,mvc,mvp,formation,expand.mvc.key',
           }),
           api.col('players').list({ perPage: 200, fields: 'id,name,riot_id,puuid' }),
           api.col('formations').list({ perPage: 200 }),
@@ -847,5 +857,10 @@ document.addEventListener('alpine:init', () => {
 
     fmtGdf(v)  { return (v >= 0 ? '+' : '') + v.toLocaleString('en') },
     gdfCls(v)  { return v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-400' },
+
+    roleLabel(role) {
+      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
+      return map[role] || role || '—'
+    },
   }))
 })

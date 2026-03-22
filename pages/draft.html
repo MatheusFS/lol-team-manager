@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assistente de Draft – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/draft-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <style>[x-cloak]{display:none!important}</style>
+</head>
+<body x-data="draftPage" @keydown.escape.window="closePicker()" class="bg-slate-950 text-slate-100 min-h-screen pb-16">
+<script src="/scripts/layout.js"></script>
+
+<main x-cloak class="max-w-7xl mx-auto px-4 py-6 space-y-5">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between gap-4 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-100">🗡️ Assistente de Draft</h1>
+    <div class="flex items-center gap-3">
+      <!-- Our side toggle -->
+      <div class="flex items-center gap-1.5 text-sm">
+        <span class="text-slate-500 text-xs">Nosso lado:</span>
+        <button @click="ourSide = 'blue'"
+                class="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                :class="ourSide === 'blue' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'">
+          🔵 Blue
+        </button>
+        <button @click="ourSide = 'red'"
+                class="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                :class="ourSide === 'red' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'">
+          🔴 Red
+        </button>
+      </div>
+      <button @click="exportDraft()" class="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg px-3 py-1.5 transition-colors">
+        ⬇ Exportar
+      </button>
+      <button @click="importDraft()" class="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg px-3 py-1.5 transition-colors">
+        ⬆ Importar
+      </button>
+      <button @click="reset()" class="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg px-3 py-1.5 transition-colors">
+        Limpar tudo
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Step Indicator ─────────────────────────────────────────────────── -->
+  <div class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <span class="text-sm font-medium"
+          :class="currentPhase === 'done' ? 'text-green-400' : currentPhase.startsWith('ban') ? 'text-orange-400' : 'text-yellow-300'"
+          x-text="stepLabel"></span>
+    <div class="flex items-center gap-1 text-[10px]">
+      <template x-for="(phase, i) in ['Fase 1 Bans','Fase 1 Picks','Fase 2 Bans','Fase 2 Picks']" :key="i">
+        <span class="px-2 py-0.5 rounded-full border transition-colors"
+              :class="{
+                'bg-yellow-500/20 border-yellow-500/50 text-yellow-300': currentStep >= [0,6,12,16][i] && currentStep < [6,12,16,20][i],
+                'bg-green-500/15 border-green-500/30 text-green-400':   currentStep >= [6,12,16,20][i],
+                'bg-slate-800 border-slate-700 text-slate-500':          currentStep < [0,6,12,16][i],
+              }"
+              x-text="phase"></span>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Draft Board ────────────────────────────────────────────────────── -->
+  <div class="grid grid-cols-2 gap-3">
+
+    <!-- Blue Side -->
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+          🔵 Blue Side
+          <span x-show="ourSide === 'blue'" class="text-yellow-400 font-normal normal-case tracking-normal">(nós)</span>
+        </h2>
+        <!-- Blue bans row -->
+        <div class="flex gap-1">
+          <template x-for="(ban, i) in blueBans" :key="i">
+            <div @click="openPicker('ban', 'blue', i)"
+                 class="w-8 h-8 rounded border cursor-pointer transition-all overflow-hidden relative"
+                 :class="ban
+                   ? 'border-orange-700 bg-slate-800'
+                   : isCurrentStep('ban','blue',i)
+                     ? 'border-yellow-400 animate-pulse bg-slate-900/60'
+                     : 'border-dashed border-slate-700 bg-slate-900/30 hover:border-orange-700/50'">
+              <img x-show="ban" :src="$store.champions.imgUrl(ban?.key)"
+                   class="w-full h-full object-cover opacity-50 grayscale">
+              <div x-show="ban" class="absolute inset-0 flex items-center justify-center text-[10px] text-orange-400 font-bold">✕</div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Blue picks (B1-B5) -->
+      <template x-for="(champ, i) in bluePicks" :key="i">
+        <div @click="openPicker('pick', 'blue', i)"
+             class="rounded-lg border-2 transition-all cursor-pointer h-14 flex items-center gap-2.5 px-3"
+             :class="champ
+               ? 'border-blue-800 bg-slate-900 hover:border-blue-600'
+               : isCurrentStep('pick','blue',i)
+                 ? 'border-yellow-400 animate-pulse bg-slate-900/60 hover:border-yellow-300'
+                 : 'border-dashed border-slate-700 bg-slate-900/40 hover:border-blue-700'">
+          <!-- Pick order label -->
+          <span class="text-[10px] font-bold w-6 shrink-0 text-center"
+                :class="champ ? 'text-blue-500' : 'text-slate-600'"
+                x-text="'B' + (i+1)"></span>
+
+          <template x-if="!champ">
+            <div class="flex items-center gap-2 text-slate-600 select-none">
+              <span class="text-base">+</span>
+              <span class="text-xs">Escolher campeão…</span>
+            </div>
+          </template>
+
+          <template x-if="champ">
+            <div class="flex items-center gap-2 w-full min-w-0">
+              <img :src="$store.champions.imgUrl(champ.key)" class="w-9 h-9 rounded border border-slate-700 shrink-0">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-100 truncate" x-text="champ.name"></div>
+                <div class="flex items-center gap-1 mt-0.5">
+                  <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400" x-text="champ.class || '—'"></span>
+                  <span class="text-[10px]" :class="damageColor(champ.damage_type)" x-text="champ.damage_type || ''"></span>
+                </div>
+              </div>
+              <button @click.stop="clearSlot('pick','blue',i)" class="text-slate-700 hover:text-red-400 text-lg leading-none shrink-0 transition-colors">×</button>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    <!-- Red Side -->
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <!-- Red bans row (left-aligned, reversed visually) -->
+        <div class="flex gap-1">
+          <template x-for="(ban, i) in redBans" :key="i">
+            <div @click="openPicker('ban', 'red', i)"
+                 class="w-8 h-8 rounded border cursor-pointer transition-all overflow-hidden relative"
+                 :class="ban
+                   ? 'border-orange-700 bg-slate-800'
+                   : isCurrentStep('ban','red',i)
+                     ? 'border-yellow-400 animate-pulse bg-slate-900/60'
+                     : 'border-dashed border-slate-700 bg-slate-900/30 hover:border-orange-700/50'">
+              <img x-show="ban" :src="$store.champions.imgUrl(ban?.key)"
+                   class="w-full h-full object-cover opacity-50 grayscale">
+              <div x-show="ban" class="absolute inset-0 flex items-center justify-center text-[10px] text-orange-400 font-bold">✕</div>
+            </div>
+          </template>
+        </div>
+        <h2 class="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+          <span x-show="ourSide === 'red'" class="text-yellow-400 font-normal normal-case tracking-normal">(nós)</span>
+          Red Side 🔴
+        </h2>
+      </div>
+
+      <!-- Red picks (R1-R5) -->
+      <template x-for="(champ, i) in redPicks" :key="i">
+        <div @click="openPicker('pick', 'red', i)"
+             class="rounded-lg border-2 transition-all cursor-pointer h-14 flex items-center gap-2.5 px-3"
+             :class="champ
+               ? 'border-red-900 bg-slate-900 hover:border-red-700'
+               : isCurrentStep('pick','red',i)
+                 ? 'border-yellow-400 animate-pulse bg-slate-900/60 hover:border-yellow-300'
+                 : 'border-dashed border-slate-700 bg-slate-900/40 hover:border-red-800'">
+          <template x-if="!champ">
+            <div class="flex items-center gap-2 text-slate-600 select-none w-full justify-end">
+              <span class="text-xs">Escolher campeão…</span>
+              <span class="text-base">+</span>
+            </div>
+          </template>
+
+          <template x-if="champ">
+            <div class="flex items-center gap-2 w-full min-w-0">
+              <button @click.stop="clearSlot('pick','red',i)" class="text-slate-700 hover:text-red-400 text-lg leading-none shrink-0 transition-colors">×</button>
+              <div class="flex-1 min-w-0 text-right">
+                <div class="text-sm font-medium text-slate-100 truncate" x-text="champ.name"></div>
+                <div class="flex items-center gap-1 mt-0.5 justify-end">
+                  <span class="text-[10px]" :class="damageColor(champ.damage_type)" x-text="champ.damage_type || ''"></span>
+                  <span class="text-[10px] px-1 rounded bg-slate-800 text-slate-400" x-text="champ.class || '—'"></span>
+                </div>
+              </div>
+              <img :src="$store.champions.imgUrl(champ.key)" class="w-9 h-9 rounded border border-slate-700 shrink-0">
+            </div>
+          </template>
+
+          <!-- Pick order label (right-aligned) -->
+          <span class="text-[10px] font-bold w-6 shrink-0 text-center"
+                :class="champ ? 'text-red-600' : 'text-slate-600'"
+                x-text="'R' + (i+1)"></span>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Comp Matchup Banner ─────────────────────────────────────────────── -->
+  <template x-if="ourAnalysis.count >= 3 || enemyAnalysis.count >= 3">
+    <div class="rounded-xl border px-4 py-3 flex items-center justify-between gap-4 flex-wrap"
+         :class="{
+           'bg-green-500/10 border-green-500/30': matchup === 'advantage',
+           'bg-red-500/10 border-red-500/30':     matchup === 'disadvantage',
+           'bg-slate-900 border-slate-800':        matchup === 'neutral' || matchup === null,
+         }">
+      <div class="flex items-center gap-3 flex-wrap">
+        <!-- Comp type badges -->
+        <template x-if="ourAnalysis.compType">
+          <span class="text-sm font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-200">
+            <span x-text="compEmoji(ourAnalysis.compType)"></span>
+            <span x-text="ourAnalysis.compType"></span>
+          </span>
+        </template>
+        <!-- Matchup verdict -->
+        <template x-if="matchup === 'advantage'">
+          <span class="text-green-400 text-sm font-semibold">
+            ✅ <span x-text="ourAnalysis.compType"></span> tem vantagem sobre
+            <span x-text="enemyAnalysis.compType" class="font-bold"></span>
+          </span>
+        </template>
+        <template x-if="matchup === 'disadvantage'">
+          <span class="text-red-400 text-sm font-semibold">
+            ⚠️ <span x-text="enemyAnalysis.compType"></span> countera
+            <span x-text="ourAnalysis.compType" class="font-bold"></span>
+          </span>
+        </template>
+        <template x-if="matchup === 'neutral'">
+          <span class="text-slate-400 text-sm">
+            ↔ <span x-text="ourAnalysis.compType"></span> vs <span x-text="enemyAnalysis.compType"></span> — sem counter direto
+          </span>
+        </template>
+        <template x-if="!matchup && (ourAnalysis.compType || enemyAnalysis.compType)">
+          <span class="text-slate-500 text-sm">Aguardando mais picks para definir comp…</span>
+        </template>
+        <template x-if="!ourAnalysis.compType && !enemyAnalysis.compType">
+          <span class="text-slate-600 text-sm">Adicione picks para ver análise de comp</span>
+        </template>
+      </div>
+      <!-- Side advantage -->
+      <div class="text-[11px] text-slate-500 shrink-0">
+        <span x-show="ourSide === 'blue'">🔵 First pick: tema fechado antes</span>
+        <span x-show="ourSide === 'red'">🔴 Last pick (R5): counter garantido</span>
+      </div>
+    </div>
+  </template>
+
+  <!-- ── Analysis Panels ────────────────────────────────────────────────── -->
+  <template x-if="ourAnalysis.count > 0 || enemyAnalysis.count > 0">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+      <!-- Our Team -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold" :class="ourSide === 'blue' ? 'text-blue-400' : 'text-red-400'">
+            Nosso Time
+          </h3>
+          <template x-if="ourAnalysis.compType">
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-200">
+              <span x-text="compEmoji(ourAnalysis.compType)"></span>
+              <span x-text="ourAnalysis.compType"></span>
+            </span>
+          </template>
+        </div>
+        <template x-if="ourAnalysis.count > 0">
+          <div>
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xs text-slate-500">Curva:</span>
+              <template x-for="(raw, pi) in ourAnalysis.scaling" :key="pi">
+                <div class="flex items-center gap-0.5">
+                  <span class="text-[10px] text-slate-600" x-text="['E','M','L'][pi]"></span>
+                  <span x-text="raw != null ? SCALE_COLORS[scaleIdx(raw)] : '⬜'"></span>
+                </div>
+              </template>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              <template x-for="[key, h] in Object.entries(ourAnalysis.heuristics)" :key="key">
+                <div class="rounded-lg px-2 py-2 text-center text-xs" :class="badgeClass(h.color)">
+                  <div class="font-semibold" x-text="h.label"></div>
+                  <div class="flex justify-center gap-0.5 mt-1">
+                    <template x-for="dot in [1,2,3]" :key="dot">
+                      <span class="w-1.5 h-1.5 rounded-full" :class="dot <= h.score ? 'bg-current' : 'bg-current opacity-20'"></span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        <template x-if="ourAnalysis.count === 0">
+          <p class="text-xs text-slate-600 text-center py-3">Adicione picks para ver a análise</p>
+        </template>
+      </div>
+
+      <!-- Enemy Team -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold" :class="ourSide === 'blue' ? 'text-red-400' : 'text-blue-400'">
+            Time Inimigo
+          </h3>
+          <template x-if="enemyAnalysis.compType">
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-200">
+              <span x-text="compEmoji(enemyAnalysis.compType)"></span>
+              <span x-text="enemyAnalysis.compType"></span>
+            </span>
+          </template>
+        </div>
+        <template x-if="enemyAnalysis.count > 0">
+          <div>
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xs text-slate-500">Curva:</span>
+              <template x-for="(raw, pi) in enemyAnalysis.scaling" :key="pi">
+                <div class="flex items-center gap-0.5">
+                  <span class="text-[10px] text-slate-600" x-text="['E','M','L'][pi]"></span>
+                  <span x-text="raw != null ? SCALE_COLORS[scaleIdx(raw)] : '⬜'"></span>
+                </div>
+              </template>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              <template x-for="[key, h] in Object.entries(enemyAnalysis.heuristics)" :key="key">
+                <div class="rounded-lg px-2 py-2 text-center text-xs" :class="badgeClass(h.color)">
+                  <div class="font-semibold" x-text="h.label"></div>
+                  <div class="flex justify-center gap-0.5 mt-1">
+                    <template x-for="dot in [1,2,3]" :key="dot">
+                      <span class="w-1.5 h-1.5 rounded-full" :class="dot <= h.score ? 'bg-current' : 'bg-current opacity-20'"></span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        <template x-if="enemyAnalysis.count === 0">
+          <p class="text-xs text-slate-600 text-center py-3">Adicione picks para ver a análise</p>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ── Comparison Bars ────────────────────────────────────────────────── -->
+  <template x-if="ourAnalysis.count >= 3 && enemyAnalysis.count >= 3">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5">
+      <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Comparação</h3>
+      <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center text-[10px] mb-1">
+        <span :class="ourSide === 'blue' ? 'text-blue-400' : 'text-red-400'" class="font-semibold">Nosso Time</span>
+        <span class="text-slate-600 text-center w-24">Métrica</span>
+        <span :class="ourSide === 'blue' ? 'text-red-400' : 'text-blue-400'" class="font-semibold text-right">Inimigo</span>
+      </div>
+      <template x-for="[key, ourH] in Object.entries(ourAnalysis.heuristics)" :key="key">
+        <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-300"
+                 :style="`width: ${(ourH.score/3)*100}%`"
+                 :class="ourH.score >= 3 ? 'bg-blue-500' : ourH.score >= 2 ? 'bg-yellow-500' : 'bg-red-700'"></div>
+          </div>
+          <span class="text-[10px] text-slate-500 w-24 text-center" x-text="ourH.label"></span>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden flex justify-end">
+            <div class="h-full rounded-full transition-all duration-300"
+                 :style="`width: ${(enemyAnalysis.heuristics[key].score/3)*100}%`"
+                 :class="enemyAnalysis.heuristics[key].score >= 3 ? 'bg-red-500' : enemyAnalysis.heuristics[key].score >= 2 ? 'bg-yellow-500' : 'bg-red-900'"></div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <!-- ── Recommendations ────────────────────────────────────────────────── -->
+  <template x-if="ourRecs.length > 0">
+    <div class="space-y-3">
+      <h3 class="text-sm font-semibold text-amber-400">💡 Recomendações para próximos picks</h3>
+      <template x-for="(rec, ri) in ourRecs" :key="ri">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3 flex-wrap">
+            <span class="text-amber-400 shrink-0">⚠</span>
+            <span class="text-sm font-medium text-slate-200" x-text="rec.reason"></span>
+            <template x-for="cls in rec.classes" :key="cls">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700" x-text="cls"></span>
+            </template>
+          </div>
+          <div class="flex gap-3 flex-wrap">
+            <template x-for="c in rec.candidates" :key="c.id">
+              <button @click="quickPick(c)"
+                      :disabled="ourPicks.every(Boolean)"
+                      class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                  <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+                </div>
+                <!-- Champion name -->
+                <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
+                <!-- Pool tags: role initial + tier icon + WR% -->
+                <template x-if="champPoolInfo(c.id).length > 0">
+                  <div class="flex flex-col items-center w-full">
+                    <template x-for="p in champPoolInfo(c.id).slice(0,2)" :key="p.playerName">
+                      <div class="flex items-center gap-0.5 text-[9px] leading-tight">
+                        <span class="text-slate-500 font-semibold" x-text="p.role[0]"></span>
+                        <span :class="{
+                          'text-yellow-300': p.poolTier === 'star',
+                          'text-green-400':  p.poolTier === 'green',
+                          'text-yellow-600': p.poolTier === 'yellow',
+                        }" x-text="poolTierIcon(p.poolTier)"></span>
+                        <template x-if="playerWR(p.playerName, c.key)">
+                          <span class="text-slate-500" x-text="playerWR(p.playerName, c.key).pct + '%'"></span>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+                <!-- Not in anyone's pool: show global tier -->
+                <template x-if="!champPoolInfo(c.id).length">
+                  <span class="text-[9px] font-bold" :class="tierColor(c.tier)" x-text="c.tier ?? '?'"></span>
+                </template>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+
+</main>
+
+<!-- ── Champion Picker Modal ──────────────────────────────────────────────── -->
+<template x-if="activeSlot !== null">
+  <div class="fixed inset-0 z-50 flex items-start justify-center pt-12 p-4"
+       @click.self="closePicker()">
+    <div class="absolute inset-0 bg-black/60"></div>
+    <div class="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md">
+      <!-- Header -->
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold"
+                :class="activeSlot?.side === 'blue' ? 'text-blue-400' : 'text-red-400'"
+                x-text="activeSlot?.side === 'blue' ? '🔵 Blue' : '🔴 Red'"></span>
+          <span class="text-sm text-slate-500"
+                x-text="activeSlot?.type === 'ban' ? '— Selecionar Ban' : '— Selecionar Pick'"></span>
+        </div>
+        <button @click="closePicker()" class="text-slate-500 hover:text-slate-200 text-xl leading-none">×</button>
+      </div>
+      <!-- Search -->
+      <div class="p-3 border-b border-slate-800">
+        <input id="modal-search"
+               type="text"
+               x-model="modalQuery"
+               @input="searchModal()"
+               placeholder="Buscar campeão…"
+               autocomplete="off"
+               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-yellow-500 text-slate-100 placeholder-slate-500">
+      </div>
+      <!-- Results -->
+      <div class="max-h-72 overflow-y-auto p-3">
+        <template x-if="!modalQuery.trim()">
+          <p class="text-center text-slate-600 text-sm py-8">Digite para buscar…</p>
+        </template>
+        <template x-if="modalQuery.trim() && modalResults.length === 0">
+          <p class="text-center text-slate-600 text-sm py-8">Nenhum resultado</p>
+        </template>
+        <div class="grid grid-cols-5 sm:grid-cols-6 gap-2">
+          <template x-for="c in modalResults" :key="c.id">
+            <button @click="pickChamp(c)"
+                    class="flex flex-col items-center gap-1 p-1.5 rounded-lg hover:bg-slate-800 transition-colors group">
+              <div class="w-11 h-11 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+              </div>
+              <span class="text-[10px] text-slate-400 group-hover:text-slate-200 truncate w-full text-center" x-text="c.name"></span>
+              <span class="text-[9px] font-bold" :class="tierColor(c.tier)" x-text="c.tier ?? ''"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+</body>
+</html>

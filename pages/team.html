@@ -13,7 +13,7 @@
       @keydown.escape.window="closeModal()">
 <script src="/scripts/layout.js"></script>
 
-  <main class="max-w-4xl mx-auto px-4 py-6">
+  <main class="max-w-6xl mx-auto px-4 py-6">
 
     <!-- Header -->
     <div class="flex items-center justify-between gap-4 mb-6">
@@ -23,10 +23,16 @@
           Cadastre as formações do time para segmentar estatísticas por escalação.
         </p>
       </div>
-      <button @click="openNew()"
-              class="bg-yellow-600 hover:bg-yellow-500 text-sm font-medium px-4 py-2 rounded transition-colors">
-        Nova Formação
-      </button>
+      <div class="flex gap-2">
+        <button @click="runImportScan()"
+                class="bg-slate-700 hover:bg-slate-600 text-sm font-medium px-4 py-2 rounded transition-colors">
+          Importar
+        </button>
+        <button @click="openNew()"
+                class="bg-yellow-600 hover:bg-yellow-500 text-sm font-medium px-4 py-2 rounded transition-colors">
+          Nova Formação
+        </button>
+      </div>
     </div>
 
     <!-- Formation cards -->
@@ -36,21 +42,21 @@
              :class="f.active ? 'border-yellow-600/60' : 'border-slate-800'">
 
           <!-- Name + badge -->
-          <div class="w-40 shrink-0">
+          <div class="w-80">
             <span class="font-semibold text-slate-200" x-text="f.name"></span>
             <span x-show="f.active"
                   class="ml-2 text-[10px] uppercase tracking-wider bg-yellow-600/20 text-yellow-400 px-1.5 py-0.5 rounded">Ativa</span>
           </div>
 
-          <!-- Roles -->
-          <div class="flex-1 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-            <template x-for="role in ROLES" :key="role">
-              <div class="flex items-center gap-1">
-                <span class="text-[10px] uppercase text-slate-500 w-12" x-text="role"></span>
-                <span class="text-slate-300" x-text="f[role.toLowerCase()]"></span>
-              </div>
-            </template>
-          </div>
+           <!-- Roles -->
+           <div class="flex-1 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+             <template x-for="role in ROLES" :key="role">
+               <div class="flex items-center gap-1">
+                  <span class="text-[10px] uppercase text-slate-500 w-12" x-text="roleLabel(role)"></span>
+                  <span class="text-slate-300" x-text="f.expand?.[formationField(role)]?.name ?? playerName(f[formationField(role)])"></span>
+                </div>
+             </template>
+           </div>
 
           <!-- Actions -->
           <div class="flex gap-3 shrink-0">
@@ -71,6 +77,56 @@
         Carregando…
       </div>
     </div>
+
+    <!-- ── Import panel ──────────────────────────────────────────────── -->
+    <div x-show="importPanel" x-cloak class="mt-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Escalações detectadas nas partidas</h2>
+        <button @click="importPanel = false" class="text-slate-500 hover:text-slate-200 text-xl leading-none">&times;</button>
+      </div>
+
+      <div x-show="importLoading" class="text-slate-400 text-sm py-4">Varrendo partidas…</div>
+
+      <div x-show="!importLoading && importScan.length === 0"
+           class="text-slate-500 text-sm py-4">
+        Nenhuma escalação nova encontrada — todas as escalações das partidas já têm formação cadastrada.
+      </div>
+
+      <div x-show="!importLoading && importScan.length > 0" class="space-y-4">
+        <p class="text-xs text-slate-500" x-text="`${importScan.length} escalação(ões) nova(s) encontrada(s) em partidas com dados completos.`"></p>
+
+        <template x-for="item in importScan" :key="item.fingerprint">
+          <div class="bg-slate-900 border border-slate-700 rounded-lg p-4">
+             <!-- Roles -->
+             <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm mb-3">
+               <template x-for="role in ROLES" :key="role">
+                   <div class="flex items-center gap-1">
+                    <span class="text-[10px] uppercase text-slate-500 w-12" x-text="roleLabel(role)"></span>
+                    <span class="text-slate-200 font-medium" x-text="playerName(item.roles[role])"></span>
+                  </div>
+               </template>
+              <span class="ml-auto text-xs text-slate-500" x-text="`${item.count} partida(s)`"></span>
+            </div>
+
+            <!-- Create form -->
+            <div class="flex items-center gap-3 flex-wrap">
+              <input type="text" x-model="item.name" placeholder="Nome da formação…"
+                     class="flex-1 min-w-40 bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-500">
+              <label class="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer">
+                <input type="checkbox" x-model="item.active"
+                       class="rounded border-slate-600 bg-slate-800 accent-yellow-500">
+                Ativa
+              </label>
+              <button @click="createFromImport(item)"
+                      class="bg-yellow-600 hover:bg-yellow-500 text-sm font-medium px-4 py-1.5 rounded transition-colors whitespace-nowrap">
+                Criar Formação
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
   </main>
 
   <!-- ── Modal ─────────────────────────────────────────────────────────── -->
@@ -95,19 +151,19 @@
                    class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
           </div>
 
-          <!-- Role selectors -->
-          <template x-for="role in ROLES" :key="role">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1" x-text="role"></label>
-              <select x-model="form[role.toLowerCase()]"
-                      class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
-                <option value="">— selecione —</option>
-                <template x-for="p in PLAYERS" :key="p">
-                  <option :value="p" x-text="p"></option>
-                </template>
-              </select>
-            </div>
-          </template>
+           <!-- Role selectors -->
+            <template x-for="role in ROLES" :key="role">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1" x-text="roleLabel(role)"></label>
+                <select x-model="form[formationField(role)]"
+                        class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+                  <option value="">— selecione —</option>
+                  <template x-for="p in players" :key="p.id">
+                    <option :value="p.id" :selected="form[formationField(role)] === p.id" x-text="p.name"></option>
+                  </template>
+                </select>
+              </div>
+            </template>
 
           <!-- Active -->
           <label class="flex items-center gap-2 cursor-pointer">

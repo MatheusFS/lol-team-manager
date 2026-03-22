@@ -413,8 +413,8 @@
           <label class="field-label">MVP</label>
           <select x-model="mvp" class="field-input">
             <option value="">— nenhum —</option>
-            <template x-for="p in PLAYERS" :key="p">
-              <option :value="p" x-text="p"></option>
+            <template x-for="p in players" :key="p.id">
+              <option :value="p.id" x-text="p.name"></option>
             </template>
           </select>
         </div>
