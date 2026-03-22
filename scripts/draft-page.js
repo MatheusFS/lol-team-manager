@@ -417,8 +417,8 @@ document.addEventListener('alpine:init', () => {
     _buildHeuristics(picks, comp, { classCounts, damageCounts }) {
       const sc = (n, t) => n === 0 ? t[0] : n === 1 ? t[1] : t[2]
 
-      const frontlineRaw = classCounts.Tank
-      const frontline    = { score: sc(frontlineRaw, [0, 1, 3]), label: 'Frontline' }
+      const frontlineRaw = classCounts.Tank + Math.floor(classCounts.Fighter / 2)
+      const frontline    = { score: sc(frontlineRaw, [0, 2, 3]), label: 'Frontline' }
 
       const dpsRaw = classCounts.Marksman
         + classCounts.Assassin
