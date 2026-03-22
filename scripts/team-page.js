@@ -177,11 +177,6 @@ document.addEventListener('alpine:init', () => {
        }
      },
 
-     roleLabel(role) {
-       const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP', 'jungle': 'JNG', 'support': 'SUP' }
-       return map[role] || role || '—'
-     },
-
      formationField(role) {
        const map = { 'top': 'top', 'jng': 'jungle', 'mid': 'mid', 'adc': 'adc', 'sup': 'support' }
        return map[role] || role

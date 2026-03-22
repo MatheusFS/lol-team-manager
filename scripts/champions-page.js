@@ -496,11 +496,6 @@ document.addEventListener('alpine:init', () => {
       else this.modal.edits.roles.push(role)
     },
 
-    roleLabel(role) {
-      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
-      return map[role] || role
-    },
-
     pickScale(phase, ci) {
       if (!this.modal) return
       this.modal.edits[phase] = this.modal.edits[phase] === ci ? null : ci

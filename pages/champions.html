@@ -95,7 +95,7 @@
               class="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
         <option value="">Todas roles</option>
         <template x-for="r in ROLES" :key="r">
-          <option :value="r" x-text="r"></option>
+          <option :value="r" x-text="roleLabel(r)"></option>
         </template>
       </select>
       <select x-model="filterComp"
@@ -168,7 +168,7 @@
                 <template x-if="Array.isArray(champ.roles) && champ.roles.length">
                   <div class="flex flex-wrap gap-0.5">
                     <template x-for="r in champ.roles" :key="r">
-                      <span x-text="r" class="text-[10px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-300"></span>
+                      <span x-text="roleLabel(r)" class="text-[10px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-300"></span>
                     </template>
                   </div>
                 </template>
@@ -215,8 +215,8 @@
                 <template x-if="champ.tier_by_role && Object.keys(champ.tier_by_role).length">
                   <div class="flex gap-1 justify-center flex-wrap">
                     <template x-for="(tier, role) in champ.tier_by_role" :key="role">
-                      <span :title="role" class="text-xs font-bold">
-                        <span class="text-slate-500" x-text="role[0]"></span><span class="px-1 py-0.5 rounded"
+                      <span :title="roleLabel(role)" class="text-xs font-bold">
+                        <span class="text-slate-500" x-text="roleLabel(role)"></span><span class="px-1 py-0.5 rounded"
                               x-text="tier"
                               :class="{
                                 'text-yellow-300 bg-yellow-900/20': tier === 'S',

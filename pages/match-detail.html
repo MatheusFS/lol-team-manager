@@ -158,8 +158,7 @@
         },
 
         roleLabel(role) {
-          const MAP = { TOP: 'TOP', JUNGLE: 'JNG', MIDDLE: 'MID', BOTTOM: 'ADC', UTILITY: 'SUP' }
-          return MAP[role] ?? role ?? '—'
+          return riotRoleLabel(role)
         },
 
         // Parse obj_flow string t/v/g/d/b/i/n

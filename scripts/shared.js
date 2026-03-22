@@ -5,6 +5,19 @@ const PB = 'http://127.0.0.1:8090'
 const ROLES    = ['top', 'jng', 'mid', 'adc', 'sup']
 const SUBTYPES = ['Siege','Protect','Engage','Split','Pick','Dive','Reset','Mix']
 
+// ── Role label helpers (single source of truth) ───────────────────────────────
+// Maps internal role IDs (top/jng/mid/adc/sup) → display labels (TOP/JNG/MID/ADC/SUP)
+function roleLabel(role) {
+  const ROLE_LABELS = { top: 'TOP', jng: 'JNG', mid: 'MID', adc: 'ADC', sup: 'SUP' }
+  return ROLE_LABELS[role] || role || '—'
+}
+
+// Maps Riot API position keys (TOP/JUNGLE/MIDDLE/BOTTOM/UTILITY) → display labels
+function riotRoleLabel(role) {
+  const RIOT_ROLE_LABELS = { TOP: 'TOP', JUNGLE: 'JNG', MIDDLE: 'MID', BOTTOM: 'ADC', UTILITY: 'SUP' }
+  return RIOT_ROLE_LABELS[role] ?? role ?? '—'
+}
+
 // ── Player cache ──────────────────────────────────────────────────────────────
 let _cachedPlayers = null
 async function loadPlayers() {

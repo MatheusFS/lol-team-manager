@@ -631,10 +631,5 @@ document.addEventListener('alpine:init', () => {
         ...this.redBans.filter(Boolean).map(c => c.id),
       ])
     },
-
-    roleLabel(role) {
-      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
-      return map[role] || role || '—'
-    },
   }))
 })

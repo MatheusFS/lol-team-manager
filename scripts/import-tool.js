@@ -857,10 +857,5 @@ document.addEventListener('alpine:init', () => {
 
     fmtGdf(v)  { return (v >= 0 ? '+' : '') + v.toLocaleString('en') },
     gdfCls(v)  { return v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-400' },
-
-    roleLabel(role) {
-      const map = { 'top': 'TOP', 'jng': 'JNG', 'mid': 'MID', 'adc': 'ADC', 'sup': 'SUP' }
-      return map[role] || role || '—'
-    },
   }))
 })
