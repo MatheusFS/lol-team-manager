@@ -396,19 +396,29 @@ document.addEventListener('alpine:init', () => {
     get enemyAnalysis() { return analyzeTeam(this.enemyPicks) },
 
     get ourRecs() {
-      const overrides = (this.ourSide === 'blue' ? this.bluePicks : this.redPicks)
+      // Accesses this.ourSide, bluePicks, redPicks directly for Alpine reactivity
+      const ourPicks = this.ourSide === 'blue' ? this.bluePicks : this.redPicks
+      const enemyPicks = this.ourSide === 'blue' ? this.redPicks : this.bluePicks
+      const overrides = ourPicks
         .map((_, i) => this.pickRoles[`${this.ourSide}:${i}`] ?? null)
+      const ourAnalysis = analyzeTeam(ourPicks)
+      const enemyAnalysis = analyzeTeam(enemyPicks)
       return buildRecommendations(
-        this.ourAnalysis,
-        this.enemyAnalysis,
-        this.ourPicks,
+        ourAnalysis,
+        enemyAnalysis,
+        ourPicks,
         overrides,
         this._recContext(),
       )
     },
 
     get matchup() {
-      return this.matchupResult(this.ourAnalysis.compType, this.enemyAnalysis.compType)
+      // Accesses this.ourSide, bluePicks, redPicks directly for Alpine reactivity
+      const ourPicks = this.ourSide === 'blue' ? this.bluePicks : this.redPicks
+      const enemyPicks = this.ourSide === 'blue' ? this.redPicks : this.bluePicks
+      const ourComp = analyzeTeam(ourPicks).compType
+      const enemyComp = analyzeTeam(enemyPicks).compType
+      return this.matchupResult(ourComp, enemyComp)
     },
 
     // ── Comp matchup ──────────────────────────────────────────────────────────
