@@ -342,35 +342,36 @@
   </template>
 
   <!-- ── Analysis Panels ────────────────────────────────────────────────── -->
-  <template x-if="ourAnalysis.count > 0 || enemyAnalysis.count > 0">
+  <template x-if="blueAnalysis.count > 0 || redAnalysis.count > 0">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-      <!-- Our Team -->
+      <!-- Blue Team (left, always blue) -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold" :class="ourSide === 'blue' ? 'text-blue-400' : 'text-red-400'">
-            Nosso Time
+          <h3 class="text-sm font-semibold" :class="ourSide === 'blue' ? 'text-blue-400' : 'text-slate-400'">
+            <span x-show="ourSide === 'blue'">Nosso Time</span>
+            <span x-show="ourSide !== 'blue'">Time Inimigo</span>
           </h3>
           <div class="flex items-center gap-1 mb-2">
             <span class="text-xs text-slate-500">Curva EML:</span>
-            <template x-for="(raw, pi) in ourAnalysis.scaling" :key="pi">
+            <template x-for="(raw, pi) in blueAnalysis.scaling" :key="pi">
               <div class="flex items-center gap-0.5">
                 <!-- <span class="text-[10px] text-slate-600" x-text="['E','M','L'][pi]"></span> -->
                 <span x-text="raw != null ? SCALE_COLORS[scaleIdx(raw)] : '⬜'"></span>
               </div>
             </template>
           </div>
-          <template x-if="ourAnalysis.compType">
+          <template x-if="blueAnalysis.compType">
             <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-200">
-              <span x-text="compEmoji(ourAnalysis.compType)"></span>
-              <span x-text="ourAnalysis.compType"></span>
+              <span x-text="compEmoji(blueAnalysis.compType)"></span>
+              <span x-text="blueAnalysis.compType"></span>
             </span>
           </template>
         </div>
-        <template x-if="ourAnalysis.count > 0">
+        <template x-if="blueAnalysis.count > 0">
           <div>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              <template x-for="[key, h] in Object.entries(ourAnalysis.heuristics)" :key="key">
+              <template x-for="[key, h] in Object.entries(blueAnalysis.heuristics)" :key="key">
                 <div class="rounded-lg px-2 py-2 text-center text-xs" :class="badgeClass(h.color)">
                   <div class="font-semibold" x-text="h.label"></div>
                   <div class="flex justify-center gap-0.5 mt-1">
@@ -383,37 +384,38 @@
             </div>
           </div>
         </template>
-        <template x-if="ourAnalysis.count === 0">
+        <template x-if="blueAnalysis.count === 0">
           <p class="text-xs text-slate-600 text-center py-3">Adicione picks para ver a análise</p>
         </template>
       </div>
 
-      <!-- Enemy Team -->
+      <!-- Red Team (right, always red) -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold" :class="ourSide === 'blue' ? 'text-red-400' : 'text-blue-400'">
-            Time Inimigo
+          <h3 class="text-sm font-semibold" :class="ourSide === 'red' ? 'text-red-400' : 'text-slate-400'">
+            <span x-show="ourSide === 'red'">Nosso Time</span>
+            <span x-show="ourSide !== 'red'">Time Inimigo</span>
           </h3>
           <div class="flex items-center gap-1 mb-2">
             <span class="text-xs text-slate-500">Curva EML:</span>
-            <template x-for="(raw, pi) in enemyAnalysis.scaling" :key="pi">
+            <template x-for="(raw, pi) in redAnalysis.scaling" :key="pi">
               <div class="flex items-center gap-0.5">
                 <!-- <span class="text-[10px] text-slate-600" x-text="['E','M','L'][pi]"></span> -->
                 <span x-text="raw != null ? SCALE_COLORS[scaleIdx(raw)] : '⬜'"></span>
               </div>
             </template>
           </div>
-          <template x-if="enemyAnalysis.compType">
+          <template x-if="redAnalysis.compType">
             <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-200">
-              <span x-text="compEmoji(enemyAnalysis.compType)"></span>
-              <span x-text="enemyAnalysis.compType"></span>
+              <span x-text="compEmoji(redAnalysis.compType)"></span>
+              <span x-text="redAnalysis.compType"></span>
             </span>
           </template>
         </div>
-        <template x-if="enemyAnalysis.count > 0">
+        <template x-if="redAnalysis.count > 0">
           <div>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              <template x-for="[key, h] in Object.entries(enemyAnalysis.heuristics)" :key="key">
+              <template x-for="[key, h] in Object.entries(redAnalysis.heuristics)" :key="key">
                 <div class="rounded-lg px-2 py-2 text-center text-xs" :class="badgeClass(h.color)">
                   <div class="font-semibold" x-text="h.label"></div>
                   <div class="flex justify-center gap-0.5 mt-1">
@@ -426,7 +428,7 @@
             </div>
           </div>
         </template>
-        <template x-if="enemyAnalysis.count === 0">
+        <template x-if="redAnalysis.count === 0">
           <p class="text-xs text-slate-600 text-center py-3">Adicione picks para ver a análise</p>
         </template>
       </div>
@@ -434,26 +436,26 @@
   </template>
 
   <!-- ── Comparison Bars ────────────────────────────────────────────────── -->
-  <template x-if="ourAnalysis.count >= 3 && enemyAnalysis.count >= 3">
+  <template x-if="blueAnalysis.count >= 3 && redAnalysis.count >= 3">
     <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5">
       <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Comparação</h3>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center text-[10px] mb-1">
-        <span :class="ourSide === 'blue' ? 'text-blue-400' : 'text-red-400'" class="font-semibold">Nosso Time</span>
+        <span :class="ourSide === 'blue' ? 'text-blue-400' : 'text-slate-400'" class="font-semibold">🔵 Blue</span>
         <span class="text-slate-600 text-center w-24">Métrica</span>
-        <span :class="ourSide === 'blue' ? 'text-red-400' : 'text-blue-400'" class="font-semibold text-right">Inimigo</span>
+        <span :class="ourSide === 'red' ? 'text-red-400' : 'text-slate-400'" class="font-semibold text-right">🔴 Red</span>
       </div>
-      <template x-for="[key, ourH] in Object.entries(ourAnalysis.heuristics)" :key="key">
+      <template x-for="[key, blueH] in Object.entries(blueAnalysis.heuristics)" :key="key">
         <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
           <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
             <div class="h-full rounded-full transition-all duration-300"
-                 :style="`width: ${(ourH.score/3)*100}%`"
-                 :class="ourH.score >= 3 ? 'bg-blue-400' : ourH.score >= 2 ? 'bg-blue-600' : 'bg-blue-900'"></div>
+                 :style="`width: ${(blueH.score/3)*100}%`"
+                 :class="blueH.score >= 3 ? 'bg-blue-400' : blueH.score >= 2 ? 'bg-blue-600' : 'bg-blue-900'"></div>
           </div>
-          <span class="text-[10px] text-slate-500 w-24 text-center" x-text="ourH.label"></span>
+          <span class="text-[10px] text-slate-500 w-24 text-center" x-text="blueH.label"></span>
           <div class="h-2 bg-slate-800 rounded-full overflow-hidden flex justify-end">
             <div class="h-full rounded-full transition-all duration-300"
-                 :style="`width: ${(enemyAnalysis.heuristics[key].score/3)*100}%`"
-                 :class="enemyAnalysis.heuristics[key].score >= 3 ? 'bg-red-400' : enemyAnalysis.heuristics[key].score >= 2 ? 'bg-red-600' : 'bg-red-900'"></div>
+                 :style="`width: ${(redAnalysis.heuristics[key].score/3)*100}%`"
+                 :class="redAnalysis.heuristics[key].score >= 3 ? 'bg-red-400' : redAnalysis.heuristics[key].score >= 2 ? 'bg-red-600' : 'bg-red-900'"></div>
           </div>
         </div>
       </template>
