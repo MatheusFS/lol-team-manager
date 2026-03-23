@@ -481,6 +481,16 @@ document.addEventListener('alpine:init', () => {
       return { S: 'text-yellow-300', A: 'text-green-400', B: 'text-slate-300', C: 'text-orange-400', D: 'text-red-400' }[tier] ?? 'text-slate-600'
     },
 
+    // Get the best (highest) tier across all roles in tier_by_role
+    // Used for champion picker modal when role is not known
+    bestTierOf(champ) {
+      if (!champ?.tier_by_role || typeof champ.tier_by_role !== 'object' || Array.isArray(champ.tier_by_role)) return null
+      const tiers = Object.values(champ.tier_by_role).filter(t => t && /^[SABCD]$/.test(t))
+      if (!tiers.length) return null
+      const tierOrder = { S: 0, A: 1, B: 2, C: 3, D: 4 }
+      return tiers.sort((a, b) => (tierOrder[a] ?? 5) - (tierOrder[b] ?? 5))[0] ?? null
+    },
+
     // Winrate color: follows stats-page scheme
     // 60%+ = Green, 40-60% = Yellow, <40% = Red, null/undefined = Slate
     wrColor(wrPct) {

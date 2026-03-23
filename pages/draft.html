@@ -514,8 +514,8 @@
                          'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
                        }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
                      </template>
-                     <!-- Patch tier (always show) -->
-                     <span class="font-bold" :class="tierColor(c.tier)" x-text="c.tier ?? '?'"></span>
+                      <!-- Role-specific tier from tier_by_role -->
+                      <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
                       <!-- Win% for the formation player of this role -->
                       <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
                         <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
@@ -576,7 +576,7 @@
                 <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
               </div>
               <span class="text-[10px] text-slate-400 group-hover:text-slate-200 truncate w-full text-center" x-text="c.name"></span>
-              <span class="text-[9px] font-bold" :class="tierColor(c.tier)" x-text="c.tier ?? ''"></span>
+              <span class="text-[9px] font-bold" :class="tierColor(bestTierOf(c))" x-text="bestTierOf(c) ?? ''"></span>
             </button>
           </template>
         </div>

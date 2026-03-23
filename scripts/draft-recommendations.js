@@ -226,11 +226,17 @@ function buildRecommendations(analysis, enemyAnalysis, picks, overrides, ctx) {
 
   // Sort champion pool by tier for consistent ranking
   const tierOrder = Object.fromEntries(TIERS.map((t, i) => [t, i]))
+  const getBestTier = champ => {
+    if (!champ.tier_by_role || typeof champ.tier_by_role !== 'object' || Array.isArray(champ.tier_by_role)) return 5
+    const tiers = Object.values(champ.tier_by_role).filter(t => t && /^[SABCD]$/.test(t))
+    if (!tiers.length) return 5
+    return Math.min(...tiers.map(t => tierOrder[t] ?? 5), 5)
+  }
   const sortedCtx = {
     ...ctx,
     championsList: ctx.championsList
       .slice()
-      .sort((a, b) => (tierOrder[a.tier] ?? 5) - (tierOrder[b.tier] ?? 5)),
+      .sort((a, b) => getBestTier(a) - getBestTier(b)),
   }
 
   // Tag priority order (changes based on how many picks are left)
