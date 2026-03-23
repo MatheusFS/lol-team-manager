@@ -49,7 +49,7 @@ function _makeRecLine(role, compFilterFn, reason, tag, classes, ctx) {
   const allValid  = ctx.championsList.filter(c =>
     !ctx.usedIds.has(c.id) &&
     compFilterFn(c) &&
-    parseViableRoles(c).includes(role)
+    (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
   )
   const inPool    = allValid.filter(c =>  ctx.champPool?.[c.id]?.some(e => e.role === role))
   const notInPool = allValid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
