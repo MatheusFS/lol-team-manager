@@ -101,45 +101,49 @@
         </thead>
         <tbody>
           <template x-for="item in displayMatches" :key="item._isSep ? 'sep-'+item._sessionIdx : item.id">
-            <tr x-show="item._isSep" class="bg-slate-900/80 border-t-2 border-slate-700">
-              <td colspan="11" class="px-4 py-2">
-                <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mr-2">Sessão</span>
-                <span class="text-xs font-semibold text-slate-300" x-text="fmtDate(item.date)"></span>
-                <span class="ml-3 text-xs text-slate-500"
-                      x-text="item.count + (item.count === 1 ? ' jogo' : ' jogos') + ' · ' + item.wins + 'V ' + (item.count - item.wins) + 'D'"></span>
-              </td>
-            </tr>
-            <tr x-show="!item._isSep" class="hover:bg-slate-900/40 transition-colors border-t border-slate-800/60" :class="borderCls(item.win)">
-              <td class="px-4 py-2.5 text-slate-300 whitespace-nowrap" x-text="fmtDate(item.date)"></td>
-              <td class="px-3 py-2.5 text-center text-slate-500" x-text="item.game_n"></td>
-              <td class="px-4 py-2.5 text-center">
-                <span class="px-2 py-0.5 rounded text-xs font-bold" :class="resultBg(item.win)" x-text="item.win ? 'VITÓRIA' : 'DERROTA'"></span>
-              </td>
-              <td class="px-3 py-2.5 text-center" :class="sideCls(item.side)" x-text="sideIcon(item.side)"></td>
-              <td class="px-4 py-2.5 text-slate-300" x-text="item.expand?.formation?.name || '—'"></td>
-              <td class="px-4 py-2.5 text-slate-200" x-text="compLabel(item.comp_type) || '—'"></td>
-              <td class="px-3 py-2.5 text-center text-slate-400" x-text="item.duration ?? '—'"></td>
-              <td class="px-4 py-2.5 text-slate-300" x-text="item.expand?.mvp?.name || '—'"></td>
-              <td class="px-4 py-2.5">
-                <div class="flex items-center gap-1.5">
-                  <img x-show="mvcKey(item)" :src="champImg(mvcKey(item))"
-                       class="w-5 h-5 rounded-sm object-cover flex-shrink-0"
-                       :alt="mvcName(item)">
-                  <span class="text-slate-300" x-text="mvcName(item)"></span>
-                </div>
-              </td>
-              <td class="px-4 py-2.5 text-right font-mono text-xs"
-                  :class="item.gd_f != null ? gdfCls(item.gd_f) : 'text-slate-600'"
-                  x-text="item.gd_f != null ? fmtGold(item.gd_f) : '—'"></td>
-              <td class="px-4 py-2.5 text-right whitespace-nowrap">
-                <a x-show="item.riot_match_id" :href="`pages/match-detail.html?id=${item.id}`"
-                   class="text-slate-400 hover:text-slate-200 text-xs font-medium mr-3 transition-colors">Detalhes</a>
-                <a :href="`pages/match-form.html?id=${item.id}`"
-                   class="text-yellow-500 hover:text-yellow-400 text-xs font-medium mr-3 transition-colors">Editar</a>
-                <button @click="del(item.id)"
-                        class="text-slate-600 hover:text-red-400 text-xs transition-colors">Excluir</button>
-              </td>
-            </tr>
+            <template x-if="item._isSep">
+              <tr class="bg-slate-900/80 border-t-2 border-slate-700">
+                <td colspan="11" class="px-4 py-2">
+                  <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mr-2">Sessão</span>
+                  <span class="text-xs font-semibold text-slate-300" x-text="fmtDate(item.date)"></span>
+                  <span class="ml-3 text-xs text-slate-500"
+                        x-text="item.count + (item.count === 1 ? ' jogo' : ' jogos') + ' · ' + item.wins + 'V ' + (item.count - item.wins) + 'D'"></span>
+                </td>
+              </tr>
+            </template>
+            <template x-if="!item._isSep">
+              <tr class="hover:bg-slate-900/40 transition-colors border-t border-slate-800/60" :class="borderCls(item.win)">
+                <td class="px-4 py-2.5 text-slate-300 whitespace-nowrap" x-text="fmtDate(item.date)"></td>
+                <td class="px-3 py-2.5 text-center text-slate-500" x-text="item.game_n"></td>
+                <td class="px-4 py-2.5 text-center">
+                  <span class="px-2 py-0.5 rounded text-xs font-bold" :class="resultBg(item.win)" x-text="item.win ? 'VITÓRIA' : 'DERROTA'"></span>
+                </td>
+                <td class="px-3 py-2.5 text-center" :class="sideCls(item.side)" x-text="sideIcon(item.side)"></td>
+                <td class="px-4 py-2.5 text-slate-300" x-text="item.expand?.formation?.name || '—'"></td>
+                <td class="px-4 py-2.5 text-slate-200" x-text="compLabel(item.comp_type) || '—'"></td>
+                <td class="px-3 py-2.5 text-center text-slate-400" x-text="item.duration ?? '—'"></td>
+                <td class="px-4 py-2.5 text-slate-300" x-text="item.expand?.mvp?.name || '—'"></td>
+                <td class="px-4 py-2.5">
+                  <div class="flex items-center gap-1.5">
+                    <img x-show="mvcKey(item)" :src="champImg(mvcKey(item))"
+                         class="w-5 h-5 rounded-sm object-cover flex-shrink-0"
+                         :alt="mvcName(item)">
+                    <span class="text-slate-300" x-text="mvcName(item)"></span>
+                  </div>
+                </td>
+                <td class="px-4 py-2.5 text-right font-mono text-xs"
+                    :class="item.gd_f != null ? gdfCls(item.gd_f) : 'text-slate-600'"
+                    x-text="item.gd_f != null ? fmtGold(item.gd_f) : '—'"></td>
+                <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                  <a x-show="item.riot_match_id" :href="`pages/match-detail.html?id=${item.id}`"
+                     class="text-slate-400 hover:text-slate-200 text-xs font-medium mr-3 transition-colors">Detalhes</a>
+                  <a :href="`pages/match-form.html?id=${item.id}`"
+                     class="text-yellow-500 hover:text-yellow-400 text-xs font-medium mr-3 transition-colors">Editar</a>
+                  <button @click="del(item.id)"
+                          class="text-slate-600 hover:text-red-400 text-xs transition-colors">Excluir</button>
+                </td>
+              </tr>
+            </template>
           </template>
         </tbody>
       </table>
