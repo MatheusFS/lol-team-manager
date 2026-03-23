@@ -87,7 +87,13 @@ document.addEventListener('alpine:init', () => {
         this.$watch('blueBans',    () => this._saveToStorage())
         this.$watch('redBans',     () => this._saveToStorage())
         this.$watch('currentStep', () => this._saveToStorage())
-        this.$watch('ourSide',     () => this._saveToStorage())
+        this.$watch('ourSide', () => {
+          this._saveToStorage()
+          // Force Alpine to re-evaluate all getters that depend on bluePicks/redPicks
+          // when ourSide changes (ourPicks/enemyPicks/ourAnalysis/enemyAnalysis/matchup/ourRecs)
+          this.bluePicks = [...this.bluePicks]
+          this.redPicks  = [...this.redPicks]
+        })
         this.$watch('pickRoles',   () => this._saveToStorage())
         // When formation/pool data finishes loading, force Alpine to re-evaluate
         // ourRecs (and other getters that depend on champPool/playerChampStats).
