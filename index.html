@@ -99,8 +99,8 @@
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
-        <template x-for="item in displayMatches" :key="item._isSep ? 'sep-'+item.date+'-'+item.count : item.id">
-          <tbody>
+        <tbody>
+          <template x-for="item in displayMatches" :key="item._isSep ? 'sep-'+item._sessionIdx : item.id">
             <tr x-show="item._isSep" class="bg-slate-900/80 border-t-2 border-slate-700">
               <td colspan="11" class="px-4 py-2">
                 <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mr-2">Sessão</span>
@@ -140,8 +140,8 @@
                         class="text-slate-600 hover:text-red-400 text-xs transition-colors">Excluir</button>
               </td>
             </tr>
-          </tbody>
-        </template>
+          </template>
+        </tbody>
       </table>
 
       <div x-show="msg" class="text-center py-12 text-slate-500 text-sm" x-text="msg"></div>
