@@ -392,8 +392,8 @@ document.addEventListener('alpine:init', () => {
     // ── Analysis getters (reactive) ───────────────────────────────────────────
     get ourPicks()      { return this.ourSide === 'blue' ? this.bluePicks : this.redPicks },
     get enemyPicks()    { return this.ourSide === 'blue' ? this.redPicks  : this.bluePicks },
-    get ourAnalysis()   { return analyzeTeam(this.ourPicks) },
-    get enemyAnalysis() { return analyzeTeam(this.enemyPicks) },
+    get ourAnalysis()   { return analyzeTeam(this.ourSide === 'blue' ? this.bluePicks : this.redPicks) },
+    get enemyAnalysis() { return analyzeTeam(this.ourSide === 'blue' ? this.redPicks  : this.bluePicks) },
 
     get ourRecs() {
       // Accesses this.ourSide, bluePicks, redPicks directly for Alpine reactivity
