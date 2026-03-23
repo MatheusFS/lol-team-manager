@@ -117,20 +117,20 @@ document.addEventListener('alpine:init', () => {
            })
          }
 
-         // Construir displayMatches com separadores (incluir _sessionIdx para unicidade de key)
-         this.displayMatches = []
-         for (let sessionIdx = 0; sessionIdx < rawSessions.length; sessionIdx++) {
-           const s = rawSessions[sessionIdx]
-           const wins = s.games.filter(g => g.win).length
-           this.displayMatches.push({
-             _isSep: true,
-             date: s.startDate,
-             count: s.games.length,
-             wins,
-             _sessionIdx: sessionIdx,
-           })
-           for (const g of s.games) this.displayMatches.push(g)
-         }
+          // Construir displayMatches com separadores (incluir _sessionIdx para unicidade de key)
+          this.displayMatches = []
+          for (let sessionIdx = 0; sessionIdx < rawSessions.length; sessionIdx++) {
+            const s = rawSessions[sessionIdx]
+            const wins = s.games.filter(g => g.win).length
+            this.displayMatches.push({
+              _isSep: true,
+              date: s.startDate,
+              count: s.games.length,
+              wins,
+              _sessionIdx: sessionIdx,
+            })
+            for (const g of s.games) this.displayMatches.push(g)
+          }
 
         this.total      = statsRes.total
         this.wins       = statsRes.wins
