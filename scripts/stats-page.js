@@ -136,11 +136,11 @@ function hasNoLens(champEntry) {
 
 const LENS_DEFS = {
   geral:     { defaultSort: 'wr',          filter: () => true,                      cols: ['deathMin', 'killPct', 'nCarry', 'nAssassino', 'nBruiser', 'nTank', 'nSuporte'] },
-  carry:     { defaultSort: 'damPerDeath', filter: isCarry,                         cols: ['damPerDeath', 'goldPerDeath', 'csMin', 'kMinusA', 'identRank'] },
-  assassino: { defaultSort: 'damPerDeath', filter: c => c?.class === 'Assassin',   cols: ['damPerDeath', 'kMinusA', 'goldMin', 'identRank'] },
-  bruiser:   { defaultSort: 'netDtMin',    filter: isBruiser,                       cols: ['netDtMin', 'damPerDeath', 'goldPerDeath', 'identRank'] },
-  tank:      { defaultSort: 'mitMin',      filter: c => c?.class === 'Tank',       cols: ['mitMin', 'dtMin', 'ccMin', 'identRank'] },
-  suporte:   { defaultSort: 'assistsAvg',  filter: c => c?.class === 'Support',    cols: ['assistsAvg', 'visionMin', 'wardsMin', 'identRank'] },
+  carry:     { defaultSort: 'identRank',   filter: isCarry,                         cols: ['killsPerDeath', 'damPerDeath', 'goldPerDeath', 'csMin', 'kMinusA', 'identRank'] },
+  assassino: { defaultSort: 'identRank',   filter: c => c?.class === 'Assassin',   cols: ['killsPerDeath', 'damPerDeath', 'kMinusA', 'goldMin', 'identRank'] },
+  bruiser:   { defaultSort: 'identRank',   filter: isBruiser,                       cols: ['netDamPerGame', 'damPerDeath', 'goldPerDeath', 'identRank'] },
+  tank:      { defaultSort: 'identRank',   filter: c => c?.class === 'Tank',       cols: ['mitMin', 'dtMin', 'ccMin', 'identRank'] },
+  suporte:   { defaultSort: 'identRank',   filter: c => c?.class === 'Support',    cols: ['assistsPerDeath', 'visionPerDeath', 'wardsAndWKPerDeath', 'identRank'] },
 }
 
 const COL_META = {
@@ -164,6 +164,11 @@ const COL_META = {
   goldPerDeath: { label: 'Ouro/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
   kMinusA:    { label: 'K-A',          fmt: v => v.toFixed(2)                         },
   netDtMin:   { label: 'DanoLiq/min',  fmt: v => v.toFixed(0)                         },
+  killsPerDeath: { label: 'Kills/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
+  assistsPerDeath: { label: 'Assists/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
+  visionPerDeath: { label: 'Visão/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
+  wardsAndWKPerDeath: { label: 'Wards/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
+  netDamPerGame: { label: 'SaldoDano/jogo', fmt: v => v.toFixed(0) },
   // Identity counts (Geral lens)
   nCarry:     { label: 'Carry',        fmt: v => v                                    },
   nAssassino: { label: 'Assassino',    fmt: v => v                                    },
@@ -520,38 +525,42 @@ let _playerSort = { col: 'wr', dir: -1 }
 function computeIdentityRanks(rows, lens) {
   const lensScoreFunctions = {
     carry: (r) => {
-      // Carry: damPerDeath ↑, goldPerDeath ↑, csMin ↑, kMinusA ↑, deathMin ↓
       const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
       const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
-      const kminusa = r.kMinusA
-      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1) // normalize against 0.5 deaths/min as max
-      return (dmgDth + goldDth + r.csMin * 100 + kminusa * 100) * deathPenalty
+      const killDth = r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath
+      return dmgDth * 0.00025
+           + goldDth * 0.0004
+           + r.csMin * 0.125
+           + r.kMinusA * 1.0
+           + killDth * 0.33
     },
     assassino: (r) => {
-      // Assassino: damPerDeath ↑, kMinusA ↑, goldMin ↑, deathMin ↓
+      const killDth = r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath
       const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
-      const kminusa = r.kMinusA
-      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
-      return (dmgDth + r.goldMin * 10 + kminusa * 100) * deathPenalty
+      return killDth * 1.0
+           + dmgDth * 0.0001
+           + r.goldMin * 0.00222
+           + r.kMinusA * 0.5
     },
     bruiser: (r) => {
-      // Bruiser: netDtMin ↑ (higher is better), damPerDeath ↑, goldPerDeath ↑, deathMin ↓
       const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
       const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
-      const netDt = r.netDtMin
-      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
-      return (netDt * 10 + dmgDth + goldDth) * deathPenalty
+      return r.netDamPerGame * 0.000375
+           + dmgDth * 0.0002
+           + goldDth * 0.0002
     },
     tank: (r) => {
-      // Tank: mitMin ↑, dtMin ↑, ccMin ↑, deathMin ↓
-      const ccPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
-      return (r.mitMin + r.dtMin * 0.5 + r.ccMin * 100) * ccPenalty
+      return r.mitMin * 0.0075
+           + r.dtMin * 0.004
+           + r.ccMin * 0.0667
     },
     suporte: (r) => {
-      // Suporte: assistsAvg ↑, visionMin ↑, (wardsMin + wkAvg) ↑, deathMin ↓
-      const wardTotal = r.wardsMin + r.wkAvg * 10
-      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
-      return (r.assistsAvg * 100 + r.visionMin + wardTotal) * deathPenalty
+      const assPerDth = r.assistsPerDeath === Infinity ? 1000000 : r.assistsPerDeath
+      const visPerDth = r.visionPerDeath === Infinity ? 1000000 : r.visionPerDeath
+      const wardPerDth = r.wardsAndWKPerDeath === Infinity ? 1000000 : r.wardsAndWKPerDeath
+      return assPerDth * 0.333
+           + visPerDth * 0.133
+           + wardPerDth * 0.1
     },
   }
 
@@ -782,13 +791,18 @@ function buildPlayerTable(M) {
       visionMin: p.durSum ? p.visionSum / p.durSum : 0,
       wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
       wkAvg:     p.n ? p.wkSum / p.n : 0,
-      killPct:   p.kpN ? p.kpSum / p.kpN : null,
-      // New calculated columns
-      damPerDeath: p.deathsSum ? p.damSum / p.deathsSum : Infinity,
-      goldPerDeath: p.deathsSum ? p.goldSum / p.deathsSum : Infinity,
-      kMinusA:   p.n ? (p.killsSum - p.assistsSum) / p.n : 0,
-      netDtMin:  p.durSum ? (p.dtSum - p.mitSum) / p.durSum : 0,
-      // Identity counts (from Geral lens full data)
+       killPct:   p.kpN ? p.kpSum / p.kpN : null,
+       // New calculated columns
+       damPerDeath: p.deathsSum ? p.damSum / p.deathsSum : Infinity,
+       goldPerDeath: p.deathsSum ? p.goldSum / p.deathsSum : Infinity,
+       kMinusA:   p.n ? (p.killsSum - p.assistsSum) / p.n : 0,
+       netDtMin:  p.durSum ? (p.dtSum - p.mitSum) / p.durSum : 0,
+       killsPerDeath: p.deathsSum ? p.killsSum / p.deathsSum : Infinity,
+       assistsPerDeath: p.deathsSum ? p.assistsSum / p.deathsSum : Infinity,
+       visionPerDeath: p.deathsSum ? p.visionSum / p.deathsSum : Infinity,
+       wardsAndWKPerDeath: p.deathsSum ? (p.wardsSum + p.wkSum * 10) / p.deathsSum : Infinity,
+       netDamPerGame: p.n ? (p.damSum - (p.dtSum - p.mitSum)) / p.n : 0,
+       // Identity counts (from Geral lens full data)
       nCarry:    mapAll[name]?.nCarry ?? 0,
       nAssassino: mapAll[name]?.nAssassino ?? 0,
       nBruiser:  mapAll[name]?.nBruiser ?? 0,
