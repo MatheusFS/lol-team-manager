@@ -171,7 +171,7 @@ const COL_META = {
   nTank:      { label: 'Tank',         fmt: v => v                                    },
   nSuporte:   { label: 'Suporte',      fmt: v => v                                    },
   // Identity rank (special rendering)
-  identRank:  { label: 'Id Rank',      fmt: v => v ? `${v.label} (${v.score.toFixed(3)})` : '—' },
+  identRank:  { label: 'Rank',      fmt: v => v ? `${v.label}` : '—' },
 }
 
 
@@ -643,7 +643,7 @@ function renderPlayerTable() {
        
        // Special rendering for identRank
        if (colKey === 'identRank' && val) {
-         const formatted = `<img src="${val.imgUrl}" class="w-4 h-4 inline mr-1 align-text-bottom"> <span class="text-xs">${val.label}</span>`
+         const formatted = `<img src="${val.imgUrl}" class="w-6 h-6 inline align-text-bottom" title="Score: ${val.score.toFixed(3)}"> <span class="text-xs">${val.label}</span>`
          cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
        } else {
          const formatted = meta.fmt(val)
