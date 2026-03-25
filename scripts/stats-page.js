@@ -96,6 +96,21 @@ let _showAnecdotal = {
 // ── Player Performance Lens Definitions ───────────────────────────────────
 let _playerLens = 'geral'
 
+// ── Rank thresholds (based on LoL playerbase distribution) ──────────────────
+// Score is normalized [0.0, 1.0] and mapped to ranks by cumulative percentile
+const RANK_THRESHOLDS = [
+  { name: 'iron',        label: 'Iron',        minScore: 0.0000 },
+  { name: 'bronze',      label: 'Bronze',      minScore: 0.0240 },
+  { name: 'silver',      label: 'Silver',      minScore: 0.1940 },
+  { name: 'gold',        label: 'Gold',        minScore: 0.4340 },
+  { name: 'platinum',    label: 'Platinum',    minScore: 0.6740 },
+  { name: 'emerald',     label: 'Emerald',     minScore: 0.8540 },
+  { name: 'diamond',     label: 'Diamond',     minScore: 0.9540 },
+  { name: 'master',      label: 'Master',      minScore: 0.9910 },
+  { name: 'grandmaster', label: 'Grandmaster', minScore: 0.9919 },
+  { name: 'challenger',  label: 'Challenger',  minScore: 0.9997 },
+]
+
 // High-damage classifications for identity filtering
 const HIGH_DMG = new Set(['AD_high','AP_high','Mixed_high'])
 
@@ -120,12 +135,12 @@ function hasNoLens(champEntry) {
 }
 
 const LENS_DEFS = {
-  geral:     { defaultSort: 'wr',         filter: () => true,          cols: ['damMin','goldMin','deathMin','csMin','fbKills'] },
-  carry:     { defaultSort: 'damMin',     filter: isCarry,             cols: ['damMin','killsAvg','fbKills','deathMin','csMin'] },
-  assassino: { defaultSort: 'killsAvg',   filter: c => c?.class === 'Assassin', cols: ['killsAvg','fbKills','deathMin','goldMin'] },
-  bruiser:   { defaultSort: 'dtMin',      filter: isBruiser,           cols: ['damMin','dtMin','mitMin','deathMin','turrets'] },
-  tank:      { defaultSort: 'dtMin',      filter: c => c?.class === 'Tank',     cols: ['dtMin','mitMin','ccMin','killPct','deathMin'] },
-  suporte:   { defaultSort: 'assistsAvg', filter: c => c?.class === 'Support',  cols: ['assistsAvg','visionMin','wardsMin','wkAvg','killPct'] },
+  geral:     { defaultSort: 'wr',          filter: () => true,                      cols: ['deathMin', 'killPct', 'nCarry', 'nAssassino', 'nBruiser', 'nTank', 'nSuporte'] },
+  carry:     { defaultSort: 'damPerDeath', filter: isCarry,                         cols: ['damPerDeath', 'goldPerDeath', 'csMin', 'kMinusA', 'identRank'] },
+  assassino: { defaultSort: 'damPerDeath', filter: c => c?.class === 'Assassin',   cols: ['damPerDeath', 'kMinusA', 'goldMin', 'identRank'] },
+  bruiser:   { defaultSort: 'netDtMin',    filter: isBruiser,                       cols: ['netDtMin', 'damPerDeath', 'goldPerDeath', 'identRank'] },
+  tank:      { defaultSort: 'mitMin',      filter: c => c?.class === 'Tank',       cols: ['mitMin', 'dtMin', 'ccMin', 'identRank'] },
+  suporte:   { defaultSort: 'assistsAvg',  filter: c => c?.class === 'Support',    cols: ['assistsAvg', 'visionMin', 'wardsMin', 'identRank'] },
 }
 
 const COL_META = {
@@ -144,6 +159,19 @@ const COL_META = {
   visionMin:  { label: 'Visão/min',    fmt: v => v.toFixed(2)                         },
   wardsMin:   { label: 'Wards/min',    fmt: v => v.toFixed(2)                         },
   wkAvg:      { label: 'WardKills',    fmt: v => v.toFixed(1)                         },
+  // New columns
+  damPerDeath: { label: 'Dano/Morte',  fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
+  goldPerDeath: { label: 'Ouro/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
+  kMinusA:    { label: 'K-A',          fmt: v => v.toFixed(2)                         },
+  netDtMin:   { label: 'DanoLiq/min',  fmt: v => v.toFixed(0)                         },
+  // Identity counts (Geral lens)
+  nCarry:     { label: 'Carry',        fmt: v => v                                    },
+  nAssassino: { label: 'Assassino',    fmt: v => v                                    },
+  nBruiser:   { label: 'Bruiser',      fmt: v => v                                    },
+  nTank:      { label: 'Tank',         fmt: v => v                                    },
+  nSuporte:   { label: 'Suporte',      fmt: v => v                                    },
+  // Identity rank (special rendering)
+  identRank:  { label: 'Id Rank',      fmt: v => v ? `${v.label} (${v.score.toFixed(3)})` : '—' },
 }
 
 
@@ -488,6 +516,66 @@ function buildObjectiveSection(M) {
 let _playerRows = []
 let _playerSort = { col: 'wr', dir: -1 }
 
+// Compute identity rank for each player based on lens-specific score
+function computeIdentityRanks(rows, lens) {
+  const lensScoreFunctions = {
+    carry: (r) => {
+      // Carry: damPerDeath ↑, goldPerDeath ↑, csMin ↑, kMinusA ↑, deathMin ↓
+      const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
+      const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
+      const kminusa = r.kMinusA
+      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1) // normalize against 0.5 deaths/min as max
+      return (dmgDth + goldDth + r.csMin * 100 + kminusa * 100) * deathPenalty
+    },
+    assassino: (r) => {
+      // Assassino: damPerDeath ↑, kMinusA ↑, goldMin ↑, deathMin ↓
+      const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
+      const kminusa = r.kMinusA
+      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
+      return (dmgDth + r.goldMin * 10 + kminusa * 100) * deathPenalty
+    },
+    bruiser: (r) => {
+      // Bruiser: netDtMin ↑ (higher is better), damPerDeath ↑, goldPerDeath ↑, deathMin ↓
+      const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
+      const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
+      const netDt = r.netDtMin
+      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
+      return (netDt * 10 + dmgDth + goldDth) * deathPenalty
+    },
+    tank: (r) => {
+      // Tank: mitMin ↑, dtMin ↑, ccMin ↑, deathMin ↓
+      const ccPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
+      return (r.mitMin + r.dtMin * 0.5 + r.ccMin * 100) * ccPenalty
+    },
+    suporte: (r) => {
+      // Suporte: assistsAvg ↑, visionMin ↑, (wardsMin + wkAvg) ↑, deathMin ↓
+      const wardTotal = r.wardsMin + r.wkAvg * 10
+      const deathPenalty = 1 - Math.min(r.deathMin / 0.5, 1)
+      return (r.assistsAvg * 100 + r.visionMin + wardTotal) * deathPenalty
+    },
+  }
+
+  const scoreFn = lensScoreFunctions[lens]
+  if (!scoreFn) return // Invalid lens
+
+  // Calculate raw scores for all rows
+  const scores = rows.map(r => scoreFn(r))
+  const minScore = Math.min(...scores)
+  const maxScore = Math.max(...scores)
+  const scoreRange = maxScore - minScore || 1 // avoid division by zero
+
+  // Normalize scores to [0.0, 1.0]
+  rows.forEach((r, i) => {
+    const normalizedScore = (scores[i] - minScore) / scoreRange
+    r.identRank = {
+      score: normalizedScore,
+      label: RANK_THRESHOLDS.findLast(t => normalizedScore >= t.minScore)?.label || 'Iron',
+      name: RANK_THRESHOLDS.findLast(t => normalizedScore >= t.minScore)?.name || 'iron',
+      imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_THRESHOLDS.findLast(t => normalizedScore >= t.minScore)?.name || 'iron'}.png`,
+    }
+  })
+}
+
 function sortPlayerTable(col) {
   _playerSort.dir = _playerSort.col === col ? _playerSort.dir * -1 : -1
   _playerSort.col = col
@@ -495,85 +583,98 @@ function sortPlayerTable(col) {
 }
 
 function renderPlayerTable() {
-   const { col, dir } = _playerSort
-   const lens = LENS_DEFS[_playerLens]
-   const dynamicCols = lens.cols
-   const showUnmatched = _playerLens !== 'geral' && _playerRows.some(r => r.unmatched > 0)
-  
-  const sorted = [..._playerRows].sort((a, b) => {
-    const aOk = a.n >= 10, bOk = b.n >= 10
-    if (aOk !== bOk) return aOk ? -1 : 1
-    return dir * (a[col] - b[col])
-  })
-  
-  const arrow  = c => c === col ? (dir === -1 ? ' ↓' : ' ↑') : ''
-  const th     = (c, label, extra = '') =>
-    `<th class="text-right py-2 cursor-pointer select-none hover:text-slate-300 ${extra}" onclick="sortPlayerTable('${c}')">${label}${arrow(c)}</th>`
+    const { col, dir } = _playerSort
+    const lens = LENS_DEFS[_playerLens]
+    const dynamicCols = lens.cols
+    const showUnmatched = _playerLens !== 'geral' && _playerRows.some(r => r.unmatched > 0)
+   
+   const sorted = [..._playerRows].sort((a, b) => {
+     const aOk = a.n >= 10, bOk = b.n >= 10
+     if (aOk !== bOk) return aOk ? -1 : 1
+     
+     // Special sorting for identRank (by score, not alphabetically)
+     if (col === 'identRank') {
+       return dir * ((a.identRank?.score ?? 0) - (b.identRank?.score ?? 0))
+     }
+     
+     return dir * (a[col] - b[col])
+   })
+   
+   const arrow  = c => c === col ? (dir === -1 ? ' ↓' : ' ↑') : ''
+   const th     = (c, label, extra = '') =>
+     `<th class="text-right py-2 cursor-pointer select-none hover:text-slate-300 ${extra}" onclick="sortPlayerTable('${c}')">${label}${arrow(c)}</th>`
 
-  const validRows = sorted.filter(r => r.n >= 10)
-  const anecdotalRows = sorted.filter(r => r.n < 10)
+   const validRows = sorted.filter(r => r.n >= 10)
+   const anecdotalRows = sorted.filter(r => r.n < 10)
 
-  // Build headers: fixed columns + [unmatched if applicable] + dynamic columns
-  let headerHTML = `<th class="text-left py-2 cursor-pointer select-none hover:text-slate-300" onclick="sortPlayerTable('name')">Jogador${arrow('name')}</th>
-        ${th('n',   'N')}
-        ${th('wr',  'Win%')}
-        ${th('kda', 'KDA')}`
-  
-  if (showUnmatched) {
-    headerHTML += th('unmatched', 'Sem classe')
-  }
-  
-  for (const colKey of dynamicCols) {
-    const meta = COL_META[colKey]
-    headerHTML += th(colKey, meta.label)
-  }
+   // Build headers: fixed columns + [unmatched if applicable] + dynamic columns
+   let headerHTML = `<th class="text-left py-2 cursor-pointer select-none hover:text-slate-300" onclick="sortPlayerTable('name')">Jogador${arrow('name')}</th>
+         ${th('n',   'N')}
+         ${th('wr',  'Win%')}
+         ${th('kda', 'KDA')}`
+   
+   if (showUnmatched) {
+     headerHTML += th('unmatched', 'Sem classe')
+   }
+   
+   for (const colKey of dynamicCols) {
+     const meta = COL_META[colKey]
+     headerHTML += th(colKey, meta.label)
+   }
 
-  // Build row template function
-  const buildRowHTML = (r, isAnecdotal = false) => {
-    const wrCls = isAnecdotal ? 'text-slate-500' : (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.56 ? 'text-green-400' : r.wr >= 0.46 ? 'text-yellow-400' : 'text-red-400')
-    const cellCls = isAnecdotal ? 'text-slate-600' : ''
-    const nameCls = isAnecdotal ? 'text-slate-500' : ''
-    
-    let cellHTML = `<td class="py-2 font-medium ${nameCls}">${r.name}</td>
-            <td class="text-right ${isAnecdotal ? 'text-slate-600' : 'text-slate-500'}">${r.n}</td>
-            <td class="text-right ${wrCls}">${utils.pct(r.wr)}%</td>
-            <td class="text-right ${cellCls}">${r.kda.toFixed(2)}</td>`
-    
-    if (showUnmatched) {
-      cellHTML += `<td class="text-right text-xs ${cellCls} text-slate-500">${r.unmatched}</td>`
-    }
-    
-    for (const colKey of dynamicCols) {
-      const meta = COL_META[colKey]
-      const val = r[colKey]
-      const formatted = meta.fmt(val)
-      cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-    }
-    
-    return cellHTML
-  }
+   // Build row template function
+   const buildRowHTML = (r, isAnecdotal = false) => {
+     const wrCls = isAnecdotal ? 'text-slate-500' : (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.56 ? 'text-green-400' : r.wr >= 0.46 ? 'text-yellow-400' : 'text-red-400')
+     const cellCls = isAnecdotal ? 'text-slate-600' : ''
+     const nameCls = isAnecdotal ? 'text-slate-500' : ''
+     
+     let cellHTML = `<td class="py-2 font-medium ${nameCls}">${r.name}</td>
+             <td class="text-right ${isAnecdotal ? 'text-slate-600' : 'text-slate-500'}">${r.n}</td>
+             <td class="text-right ${wrCls}">${utils.pct(r.wr)}%</td>
+             <td class="text-right ${cellCls}">${r.kda.toFixed(2)}</td>`
+     
+     if (showUnmatched) {
+       cellHTML += `<td class="text-right text-xs ${cellCls} text-slate-500">${r.unmatched}</td>`
+     }
+     
+     for (const colKey of dynamicCols) {
+       const meta = COL_META[colKey]
+       const val = r[colKey]
+       
+       // Special rendering for identRank
+       if (colKey === 'identRank' && val) {
+         const formatted = `<img src="${val.imgUrl}" class="w-4 h-4 inline mr-1 align-text-bottom"> <span class="text-xs">${val.label}</span>`
+         cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+       } else {
+         const formatted = meta.fmt(val)
+         cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+       }
+     }
+     
+     return cellHTML
+   }
 
-  let tableHTML = `
-    <table class="w-full text-sm text-slate-300">
-      <thead><tr class="text-xs text-slate-500 border-b border-slate-700">
-        ${headerHTML}
-      </tr></thead>
-      <tbody>
-        ${validRows.map(r => `<tr class="border-b border-slate-800">${buildRowHTML(r)}</tr>`).join('')}`
+   let tableHTML = `
+     <table class="w-full text-sm text-slate-300">
+       <thead><tr class="text-xs text-slate-500 border-b border-slate-700">
+         ${headerHTML}
+       </tr></thead>
+       <tbody>
+         ${validRows.map(r => `<tr class="border-b border-slate-800">${buildRowHTML(r)}</tr>`).join('')}`
 
-  if (anecdotalRows.length > 0) {
-    const colCount = 4 + (showUnmatched ? 1 : 0) + dynamicCols.length
-    tableHTML += `
-        <tr class="border-b-2 border-slate-700 bg-slate-800/30">
-          <td colspan="${colCount}" class="py-2 text-xs text-slate-500">Dados anedóticos (N &lt; 10)</td>
-        </tr>
-        ${anecdotalRows.map(r => `<tr class="border-b border-slate-800">${buildRowHTML(r, true)}</tr>`).join('')}`
-  }
+   if (anecdotalRows.length > 0) {
+     const colCount = 4 + (showUnmatched ? 1 : 0) + dynamicCols.length
+     tableHTML += `
+         <tr class="border-b-2 border-slate-700 bg-slate-800/30">
+           <td colspan="${colCount}" class="py-2 text-xs text-slate-500">Dados anedóticos (N &lt; 10)</td>
+         </tr>
+         ${anecdotalRows.map(r => `<tr class="border-b border-slate-800">${buildRowHTML(r, true)}</tr>`).join('')}`
+   }
 
-  tableHTML += `</tbody>
-    </table>`
+   tableHTML += `</tbody>
+     </table>`
 
-  document.getElementById('player-perf-table').innerHTML = tableHTML
+   document.getElementById('player-perf-table').innerHTML = tableHTML
 }
 
 function buildPlayerTable(M) {
@@ -596,16 +697,26 @@ function buildPlayerTable(M) {
   // Get filter function for current lens
   const lensFilter = LENS_DEFS[_playerLens].filter
 
-  // First pass: count total and unclassified matches per player
+  // First pass: count total, unclassified, and identity distribution per player
   const mapAll = {}
   for (const m of riotM) {
     for (const ps of m.player_stats) {
       if (!ps.name) continue
       const champKey = normChampKey(ps.champion)
       const champEntry = champByKey[champKey] ?? null
-      const p = mapAll[ps.name] ??= { nTotal: 0, nUnclassified: 0 }
+      const p = mapAll[ps.name] ??= { 
+        nTotal: 0, nUnclassified: 0, 
+        nCarry: 0, nAssassino: 0, nBruiser: 0, nTank: 0, nSuporte: 0 
+      }
       p.nTotal++
-      if (hasNoLens(champEntry)) p.nUnclassified++
+      
+      // Count identity distribution
+      if (isCarry(champEntry)) p.nCarry++
+      else if (champEntry?.class === 'Assassin') p.nAssassino++
+      else if (isBruiser(champEntry)) p.nBruiser++
+      else if (champEntry?.class === 'Tank') p.nTank++
+      else if (champEntry?.class === 'Support') p.nSuporte++
+      else p.nUnclassified++
     }
   }
 
@@ -672,7 +783,26 @@ function buildPlayerTable(M) {
       wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
       wkAvg:     p.n ? p.wkSum / p.n : 0,
       killPct:   p.kpN ? p.kpSum / p.kpN : null,
+      // New calculated columns
+      damPerDeath: p.deathsSum ? p.damSum / p.deathsSum : Infinity,
+      goldPerDeath: p.deathsSum ? p.goldSum / p.deathsSum : Infinity,
+      kMinusA:   p.n ? (p.killsSum - p.assistsSum) / p.n : 0,
+      netDtMin:  p.durSum ? (p.dtSum - p.mitSum) / p.durSum : 0,
+      // Identity counts (from Geral lens full data)
+      nCarry:    mapAll[name]?.nCarry ?? 0,
+      nAssassino: mapAll[name]?.nAssassino ?? 0,
+      nBruiser:  mapAll[name]?.nBruiser ?? 0,
+      nTank:     mapAll[name]?.nTank ?? 0,
+      nSuporte:  mapAll[name]?.nSuporte ?? 0,
     }))
+
+  // Compute identity ranks for active lens (if not Geral)
+  if (_playerLens !== 'geral') {
+    computeIdentityRanks(_playerRows, _playerLens)
+  } else {
+    // For Geral lens, set identRank to null (not displayed)
+    _playerRows.forEach(r => { r.identRank = null })
+  }
 
   renderPlayerTable()
 }
