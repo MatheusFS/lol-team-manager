@@ -355,8 +355,13 @@ document.addEventListener('alpine:init', () => {
       // Check summary cache first (shared with import-tool)
       const cached = RiotApi.cache.get(`riot-summary-${matchId}`)
       if (cached) {
-        if (!cached.teamComplete) return null   // already known to be non-team match
-        if (cached.stats) {
+        // If teamComplete: false, only skip if cache is fresh (< 7 days old)
+        // Entries without _ts (from old import-tool) are treated as stale
+        if (!cached.teamComplete) {
+          const isFresh = cached._ts && Date.now() - cached._ts < 604800000  // 7 days
+          if (isFresh) return null
+          // If stale or no _ts, re-fetch to account for roster changes
+        } else if (cached.stats) {
           // Win filter in edit mode
           if (opts.winFilter != null && cached.stats.win !== opts.winFilter) return null
           return this._buildCardFromStats(matchId, cached.stats)
@@ -434,19 +439,42 @@ document.addEventListener('alpine:init', () => {
 
       const associated = await this._loadAssociatedMatchIds()
 
+      // Track statistics for detailed feedback
+      let checked = 0
+      let skipped = 0
+      let errors = 0
+
       for (let i = 0; i < ids.length; i++) {
         this.status = `Verificando ${i + 1}/${ids.length}…`
-        if (associated.has(ids[i])) continue
+        if (associated.has(ids[i])) {
+          skipped++
+          continue
+        }
+        checked++
         try {
           const card = await this._processMatchId(ids[i], knownPuuidSet, puuidToName, puuidToId, { winFilter: this.filters.win })
           if (card) this.cards.push(card)
-        } catch (e) { console.warn('Skipping', ids[i], e.message) }
+        } catch (e) {
+          errors++
+          console.warn('Skipping', ids[i], e.message)
+        }
         await RiotApi.sleep(80)
       }
 
-      this.status = this.cards.length
-        ? `${this.cards.length} partida(s) encontrada(s).`
-        : 'Nenhuma partida correspondente encontrada.'
+      // Build detailed status message
+      const stats = []
+      if (checked > 0) stats.push(`${checked} verificada${checked === 1 ? '' : 's'}`)
+      if (skipped > 0) stats.push(`${skipped} já importada${skipped === 1 ? '' : 's'}`)
+      if (errors > 0) stats.push(`${errors} erro${errors === 1 ? '' : 's'}`)
+
+      if (this.cards.length > 0) {
+        this.status = `${this.cards.length} partida${this.cards.length === 1 ? '' : 's'} encontrada${this.cards.length === 1 ? '' : 's'}.`
+        if (stats.length) this.status += ` (${stats.join(' · ')})`
+      } else {
+        this.status = `Nenhuma partida correspondente encontrada.`
+        if (stats.length) this.status = `${stats.join(' · ')}.`
+        if (errors > 0) this.status += ' Verifique o console para detalhes.'
+      }
     },
 
     // ── Create mode: recent team matches ─────────────────────────────────
@@ -485,19 +513,42 @@ document.addEventListener('alpine:init', () => {
       const { nameMap: puuidToName, idMap: puuidToId } = this._buildPuuidToName(roster, puuidMap)
       const associated  = await this._loadAssociatedMatchIds()
 
+      // Track statistics for detailed feedback
+      let checked = 0
+      let skipped = 0
+      let errors = 0
+
       for (let i = 0; i < allIds.length; i++) {
         this.status = `Verificando ${i + 1}/${allIds.length}…`
-        if (associated.has(allIds[i])) continue
+        if (associated.has(allIds[i])) {
+          skipped++
+          continue
+        }
+        checked++
         try {
           const card = await this._processMatchId(allIds[i], knownPuuidSet, puuidToName, puuidToId)
           if (card) this.cards.push(card)
-        } catch (e) { console.warn('Skipping', allIds[i], e.message) }
+        } catch (e) {
+          errors++
+          console.warn('Skipping', allIds[i], e.message)
+        }
         await RiotApi.sleep(80)
       }
 
-      this.status = this.cards.length
-        ? `${this.cards.length} partidas do time encontradas.`
-        : 'Nenhuma partida com 5 membros do time encontrada.'
+      // Build detailed status message
+      const stats = []
+      if (checked > 0) stats.push(`${checked} verificada${checked === 1 ? '' : 's'}`)
+      if (skipped > 0) stats.push(`${skipped} já importada${skipped === 1 ? '' : 's'}`)
+      if (errors > 0) stats.push(`${errors} erro${errors === 1 ? '' : 's'}`)
+
+      if (this.cards.length > 0) {
+        this.status = `${this.cards.length} partida${this.cards.length === 1 ? '' : 's'} do time encontrada${this.cards.length === 1 ? '' : 's'}.`
+        if (stats.length) this.status += ` (${stats.join(' · ')})`
+      } else {
+        this.status = `Nenhuma partida com 5 membros do time encontrada.`
+        if (stats.length) this.status = `${stats.join(' · ')}.`
+        if (errors > 0) this.status += ' Verifique o console para detalhes.'
+      }
     },
 
     // _resolveChamp: DDragon key → {name, key} for UI display

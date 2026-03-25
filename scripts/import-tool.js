@@ -552,12 +552,12 @@ document.addEventListener('alpine:init', () => {
 
             const participants = match.info?.participants ?? []
             if (!participants.find(p => p.puuid === puuid)) {
-              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now() })
               continue
             }
 
             if (RiotApi.countRosterOnSameTeam(participants, knownPuuids) < 5) {
-              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now() })
               continue
             }
 
@@ -567,7 +567,7 @@ document.addEventListener('alpine:init', () => {
 
             const stats = extractMatchStats(match, timeline, { knownPuuidSet: knownPuuids, puuidToName, puuidToId })
             if (!stats) {
-              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false })
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now() })
               continue
             }
 

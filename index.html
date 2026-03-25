@@ -99,9 +99,9 @@
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
-        <tbody>
-          <!-- Single x-for: renders separators and matches in correct order -->
-          <template x-for="item in displayMatches" :key="item._isSep ? 'sep-'+item._sessionIdx : item.id">
+        <!-- x-for on tbody: each iteration produces one tbody (valid single root) with separator and match rows -->
+        <template x-for="item in displayMatches" :key="item._isSep ? 'sep-'+item._sessionIdx : item.id">
+          <tbody>
             <!-- Separator row (colspan="11") -->
             <tr x-show="item._isSep" class="bg-slate-900/80 border-t-2 border-slate-700">
               <td colspan="11" class="px-4 py-2">
@@ -143,8 +143,8 @@
                         class="text-slate-600 hover:text-red-400 text-xs transition-colors">Excluir</button>
               </td>
             </tr>
-          </template>
-        </tbody>
+          </tbody>
+        </template>
       </table>
 
       <div x-show="msg" class="text-center py-12 text-slate-500 text-sm" x-text="msg"></div>
