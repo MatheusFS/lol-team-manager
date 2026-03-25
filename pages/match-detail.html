@@ -122,7 +122,9 @@
         // ── Helpers ───────────────────────────────────────────────────────
         fmtDate(d) {
           if (!d) return '—'
-          return new Date(d).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+          // If d is a numeric epoch ms (from snapshot), convert directly; otherwise parse as-is
+          const date = typeof d === 'number' ? new Date(d) : new Date(d)
+          return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
         },
 
         fmtNum(v) {
@@ -182,6 +184,22 @@
           return this.match.expand.mvc
         },
 
+        // ── Detect incomplete data ─────────────────────────────────────────
+        get hasMissingData() {
+          const m = this.match
+          if (!m?.riot_match_id) return false
+          const ourChamps   = Array.isArray(m.our_champs)   ? m.our_champs   : []
+          const enemyChamps = Array.isArray(m.enemy_champs) ? m.enemy_champs : []
+          const validOur    = ourChamps.filter(c => normChampKey(c))
+          const validEnemy  = enemyChamps.filter(c => normChampKey(c))
+          return validOur.length < 5
+              || validEnemy.length < 5
+              || !m.date
+              || m.win == null
+              || !m.side
+              || !m.formation
+        },
+
         // ── Repair missing snapshot ────────────────────────────────────────
         async repairSnapshot() {
           if (!this.apiKey || this.repairing) return
@@ -199,9 +217,11 @@
 
             this.repairStatus = 'Calculando estatísticas…'
             const puuidToName = {}, puuidToId = {}
+            const players = []
             try {
-              const players = await api.col('players').list({ perPage: 50 })
-              for (const p of players.items) {
+              const res = await api.col('players').list({ perPage: 50 })
+              for (const p of res.items) {
+                players.push(p)
                 if (p.puuid) { puuidToName[p.puuid] = p.name; puuidToId[p.puuid] = p.id }
               }
             } catch (_) {}
@@ -216,6 +236,63 @@
               if (mvc) payload.mvc = mvc.id
             }
             if (!this.match.mvp && stats.mvpId) payload.mvp = stats.mvpId
+
+            // Formation detection
+            this.repairStatus = 'Detectando formação…'
+            try {
+              const formations = (await api.col('formations').list({ perPage: 100 })).items
+              const enrichedMatch = { ...this.match, player_stats: stats.playerStats }
+              const detection = detectFormation(enrichedMatch, formations, players)
+              if (!this.match.formation && detection.match?.id) payload.formation = detection.match.id
+            } catch (_) {}
+
+            this.repairStatus = 'Salvando…'
+            await api.col('matches').update(this.match.id, payload)
+            this.repairStatus = 'Salvo. Recarregando…'
+            location.reload()
+          } catch (e) {
+            this.repairStatus = 'Erro: ' + e.message
+            console.error(e)
+            this.repairing = false
+          }
+        },
+
+        // ── Repair incomplete data using stored snapshot (no API key needed) ──
+        async repairFromSnapshot() {
+          if (this.repairing) return
+          this.repairing = true
+          this.repairStatus = 'Calculando estatísticas…'
+          try {
+            const snap = this.match.riot_match_snapshot
+            const puuidToName = {}, puuidToId = {}
+            const players = []
+            try {
+              const res = await api.col('players').list({ perPage: 50 })
+              for (const p of res.items) {
+                players.push(p)
+                if (p.puuid) { puuidToName[p.puuid] = p.name; puuidToId[p.puuid] = p.id }
+              }
+            } catch (_) {}
+
+            const stats   = extractMatchStats(snap.match, snap.timeline, { ourSide: this.match.side, puuidToName, puuidToId })
+            const payload = RiotApi.buildMatchPayload(stats, { snapshot: snap })
+
+            // MVC
+            if (stats.mvcChampKey) {
+              const champList = Alpine.store('champions').list
+              const mvc = champList.find(c => c.key === stats.mvcChampKey) ?? champList.find(c => c.name === stats.mvcChampKey)
+              if (mvc) payload.mvc = mvc.id
+            }
+            if (!this.match.mvp && stats.mvpId) payload.mvp = stats.mvpId
+
+            // Formation detection
+            this.repairStatus = 'Detectando formação…'
+            try {
+              const formations = (await api.col('formations').list({ perPage: 100 })).items
+              const enrichedMatch = { ...this.match, player_stats: stats.playerStats }
+              const detection = detectFormation(enrichedMatch, formations, players)
+              if (!this.match.formation && detection.match?.id) payload.formation = detection.match.id
+            } catch (_) {}
 
             this.repairStatus = 'Salvando…'
             await api.col('matches').update(this.match.id, payload)
@@ -245,7 +322,7 @@
               :class="match?.win ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'"
               x-text="match?.win ? 'VITÓRIA' : 'DERROTA'"></span>
         <span class="text-slate-400 text-sm" x-text="match?.side === 'Red' ? '🟥 Red' : '🟦 Blue'"></span>
-        <span class="text-slate-400 text-sm" x-text="fmtDate(match?.date)"></span>
+        <span class="text-slate-400 text-sm" x-text="fmtDate(match?.riot_match_snapshot?.match?.info?.gameStartTimestamp ?? match?.date)"></span>
         <span class="text-slate-500 text-sm" x-text="match?.duration ? match.duration + ' min' : ''"></span>
         <span class="text-slate-600 text-xs font-mono" x-text="match?.riot_match_id"></span>
       </div>
@@ -447,6 +524,17 @@
             <button @click="repairSnapshot()" :disabled="!apiKey || repairing"
                     class="text-xs bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-slate-900 font-semibold px-3 py-1.5 rounded transition-colors"
                     x-text="repairing ? repairStatus : 'Buscar e salvar snapshot'">
+            </button>
+            <span x-show="repairStatus && !repairing" class="text-xs text-red-400" x-text="repairStatus"></span>
+          </div>
+          <!-- Repair banner: snapshot presente mas dados derivados incompletos -->
+          <div x-show="hasMissingData && match.riot_match_snapshot"
+               class="border-t border-slate-800 px-5 py-4 flex items-center gap-3 flex-wrap">
+            <span class="text-xs text-amber-400">⚠️ Dados incompletos</span>
+            <span class="text-xs text-slate-500">Snapshot disponível — recalcula sem precisar da API.</span>
+            <button @click="repairFromSnapshot()" :disabled="repairing"
+                    class="text-xs bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-900 font-semibold px-3 py-1.5 rounded transition-colors"
+                    x-text="repairing ? repairStatus : 'Recalcular do snapshot'">
             </button>
             <span x-show="repairStatus && !repairing" class="text-xs text-red-400" x-text="repairStatus"></span>
           </div>

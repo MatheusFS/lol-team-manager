@@ -62,6 +62,11 @@ document.addEventListener('alpine:init', () => {
           }
         })
       }
+
+      // In slot mode, pre-populate query from existing slot data (edit mode / applyFromRiot)
+      if (mode === 'slot' && slot?.query) {
+        this.query = slot.query
+      }
     },
 
     // ── Search/Input Methods ────────────────────────────────────────────────
@@ -105,8 +110,8 @@ document.addEventListener('alpine:init', () => {
      * Handle input focus - show results if any exist
      */
     onFocus() {
-      // Only search if there's text in the input
-      const q = this.display.trim()
+      // Show results based on current query text
+      const q = (mode === 'slot' ? this.query : this.display).trim()
       if (q) {
         const all = Alpine.store('champions').search(q)
         this.results = all.slice(0, maxResults)
@@ -170,13 +175,13 @@ document.addEventListener('alpine:init', () => {
     pick(champ) {
       if (mode === 'slot') {
         // Mode: slot object - update slot properties, sync champPicker state
-        slot.name = champ.name
-        slot.key = champ.key
+        slot.name  = champ.name
+        slot.key   = champ.key
         slot.query = champ.name
-        // Clear picker state
-        this.query = ''
+        // Keep query in sync so the input shows the selected champion name
+        this.query   = champ.name
         this.results = []
-        this.open = false
+        this.open    = false
         this.focused = -1
       } else if (mode === 'callback') {
         // Mode: callback - invoke onSelect with champion object

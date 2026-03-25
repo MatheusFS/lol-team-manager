@@ -64,8 +64,11 @@ document.addEventListener('alpine:init', () => {
     objFlow:     '',
 
     // ── UI state ───────────────────────────────────────────────────────────
-    saving:   false,
-    deleting: false,
+    saving:       false,
+    deleting:     false,
+    repairing:    false,
+    repairStatus: '',
+    apiKey:       localStorage.getItem('riot-api-key') ?? '',
 
     // ── Computed ───────────────────────────────────────────────────────────
     get pageTitle() {
@@ -166,6 +169,7 @@ document.addEventListener('alpine:init', () => {
         this.teamAssists = m.team_assists  ?? ''
         this.riotMatchId = m.riot_match_id ?? ''
         this.playerStats = Array.isArray(m.player_stats) ? m.player_stats : null
+        this.riotSnapshot = m.riot_match_snapshot ?? null
         this.gd10       = m.gd_10       ?? ''
         this.gd20       = m.gd_20       ?? ''
         this.gdF        = m.gd_f        ?? ''
@@ -187,24 +191,28 @@ document.addEventListener('alpine:init', () => {
           this.mvcDisplay = m.expand.mvc.name
         }
 
-        const champsByName = Object.fromEntries(
-          Alpine.store('champions').list.map(c => [c.name, c])
-        )
+        const champList    = Alpine.store('champions').list
+        const champsByName = Object.fromEntries(champList.map(c => [c.name, c]))
+        const champsByKey  = Object.fromEntries(champList.map(c => [c.key,  c]))
+        const findChamp    = v => champsByName[v] ?? champsByKey[v] ?? null
+
         if (Array.isArray(m.our_champs)) {
-          m.our_champs.forEach((name, i) => {
+          m.our_champs.forEach((val, i) => {
             if (this.ourChamps[i]) {
-              this.ourChamps[i].name  = name
-              this.ourChamps[i].key   = champsByName[name]?.key ?? ''
-              this.ourChamps[i].query = name
+              const c = findChamp(val)
+              this.ourChamps[i].name  = c?.name ?? val
+              this.ourChamps[i].key   = c?.key  ?? ''
+              this.ourChamps[i].query = c?.name ?? val
             }
           })
         }
         if (Array.isArray(m.enemy_champs)) {
-          m.enemy_champs.forEach((name, i) => {
+          m.enemy_champs.forEach((val, i) => {
             if (this.enemyChamps[i]) {
-              this.enemyChamps[i].name  = name
-              this.enemyChamps[i].key   = champsByName[name]?.key ?? ''
-              this.enemyChamps[i].query = name
+              const c = findChamp(val)
+              this.enemyChamps[i].name  = c?.name ?? val
+              this.enemyChamps[i].key   = c?.key  ?? ''
+              this.enemyChamps[i].query = c?.name ?? val
             }
           })
         }
@@ -347,6 +355,102 @@ document.addEventListener('alpine:init', () => {
     get enemySuggestion() {
       if (this.enemyChamps.filter(s => s.name).length < 3) return null
       return this._computeSuggestion(this.enemyChamps)
+    },
+
+    // ── Detect incomplete data ──────────────────────────────────────────────
+    get hasMissingData() {
+      if (!this.isEdit || !this.riotMatchId) return false
+      const validOur   = this.ourChamps.filter(s => normChampKey(s.key || s.name))
+      const validEnemy = this.enemyChamps.filter(s => normChampKey(s.key || s.name))
+      return validOur.length < 5
+          || validEnemy.length < 5
+          || !this.date
+          || this.win == null
+          || !this.side
+          || !this.formationId
+    },
+
+    // ── Repair helpers ─────────────────────────────────────────────────────
+    async _resolvePlayersMap() {
+      const puuidToName = {}, puuidToId = {}, players = []
+      try {
+        const res = await api.col('players').list({ perPage: 50 })
+        for (const p of res.items) {
+          players.push(p)
+          if (p.puuid) { puuidToName[p.puuid] = p.name; puuidToId[p.puuid] = p.id }
+        }
+      } catch (_) {}
+      return { puuidToName, puuidToId, players }
+    },
+
+    async _applyRepairPayload(stats, snap, players) {
+      const payload = RiotApi.buildMatchPayload(stats, { snapshot: snap })
+
+      // MVC
+      if (stats.mvcChampKey) {
+        const champList = Alpine.store('champions').list
+        const mvc = champList.find(c => c.key === stats.mvcChampKey)
+                 ?? champList.find(c => c.name === stats.mvcChampKey)
+        if (mvc) payload.mvc = mvc.id
+      }
+      // MVP
+      if (!this.mvp && stats.mvpId) payload.mvp = stats.mvpId
+
+      // Formation detection
+      this.repairStatus = 'Detectando formação…'
+      try {
+        const formations = (await api.col('formations').list({ perPage: 100 })).items
+        const enrichedMatch = { formation: this.formationId, player_stats: stats.playerStats }
+        const detection = detectFormation(enrichedMatch, formations, players)
+        if (!this.formationId && detection.match?.id) payload.formation = detection.match.id
+      } catch (_) {}
+
+      this.repairStatus = 'Salvando…'
+      await api.col('matches').update(this.editId, payload)
+      this.repairStatus = 'Salvo. Recarregando…'
+      location.reload()
+    },
+
+    // Repair using stored snapshot — no API key needed
+    async repairFromSnapshot() {
+      if (this.repairing) return
+      this.repairing = true
+      this.repairStatus = 'Calculando estatísticas…'
+      try {
+        const snap = this.riotSnapshot
+        const { puuidToName, puuidToId, players } = await this._resolvePlayersMap()
+        const stats = extractMatchStats(snap.match, snap.timeline, { ourSide: this.side, puuidToName, puuidToId })
+        await this._applyRepairPayload(stats, snap, players)
+      } catch (e) {
+        this.repairStatus = 'Erro: ' + e.message
+        console.error(e)
+        this.repairing = false
+      }
+    },
+
+    // Repair by fetching from Riot API — requires API key
+    async repairSnapshot() {
+      if (!this.apiKey || this.repairing) return
+      localStorage.setItem('riot-api-key', this.apiKey)
+      this.repairing = true
+      this.repairStatus = 'Buscando partida…'
+      try {
+        const riotId = this.riotMatchId
+        const base   = RiotApi.baseUrl(RiotApi.clusterFromMatchId(riotId))
+        const [match, timeline] = await Promise.all([
+          RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}`, this.apiKey),
+          RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}/timeline`, this.apiKey),
+        ])
+        this.repairStatus = 'Calculando estatísticas…'
+        const { puuidToName, puuidToId, players } = await this._resolvePlayersMap()
+        const snap  = { match, timeline }
+        const stats = extractMatchStats(match, timeline, { ourSide: this.side, puuidToName, puuidToId })
+        await this._applyRepairPayload(stats, snap, players)
+      } catch (e) {
+        this.repairStatus = 'Erro: ' + e.message
+        console.error(e)
+        this.repairing = false
+      }
     },
 
     // ── Apply data from Riot assistant ─────────────────────────────────────

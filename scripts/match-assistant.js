@@ -225,16 +225,29 @@ document.addEventListener('alpine:init', () => {
           // Ensure snapshot is loaded
           await this._ensureSnapshot(card)
           
+          // Compute game_n: max existing game_n for this date + 1
+          const matchDate = card.date?.slice(0, 10)
+          let gameN = 1
+          if (matchDate) {
+            try {
+              const enc = s => encodeURIComponent(s)
+              const existing = await fetch(
+                `${PB}/api/collections/matches/records?perPage=1000&sort=-game_n&filter=${enc(`date ~ "${matchDate}"`)}&fields=game_n`
+              ).then(r => r.json()).catch(() => ({ items: [] }))
+              gameN = Math.max(0, ...existing.items?.map(m => m.game_n ?? 0)) + 1
+            } catch (_) { gameN = 1 }
+          }
+
           // Map card to PocketBase matches schema
           const recordData = {
-            date:         card.date,
-            game_n:       null,
+            date:         matchDate + ' 00:00:00.000Z',
+            game_n:       gameN,
             win:          card.win,
             side:         card.side,
             duration:     card.duration,
             formation:    null,
-            our_champs:   card.ourChamps.map(c => c.key).filter(Boolean).join(','),
-            enemy_champs: card.enemyChamps.map(c => c.key).filter(Boolean).join(','),
+            our_champs:   card.ourChamps.map(c => c.key).filter(Boolean),
+            enemy_champs: card.enemyChamps.map(c => c.key).filter(Boolean),
             comp_type:    null,
             scaling:      null,
             team_kills:   card.teamKills ?? null,
@@ -256,8 +269,9 @@ document.addEventListener('alpine:init', () => {
             obj_flow:     card.objFlow ?? null,
             mvp:          card.mvpId ?? null,
             mvc:          null,
-            riot_match_id: card.matchId,
-            riot_snapshot: card._snapshot ? JSON.stringify(stripSnapshot(card._snapshot)) : null,
+            riot_match_id:      card.matchId,
+            riot_match_snapshot: card._snapshot ? stripSnapshot(card._snapshot) : null,
+            player_stats:       card.playerStats ?? null,
           }
           
           await api.col('matches').create(recordData)
