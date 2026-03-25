@@ -82,23 +82,102 @@ function baseOpts(isH) {
   }
 }
 
-function winRateChart(canvasId, stats, isH = true, extraOpts = {}) {
+// ── Global state for chart filtering ──────────────────────────────────────
+let _showAnecdotal = {
+  'comp-type': false,
+  'enemy-type': false,
+  'game-n': false,
+  'side': false,
+  'duration': false,
+  'mvp-wr': false,
+  'formation': false,
+}
+
+// ── Player Performance Lens Definitions ───────────────────────────────────
+let _playerLens = 'geral'
+
+// High-damage classifications for identity filtering
+const HIGH_DMG = new Set(['AD_high','AP_high','Mixed_high'])
+
+// Identity filter helpers
+function isCarry(champEntry) {
+  if (!champEntry) return false
+  if (champEntry.class === 'Marksman') return true
+  if (champEntry.class === 'Mage'    && HIGH_DMG.has(champEntry.damage_type)) return true
+  if (champEntry.class === 'Fighter' && HIGH_DMG.has(champEntry.damage_type)) return true
+  return false
+}
+
+function isBruiser(champEntry) {
+  if (!champEntry) return false
+  return champEntry.class === 'Fighter' && !HIGH_DMG.has(champEntry.damage_type)
+}
+
+function hasNoLens(champEntry) {
+  if (!champEntry) return true  // unclassified = no entry in DB
+  return !isCarry(champEntry) && !isBruiser(champEntry)
+    && champEntry.class !== 'Assassin' && champEntry.class !== 'Tank' && champEntry.class !== 'Support'
+}
+
+const LENS_DEFS = {
+  geral:     { defaultSort: 'wr',         filter: () => true,          cols: ['damMin','goldMin','deathMin','csMin','fbKills'] },
+  carry:     { defaultSort: 'damMin',     filter: isCarry,             cols: ['damMin','killsAvg','fbKills','deathMin','csMin'] },
+  assassino: { defaultSort: 'killsAvg',   filter: c => c?.class === 'Assassin', cols: ['killsAvg','fbKills','deathMin','goldMin'] },
+  bruiser:   { defaultSort: 'dtMin',      filter: isBruiser,           cols: ['damMin','dtMin','mitMin','deathMin','turrets'] },
+  tank:      { defaultSort: 'dtMin',      filter: c => c?.class === 'Tank',     cols: ['dtMin','mitMin','ccMin','killPct','deathMin'] },
+  suporte:   { defaultSort: 'assistsAvg', filter: c => c?.class === 'Support',  cols: ['assistsAvg','visionMin','wardsMin','wkAvg','killPct'] },
+}
+
+const COL_META = {
+  damMin:     { label: 'Dano/min',     fmt: v => v.toFixed(0)                         },
+  goldMin:    { label: 'Ouro/min',     fmt: v => v.toFixed(0)                         },
+  deathMin:   { label: 'Mortes/min',   fmt: v => v.toFixed(3)                         },
+  csMin:      { label: 'CS/min',       fmt: v => v.toFixed(1)                         },
+  fbKills:    { label: 'FB Kills',     fmt: v => v                                    },
+  killsAvg:   { label: 'Kills',        fmt: v => v.toFixed(1)                         },
+  dtMin:      { label: 'DmgRec/min',   fmt: v => v.toFixed(0)                         },
+  mitMin:     { label: 'Mitigado/min', fmt: v => v.toFixed(0)                         },
+  turrets:    { label: 'Turrets',      fmt: v => v.toFixed(1)                         },
+  ccMin:      { label: 'CC/min',       fmt: v => v.toFixed(2)                         },
+  killPct:    { label: 'Kill Part%',   fmt: v => v != null ? `${Math.round(v*100)}%` : '—' },
+  assistsAvg: { label: 'Assists',      fmt: v => v.toFixed(1)                         },
+  visionMin:  { label: 'Visão/min',    fmt: v => v.toFixed(2)                         },
+  wardsMin:   { label: 'Wards/min',    fmt: v => v.toFixed(2)                         },
+  wkAvg:      { label: 'WardKills',    fmt: v => v.toFixed(1)                         },
+}
+
+
+function winRateChart(canvasId, stats, isH = true, chartKey = null, extraOpts = {}) {
   Chart.getChart(canvasId)?.destroy()
+  
+  // Filtrar dados anedóticos se checkbox está desmarcado
+  const showAnecdotal = chartKey && _showAnecdotal[chartKey]
+  const filtered = !chartKey || showAnecdotal 
+    ? stats 
+    : stats.filter(s => s.n >= 10)
+  
+  // Se todos os dados foram filtrados, mostrar mensagem
+  if (filtered.length === 0) {
+    document.getElementById(canvasId).parentElement.innerHTML = 
+      '<p class="text-xs text-slate-500">Sem dados significativos (N≥10) para exibir.</p>'
+    return
+  }
+  
   new Chart(document.getElementById(canvasId), {
     type: 'bar',
     data: {
-      labels: stats.map(s => {
+      labels: filtered.map(s => {
         const e    = COMP_EMOJI[s.label] ?? ''
-        const warn = s.n < 5 ? ' ⚠️' : ''
+        const warn = s.n < 10 ? ' ⚠️' : ''
         return `${e}${e?' ':''}${s.label}${warn}  N=${s.n}`
       }),
       datasets: [{
-        data:            stats.map(s => utils.pct(s.rate) ?? 0),
-        backgroundColor: stats.map(s => utils.rateColor(s.rate ?? 0, s.n)),
+        data:            filtered.map(s => utils.pct(s.rate) ?? 0),
+        backgroundColor: filtered.map(s => utils.rateColor(s.rate ?? 0, s.n)),
         borderRadius: 4,
-        _ci: stats.map(s => ({ lo: s.lo, hi: s.hi })),
-        _n:  stats.map(s => s.n),
-        _w:  stats.map(s => s.wins),
+        _ci: filtered.map(s => ({ lo: s.lo, hi: s.hi })),
+        _n:  filtered.map(s => s.n),
+        _w:  filtered.map(s => s.wins),
       }],
     },
     options: { ...baseOpts(isH), ...extraOpts },
@@ -134,11 +213,11 @@ function buildTeamCharts(M) {
       ${c.sub ? `<div class="text-xs text-slate-500 mt-0.5">${c.sub}</div>` : ''}
     </div>`).join('')
 
-  winRateChart('c-comp-type',  compStats)
-  winRateChart('c-enemy-type', utils.groupWR(M, m => m.enemy_type))
+  winRateChart('c-comp-type',  compStats, true, 'comp-type')
+  winRateChart('c-enemy-type', utils.groupWR(M, m => m.enemy_type), true, 'enemy-type')
 
   const gnStats = utils.groupWR(M, m => String(m.game_n)).sort((a,b) => +a.label - +b.label)
-  winRateChart('c-game-n', gnStats.map(s => ({ ...s, label: `J${s.label}` })), false)
+  winRateChart('c-game-n', gnStats.map(s => ({ ...s, label: `J${s.label}` })), false, 'game-n')
 
   const ss = utils.groupWR(M, m => m.side).sort((a,b) => a.label.localeCompare(b.label))
   Chart.getChart('c-side')?.destroy()
@@ -168,7 +247,7 @@ function buildTeamCharts(M) {
   winRateChart('c-duration', order.map(k => {
     const { wins, n } = buckets[k]
     return { label: `${k}  N=${n}`, wins, n, ...utils.wilson(wins, n) }
-  }), false)
+  }), false, 'duration')
 }
 
 // ── GD@5 from snapshot ────────────────────────────────────────────────────────
@@ -405,131 +484,198 @@ function buildObjectiveSection(M) {
     </div>`
 }
 
-// ── Table: Mortes por Jogador ─────────────────────────────────────────────────
-function buildDeathTable(M) {
+// ── Table: Desempenho por Jogador (Consolidated with Sortable Columns) ────────
+let _playerRows = []
+let _playerSort = { col: 'wr', dir: -1 }
+
+function sortPlayerTable(col) {
+  _playerSort.dir = _playerSort.col === col ? _playerSort.dir * -1 : -1
+  _playerSort.col = col
+  renderPlayerTable()
+}
+
+function renderPlayerTable() {
+   const { col, dir } = _playerSort
+   const lens = LENS_DEFS[_playerLens]
+   const dynamicCols = lens.cols
+   const showUnmatched = _playerLens !== 'geral' && _playerRows.some(r => r.unmatched > 0)
+  
+  const sorted = [..._playerRows].sort((a, b) => {
+    const aOk = a.n >= 10, bOk = b.n >= 10
+    if (aOk !== bOk) return aOk ? -1 : 1
+    return dir * (a[col] - b[col])
+  })
+  
+  const arrow  = c => c === col ? (dir === -1 ? ' ↓' : ' ↑') : ''
+  const th     = (c, label, extra = '') =>
+    `<th class="text-right py-2 cursor-pointer select-none hover:text-slate-300 ${extra}" onclick="sortPlayerTable('${c}')">${label}${arrow(c)}</th>`
+
+  const validRows = sorted.filter(r => r.n >= 10)
+  const anecdotalRows = sorted.filter(r => r.n < 10)
+
+  // Build headers: fixed columns + [unmatched if applicable] + dynamic columns
+  let headerHTML = `<th class="text-left py-2 cursor-pointer select-none hover:text-slate-300" onclick="sortPlayerTable('name')">Jogador${arrow('name')}</th>
+        ${th('n',   'N')}
+        ${th('wr',  'Win%')}
+        ${th('kda', 'KDA')}`
+  
+  if (showUnmatched) {
+    headerHTML += th('unmatched', 'Sem classe')
+  }
+  
+  for (const colKey of dynamicCols) {
+    const meta = COL_META[colKey]
+    headerHTML += th(colKey, meta.label)
+  }
+
+  // Build row template function
+  const buildRowHTML = (r, isAnecdotal = false) => {
+    const wrCls = isAnecdotal ? 'text-slate-500' : (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.56 ? 'text-green-400' : r.wr >= 0.46 ? 'text-yellow-400' : 'text-red-400')
+    const cellCls = isAnecdotal ? 'text-slate-600' : ''
+    const nameCls = isAnecdotal ? 'text-slate-500' : ''
+    
+    let cellHTML = `<td class="py-2 font-medium ${nameCls}">${r.name}</td>
+            <td class="text-right ${isAnecdotal ? 'text-slate-600' : 'text-slate-500'}">${r.n}</td>
+            <td class="text-right ${wrCls}">${utils.pct(r.wr)}%</td>
+            <td class="text-right ${cellCls}">${r.kda.toFixed(2)}</td>`
+    
+    if (showUnmatched) {
+      cellHTML += `<td class="text-right text-xs ${cellCls} text-slate-500">${r.unmatched}</td>`
+    }
+    
+    for (const colKey of dynamicCols) {
+      const meta = COL_META[colKey]
+      const val = r[colKey]
+      const formatted = meta.fmt(val)
+      cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+    }
+    
+    return cellHTML
+  }
+
+  let tableHTML = `
+    <table class="w-full text-sm text-slate-300">
+      <thead><tr class="text-xs text-slate-500 border-b border-slate-700">
+        ${headerHTML}
+      </tr></thead>
+      <tbody>
+        ${validRows.map(r => `<tr class="border-b border-slate-800">${buildRowHTML(r)}</tr>`).join('')}`
+
+  if (anecdotalRows.length > 0) {
+    const colCount = 4 + (showUnmatched ? 1 : 0) + dynamicCols.length
+    tableHTML += `
+        <tr class="border-b-2 border-slate-700 bg-slate-800/30">
+          <td colspan="${colCount}" class="py-2 text-xs text-slate-500">Dados anedóticos (N &lt; 10)</td>
+        </tr>
+        ${anecdotalRows.map(r => `<tr class="border-b border-slate-800">${buildRowHTML(r, true)}</tr>`).join('')}`
+  }
+
+  tableHTML += `</tbody>
+    </table>`
+
+  document.getElementById('player-perf-table').innerHTML = tableHTML
+}
+
+function buildPlayerTable(M) {
   const riotM = M.filter(m => m.player_stats?.length)
   if (!riotM.length) {
-    document.getElementById('player-death-table').innerHTML =
+    document.getElementById('player-perf-table').innerHTML =
       '<p class="text-xs text-slate-500">Sem partidas com dados Riot API.</p>'
     return
   }
 
+  document.getElementById('player-perf-n').textContent = riotM.length
+
+  // Build champion lookup: normalized key → champion entry (with class, damage_type)
+  const champStore = Alpine.store('champions')
+  const champByKey = {}
+  for (const c of champStore.list) {
+    champByKey[normChampKey(c.key)] = c
+  }
+
+  // Get filter function for current lens
+  const lensFilter = LENS_DEFS[_playerLens].filter
+
+  // First pass: count total and unclassified matches per player
+  const mapAll = {}
+  for (const m of riotM) {
+    for (const ps of m.player_stats) {
+      if (!ps.name) continue
+      const champKey = normChampKey(ps.champion)
+      const champEntry = champByKey[champKey] ?? null
+      const p = mapAll[ps.name] ??= { nTotal: 0, nUnclassified: 0 }
+      p.nTotal++
+      if (hasNoLens(champEntry)) p.nUnclassified++
+    }
+  }
+
+  // Second pass: aggregate stats for matches that pass lens filter
   const map = {}
   for (const m of riotM) {
     for (const ps of m.player_stats) {
       if (!ps.name) continue
-      const p = map[ps.name] ??= { n:0, deathsTotal:0, deathsW:0, nW:0, deathsL:0, nL:0, fbKills:0 }
+      
+      // Resolve champion and check lens filter
+      const champKey = normChampKey(ps.champion)
+      const champEntry = champByKey[champKey] ?? null
+      if (!lensFilter(champEntry)) continue
+
+      const p = map[ps.name] ??= { 
+        n: 0, wins: 0, kdaSum: 0, damSum: 0, goldSum: 0, csSum: 0, 
+        durSum: 0, deathsSum: 0, fbKills: 0, killsSum: 0, assistsSum: 0,
+        dtSum: 0, mitSum: 0, ccSum: 0, bldSum: 0, wkSum: 0, cwSum: 0,
+        kpSum: 0, kpN: 0, visionSum: 0, wardsSum: 0
+      }
       p.n++
-      p.deathsTotal += ps.deaths ?? 0
-      if (m.win) { p.deathsW += ps.deaths ?? 0; p.nW++ }
-      else        { p.deathsL += ps.deaths ?? 0; p.nL++ }
+      if (m.win) p.wins++
+      p.kdaSum     += ps.kda               ?? 0
+      p.damSum     += ps.damage            ?? 0
+      p.goldSum    += ps.gold              ?? 0
+      p.csSum      += ps.cs                ?? 0
+      p.deathsSum  += ps.deaths            ?? 0
+      p.durSum     += m.duration           ?? 0
+      p.killsSum   += ps.kills             ?? 0
+      p.assistsSum += ps.assists           ?? 0
+      p.dtSum      += ps.damageTaken       ?? 0
+      p.mitSum     += ps.damageSelfMitigated ?? 0
+      p.ccSum      += ps.timeCCingOthers   ?? 0
+      p.bldSum     += ps.damageToBuildings ?? 0
+      p.wkSum      += ps.wardsKilled       ?? 0
+      p.cwSum      += ps.controlWardsPlaced ?? 0
+      p.visionSum  += ps.visionScore       ?? 0
+      p.wardsSum   += ps.wardsPlaced       ?? 0
+      if (ps.killParticipation != null) { p.kpSum += ps.killParticipation; p.kpN++ }
       if (ps.firstBlood) p.fbKills++
     }
   }
 
-  const rows = Object.entries(map)
+  _playerRows = Object.entries(map)
     .map(([name, p]) => ({
       name,
-      n:       p.n,
-      avgD:    p.n    ? p.deathsTotal / p.n    : 0,
-      avgDW:   p.nW   ? p.deathsW     / p.nW   : 0,
-      avgDL:   p.nL   ? p.deathsL     / p.nL   : 0,
-      fbKills: p.fbKills,
+      n:         p.n,
+      nTotal:    mapAll[name]?.nTotal ?? p.n,
+      unmatched: mapAll[name]?.nUnclassified ?? 0,
+      wr:        p.wins / p.n,
+      kda:       p.kdaSum / p.n,
+      damMin:    p.durSum ? p.damSum / p.durSum : 0,
+      goldMin:   p.durSum ? p.goldSum / p.durSum : 0,
+      deathMin:  p.durSum ? p.deathsSum / p.durSum : 0,
+      csMin:     p.durSum ? p.csSum / p.durSum : 0,
+      fbKills:   p.fbKills,
+      killsAvg:  p.n ? p.killsSum / p.n : 0,
+      assistsAvg: p.n ? p.assistsSum / p.n : 0,
+      dtMin:     p.durSum ? p.dtSum / p.durSum : 0,
+      mitMin:    p.durSum ? p.mitSum / p.durSum : 0,
+      ccMin:     p.durSum ? p.ccSum / p.durSum : 0,
+      turrets:   p.n ? p.bldSum / p.n : 0,
+      visionMin: p.durSum ? p.visionSum / p.durSum : 0,
+      wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
+      wkAvg:     p.n ? p.wkSum / p.n : 0,
+      killPct:   p.kpN ? p.kpSum / p.kpN : null,
     }))
-    .sort((a, b) => b.avgD - a.avgD)
 
-  const deathCls = v => v > 4 ? 'text-red-400 font-semibold' : v > 2.5 ? 'text-yellow-400' : 'text-green-400'
-
-  document.getElementById('player-death-table').innerHTML = `
-    <table class="w-full text-sm text-slate-300">
-      <thead><tr class="text-xs text-slate-500 border-b border-slate-700">
-        <th class="text-left py-2">Jogador</th>
-        <th class="text-right py-2">N</th>
-        <th class="text-right py-2">Mortes avg</th>
-        <th class="text-right py-2">avg (V)</th>
-        <th class="text-right py-2">avg (D)</th>
-        <th class="text-right py-2">FB Kills</th>
-      </tr></thead>
-      <tbody>
-        ${rows.map(r => `<tr class="border-b border-slate-800">
-          <td class="py-2 font-medium">${r.name}</td>
-          <td class="text-right text-slate-500">${r.n}</td>
-          <td class="text-right ${deathCls(r.avgD)}">${r.avgD.toFixed(1)}</td>
-          <td class="text-right text-green-400">${r.nW?r.avgDW.toFixed(1):'—'}</td>
-          <td class="text-right text-red-400">${r.nL?r.avgDL.toFixed(1):'—'}</td>
-          <td class="text-right text-yellow-400">${r.fbKills}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>`
+  renderPlayerTable()
 }
-
-// ── Table: Performance Geral por Jogador ──────────────────────────────────────
-function buildPlayerTable(M) {
-  const riotM = M.filter(m => m.player_stats?.length)
-  if (!riotM.length) {
-    document.getElementById('player-stats-table').innerHTML =
-      '<p class="text-xs text-slate-500">Sem partidas com dados Riot API.</p>'
-    return
-  }
-
-  document.getElementById('player-stats-n').textContent = riotM.length
-
-  const map = {}
-  for (const m of riotM) {
-    for (const ps of m.player_stats) {
-      if (!ps.name) continue
-      const p = map[ps.name] ??= { n:0, wins:0, kdaSum:0, damSum:0, goldSum:0, csSum:0, durSum:0 }
-      p.n++
-      if (m.win) p.wins++
-      p.kdaSum  += ps.kda    ?? 0
-      p.damSum  += ps.damage ?? 0
-      p.goldSum += ps.gold   ?? 0
-      p.csSum   += ps.cs     ?? 0
-      p.durSum  += m.duration ?? 0
-    }
-  }
-
-  const rows = Object.entries(map)
-    .map(([name, p]) => ({
-      name, n: p.n,
-      wr:    p.wins / p.n,
-      kda:   p.kdaSum  / p.n,
-      dam:   p.damSum  / p.n,
-      gold:  p.goldSum / p.n,
-      csMin: p.durSum  ? p.csSum / p.durSum : 0,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  const fmtK = v => `${(v/1000).toFixed(1)}k`
-
-  document.getElementById('player-stats-table').innerHTML = `
-    <table class="w-full text-sm text-slate-300">
-      <thead><tr class="text-xs text-slate-500 border-b border-slate-700">
-        <th class="text-left py-2">Jogador</th>
-        <th class="text-right py-2">N</th>
-        <th class="text-right py-2">Win%</th>
-        <th class="text-right py-2">KDA</th>
-        <th class="text-right py-2">Dano</th>
-        <th class="text-right py-2">Ouro</th>
-        <th class="text-right py-2">CS/min</th>
-      </tr></thead>
-      <tbody>
-        ${rows.map(r => {
-          const wrCls = r.n >= 5 ? (r.wr >= 0.6 ? 'text-green-400' : r.wr >= 0.4 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
-          return `<tr class="border-b border-slate-800">
-            <td class="py-2 font-medium">${r.name}</td>
-            <td class="text-right text-slate-500">${r.n}</td>
-            <td class="text-right ${wrCls}">${utils.pct(r.wr)}%</td>
-            <td class="text-right">${r.kda.toFixed(2)}</td>
-            <td class="text-right">${fmtK(r.dam)}</td>
-            <td class="text-right">${fmtK(r.gold)}</td>
-            <td class="text-right">${r.csMin.toFixed(1)}</td>
-          </tr>`
-        }).join('')}
-      </tbody>
-    </table>`
-}
-
 // ── Table: Campeões ───────────────────────────────────────────────────────────
 let _champRows = []
 let _champSort = { col: 'wr', dir: -1 }
@@ -543,7 +689,7 @@ function sortChampTable(col) {
 function renderChampTable() {
   const { col, dir } = _champSort
   const sorted = [..._champRows].sort((a, b) => {
-    const aOk = a.n >= 5, bOk = b.n >= 5
+    const aOk = a.n >= 10, bOk = b.n >= 10
     if (aOk !== bOk) return aOk ? -1 : 1
     return dir * (a[col] - b[col])
   })
@@ -565,7 +711,7 @@ function renderChampTable() {
       </tr></thead>
       <tbody>
         ${sorted.map(r => {
-          const wrCls = r.n >= 5 ? (r.wr >= 0.6 ? 'text-green-400' : r.wr >= 0.4 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
+          const wrCls = r.n >= 10 ? (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.56 ? 'text-green-400' : r.wr >= 0.46 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
           const img = r.key ? `<img src="${champImgUrl(r.key)}" class="w-6 h-6 rounded" title="${r.name}">` : '<span class="text-slate-600 text-xs">?</span>'
           return `<tr class="border-b border-slate-800">
             <td class="py-1.5">${img}</td>
@@ -630,14 +776,17 @@ function buildPlayerCharts(M) {
     const name = m.expand.mvp.name
     freq[name] = (freq[name] ?? 0) + 1
   }
-  const sortedMvp = Object.entries(freq).sort((a,b) => b[1]-a[1])
+  const sortedMvp = Object.entries(freq)
+    .map(([p, n]) => ({ name: p, n, pct: Math.round(n/M.length*100) }))
+    .sort((a,b) => b.n - a.n)
+  
   Chart.getChart('c-mvp-freq')?.destroy()
   new Chart(document.getElementById('c-mvp-freq'), {
     type: 'bar',
     data: {
-      labels:   sortedMvp.map(([p,n]) => `${p}  (${n})`),
+      labels:   sortedMvp.map(m => `${m.name}  (${m.n})`),
       datasets: [{
-        data:            sortedMvp.map(([,n]) => Math.round(n/M.length*100)),
+        data:            sortedMvp.map(m => m.pct),
         backgroundColor: 'rgba(234,179,8,0.75)',
         borderRadius: 4,
       }],
@@ -647,22 +796,26 @@ function buildPlayerCharts(M) {
     }}}},
   })
 
-  winRateChart('c-mvp-wr',   utils.groupWR(mvpGames,       m => m.expand?.mvp?.name))
-  winRateChart('c-formation', utils.groupWR(formationGames, m => m.expand?.formation?.name))
+  winRateChart('c-mvp-wr',   utils.groupWR(mvpGames,       m => m.expand?.mvp?.name), true, 'mvp-wr')
+  winRateChart('c-formation', utils.groupWR(formationGames, m => m.expand?.formation?.name), true, 'formation')
 
   const mvcFreq = {}
   for (const m of M) {
     const name = m.expand?.mvc?.name
     if (name) mvcFreq[name] = (mvcFreq[name] ?? 0) + 1
   }
-  const sortedMvc = Object.entries(mvcFreq).sort((a,b) => b[1]-a[1]).slice(0, 12)
+  const sortedMvc = Object.entries(mvcFreq)
+    .map(([name, n]) => ({ name, n }))
+    .sort((a,b) => b.n - a.n)
+    .slice(0, 12)
+  
   Chart.getChart('c-mvc')?.destroy()
   new Chart(document.getElementById('c-mvc'), {
     type: 'bar',
     data: {
-      labels:   sortedMvc.map(([name,n]) => `${name}  (${n})`),
+      labels:   sortedMvc.map(m => `${m.name}  (${m.n})`),
       datasets: [{
-        data:            sortedMvc.map(([,n]) => n),
+        data:            sortedMvc.map(m => m.n),
         backgroundColor: 'rgba(234,179,8,0.6)',
         borderRadius: 4,
       }],
@@ -680,11 +833,22 @@ function buildPlayerCharts(M) {
 
 // ── Alpine component ──────────────────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
-  Alpine.data('statsPage', () => ({
+   Alpine.data('statsPage', () => ({
     activeTab:       'team',
+    playerLens:      'geral',
     formations:      [],
     filterFormation: '',
     allMatches:      [],
+    _currentMatches: [],
+    showAnecdotal: _showAnecdotal,
+    lenses: [
+      { key: 'geral',     label: 'Geral' },
+      { key: 'carry',     label: 'Carry' },
+      { key: 'assassino', label: 'Assassino' },
+      { key: 'bruiser',   label: 'Bruiser' },
+      { key: 'tank',      label: 'Tank' },
+      { key: 'suporte',   label: 'Suporte' },
+    ],
 
     async init() {
       const [, fData, data] = await Promise.all([
@@ -694,15 +858,23 @@ document.addEventListener('alpine:init', () => {
       ])
       this.formations = fData.items
       this.allMatches = data.items
+      this._currentMatches = data.items
       this._render(this.allMatches)
 
       this.$watch('filterFormation', () => this.filterAndRender())
+      this.$watch('showAnecdotal', () => this.filterAndRender(), { deep: true })
+      this.$watch('playerLens', (newLens) => {
+        _playerLens = newLens
+        _playerSort = { col: LENS_DEFS[newLens].defaultSort, dir: -1 }
+        buildPlayerTable(this._currentMatches)
+      })
     },
 
     filterAndRender() {
       const M = this.filterFormation
         ? this.allMatches.filter(m => m.formation === this.filterFormation)
         : this.allMatches
+      this._currentMatches = M
       this._render(M)
     },
 
@@ -712,7 +884,6 @@ document.addEventListener('alpine:init', () => {
       buildGoldSection(M)
       buildObjectiveSection(M)
       buildPlayerCharts(M)
-      buildDeathTable(M)
       buildPlayerTable(M)
       buildChampionTable(M)
     },
