@@ -538,30 +538,30 @@ function computeIdentityRanks(rows, lens) {
      assassino: (r) => {
        const killDth = r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath
        const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
-       return killDth * 1.0
-            + dmgDth * 0.0001
-            + r.goldMin * 0.00222
-            + r.killShare * 0.5
+       return killDth * 3.247      // ×4  (avg 1.232 → contribui 4.0)
+            + dmgDth * 0.000504    // ×2  (avg 3967 → contribui 2.0)
+            + r.goldMin * 0.002310 // ×1  (avg 433 → contribui 1.0)
+            + r.killShare * 2.110  // ×1  (avg 0.474 → contribui 1.0)
      },
-    bruiser: (r) => {
-      const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
-      const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
-      return r.netDamPerGame * 0.000375
-           + dmgDth * 0.0002
-           + goldDth * 0.0002
-    },
-    tank: (r) => {
-      return r.mitMin * 0.0075
-           + r.dtMin * 0.004
-           + r.ccMin * 0.0667
-    },
-    suporte: (r) => {
-      const assPerDth = r.assistsPerDeath === Infinity ? 1000000 : r.assistsPerDeath
-      const visPerDth = r.visionPerDeath === Infinity ? 1000000 : r.visionPerDeath
-      const wardPerDth = r.wardsAndWKPerDeath === Infinity ? 1000000 : r.wardsAndWKPerDeath
-      return assPerDth * 0.333
-           + visPerDth * 0.133
-           + wardPerDth * 0.1
+     bruiser: (r) => {
+       const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
+       const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
+       return r.netDamPerGame * 0.0001675  // ×4  (avg 23881 → contribui 4.0)
+            + dmgDth * 0.000555            // ×2  (avg 3599 → contribui 2.0)
+            + goldDth * 0.000475           // ×1  (avg 2104 → contribui 1.0)
+     },
+     tank: (r) => {
+       return r.mitMin * 0.00267   // ×4  (avg 1497 → contribui 4.0)
+            + r.dtMin * 0.001834   // ×2  (avg 1091 → contribui 2.0)
+            + r.ccMin * 0.7072     // ×1  (avg 1.4142 → contribui 1.0)
+     },
+     suporte: (r) => {
+       const assPerDth = r.assistsPerDeath === Infinity ? 1000000 : r.assistsPerDeath
+       const visPerDth = r.visionPerDeath === Infinity ? 1000000 : r.visionPerDeath
+       const wardPerDth = r.wardsAndWKPerDeath === Infinity ? 1000000 : r.wardsAndWKPerDeath
+       return assPerDth * 0.763      // ×2  (avg 2.622 → contribui 2.0)
+            + visPerDth * 0.2515     // ×2  (avg 7.963 → contribui 2.0)
+            + wardPerDth * 0.0840    // ×1  (avg 11.911 → contribui 1.0)
     },
   }
 
