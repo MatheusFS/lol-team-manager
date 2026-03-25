@@ -351,7 +351,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Apply data from Riot assistant ─────────────────────────────────────
     applyFromRiot(data) {
-      if (data.date && !this.date) this.date = data.date
+      if (data.date) this.date = data.date
       if (data.win != null) this.win      = data.win
       if (data.side)        this.side     = data.side
       if (data.duration)    this.duration = data.duration

@@ -100,9 +100,10 @@
           </tr>
         </thead>
         <tbody>
-          <!-- Render session separators -->
-          <template x-for="item in displayMatches.filter(i => i._isSep)" :key="'sep-'+item._sessionIdx">
-            <tr class="bg-slate-900/80 border-t-2 border-slate-700">
+          <!-- Single x-for: renders separators and matches in correct order -->
+          <template x-for="item in displayMatches" :key="item._isSep ? 'sep-'+item._sessionIdx : item.id">
+            <!-- Separator row (colspan="11") -->
+            <tr x-show="item._isSep" class="bg-slate-900/80 border-t-2 border-slate-700">
               <td colspan="11" class="px-4 py-2">
                 <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mr-2">Sessão</span>
                 <span class="text-xs font-semibold text-slate-300" x-text="fmtDate(item.date)"></span>
@@ -110,10 +111,8 @@
                       x-text="item.count + (item.count === 1 ? ' jogo' : ' jogos') + ' · ' + item.wins + 'V ' + (item.count - item.wins) + 'D'"></span>
               </td>
             </tr>
-          </template>
-          <!-- Render match rows -->
-          <template x-for="item in displayMatches.filter(i => !i._isSep)" :key="item.id">
-            <tr class="hover:bg-slate-900/40 transition-colors border-t border-slate-800/60" :class="borderCls(item.win)">
+            <!-- Match row (normal cells) -->
+            <tr x-show="!item._isSep" class="hover:bg-slate-900/40 transition-colors border-t border-slate-800/60" :class="borderCls(item.win)">
               <td class="px-4 py-2.5 text-slate-300 whitespace-nowrap" x-text="fmtDate(item.date)"></td>
               <td class="px-3 py-2.5 text-center text-slate-500" x-text="item.game_n"></td>
               <td class="px-4 py-2.5 text-center">

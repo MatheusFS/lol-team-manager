@@ -56,7 +56,7 @@
     </div>
 
     <!-- Cards -->
-    <div class="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+    <div class="flex-1 overflow-y-auto px-3 py-3 space-y-3 flex flex-col">
 
       <div x-show="!loading && cards.length === 0 && !status"
            class="text-center text-slate-500 py-10 text-sm">
@@ -69,9 +69,10 @@
         <div class="bg-slate-800 border rounded-lg p-3 text-xs"
              :class="card.win ? 'border-green-700/50' : 'border-red-800/50'">
 
-          <!-- Card header -->
+          <!-- Card header with checkbox -->
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2 flex-wrap">
+              <input type="checkbox" x-model="card.selected" class="w-4 h-4 cursor-pointer">
               <span class="font-bold px-1.5 py-0.5 rounded"
                     :class="card.win ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'"
                     x-text="card.win ? 'VITÓRIA' : 'DERROTA'"></span>
@@ -120,6 +121,15 @@
         </div>
       </template>
 
+    </div>
+
+    <!-- Footer: Save selected button -->
+    <div x-show="cards.some(c => c.selected)" class="px-4 py-3 border-t border-slate-800 flex-shrink-0">
+      <button @click="saveSelected()" :disabled="loading"
+              class="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold text-sm py-2 rounded transition-colors">
+        <span x-show="!loading">✓ Salvar selecionadas</span>
+        <span x-show="loading" x-text="status"></span>
+      </button>
     </div>
   </div>
 </div>
@@ -196,6 +206,79 @@ document.addEventListener('alpine:init', () => {
         location.href = '/pages/match-form.html'
       }
       this.open = false
+    },
+
+    // ── Batch save selected cards to PocketBase ─────────────────────────────
+    async saveSelected() {
+      const selected = this.cards.filter(c => c.selected)
+      if (!selected.length) return
+
+      this.loading = true
+      this.status  = ''
+      let saved = 0
+
+      for (let i = 0; i < selected.length; i++) {
+        try {
+          this.status = `Salvando ${i + 1}/${selected.length}…`
+          const card = selected[i]
+          
+          // Ensure snapshot is loaded
+          await this._ensureSnapshot(card)
+          
+          // Map card to PocketBase matches schema
+          const recordData = {
+            date:         card.date,
+            game_n:       null,
+            win:          card.win,
+            side:         card.side,
+            duration:     card.duration,
+            formation:    null,
+            our_champs:   card.ourChamps.map(c => c.key).filter(Boolean).join(','),
+            enemy_champs: card.enemyChamps.map(c => c.key).filter(Boolean).join(','),
+            comp_type:    null,
+            scaling:      null,
+            team_kills:   card.teamKills ?? null,
+            team_deaths:  card.teamDeaths ?? null,
+            team_assists: card.teamAssists ?? null,
+            gd_10:        card.gd10 ?? null,
+            gd_20:        card.gd20 ?? null,
+            gd_f:         card.gdF ?? null,
+            total_gold:   card.totalGold ?? null,
+            gold_per_min: card.goldPerMin ?? null,
+            damage:       card.damage ?? null,
+            da_di:        card.dadi ?? null,
+            wards_per_min: card.wardsPerMin ?? null,
+            vision_score: card.visionScore ?? null,
+            cs_total:     card.csTotal ?? null,
+            cs_per_min:   card.csPerMin ?? null,
+            first_blood:  card.firstBlood ?? null,
+            first_tower:  card.firstTower ?? null,
+            obj_flow:     card.objFlow ?? null,
+            mvp:          card.mvpId ?? null,
+            mvc:          null,
+            riot_match_id: card.matchId,
+            riot_snapshot: card._snapshot ? JSON.stringify(stripSnapshot(card._snapshot)) : null,
+          }
+          
+          await api.col('matches').create(recordData)
+          saved++
+        } catch (e) {
+          console.error('[match-assistant] Erro ao salvar card:', e)
+          this.status = `Erro: ${e.message || 'falha ao salvar'}`
+        }
+      }
+
+      this.loading = false
+      if (saved > 0) {
+        this.status = `${saved}/${selected.length} partida(s) salva(s) com sucesso!`
+        // Clear selection after short delay
+        setTimeout(() => {
+          this.cards.forEach(c => { c.selected = false })
+          this.status = ''
+        }, 2000)
+      } else {
+        this.status = 'Falha ao salvar. Tente novamente.'
+      }
     },
 
     _buildPuuidToName(roster, puuidMap) {
@@ -465,6 +548,7 @@ document.addEventListener('alpine:init', () => {
         objFlow:      stats.obj_flow,
         playerStats:  stats.playerStats,
         _snapshot:    null,   // lazy-loaded on use()
+        selected:     false,  // for multi-import checkbox
       }
     },
 

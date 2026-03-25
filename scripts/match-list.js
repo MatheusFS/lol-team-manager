@@ -80,57 +80,60 @@ document.addEventListener('alpine:init', () => {
 
          this.matches    = matchRes.items
 
-         // ── Novo algoritmo de agrupamento por proximidade de datas ──
-         // Uma sessão = sequência contígua de partidas com intervalos ≤ 2 dias
-         // Independente de game_n (robusto a duplicatas game_n=1)
-         const sorted = [...this.matches].sort((a, b) => a.date.localeCompare(b.date))
-         const rawSessions = []
+          // ── Novo algoritmo de agrupamento: continuidade sequencial de game_n ──
+          // Uma sessão continua para o próximo dia se game_n for sequencial (lastGameN + 1)
+          // Caso contrário = nova sessão
+          const sorted = [...this.matches].sort((a, b) => a.date.localeCompare(b.date))
+          const rawSessions = []
 
-         for (const match of sorted) {
-           if (!rawSessions.length) {
-             // Primeira sessão
-             rawSessions.push({ startDate: match.date, games: [match] })
-           } else {
-             const lastSession = rawSessions[rawSessions.length - 1]
-             const lastMatch = lastSession.games[lastSession.games.length - 1]
-             const daysBetween = Math.abs(
-               (new Date(match.date) - new Date(lastMatch.date)) / 86400000
-             )
-             if (daysBetween <= 2) {
-               // Adicionar à sessão atual
-               lastSession.games.push(match)
-             } else {
-               // Nova sessão
-               rawSessions.push({ startDate: match.date, games: [match] })
-             }
-           }
-         }
-
-         // Ordenar sessões por data descente (mais recentes primeiro)
-         rawSessions.sort((a, b) => b.startDate.localeCompare(a.startDate))
-
-         // Ordenar jogos dentro de cada sessão por game_n crescente, depois por date
-         for (const s of rawSessions) {
-           s.games.sort((a, b) => {
-             const gnA = a.game_n ?? 0, gnB = b.game_n ?? 0
-             return gnA !== gnB ? gnA - gnB : a.date.localeCompare(b.date)
-           })
-         }
-
-          // Construir displayMatches com separadores (incluir _sessionIdx para unicidade de key)
-          this.displayMatches = []
-          for (let sessionIdx = 0; sessionIdx < rawSessions.length; sessionIdx++) {
-            const s = rawSessions[sessionIdx]
-            const wins = s.games.filter(g => g.win).length
-            this.displayMatches.push({
-              _isSep: true,
-              date: s.startDate,
-              count: s.games.length,
-              wins,
-              _sessionIdx: sessionIdx,
-            })
-            for (const g of s.games) this.displayMatches.push(g)
+          for (const match of sorted) {
+            if (!rawSessions.length) {
+              // Primeira sessão
+              rawSessions.push({ startDate: match.date, games: [match] })
+            } else {
+              const lastSession = rawSessions[rawSessions.length - 1]
+              const lastMatch = lastSession.games[lastSession.games.length - 1]
+              
+              // Verificar se está no mesmo dia OU se continua sequencialmente
+              const sameDay = match.date.slice(0, 10) === lastMatch.date.slice(0, 10)
+              const isSequential = (lastMatch.game_n != null && match.game_n != null) && 
+                                   match.game_n === lastMatch.game_n + 1
+              
+              if (sameDay || isSequential) {
+                // Adicionar à sessão atual
+                lastSession.games.push(match)
+              } else {
+                // Nova sessão
+                rawSessions.push({ startDate: match.date, games: [match] })
+              }
+            }
           }
+
+          // Ordenar sessões por data descente (mais recentes primeiro)
+          rawSessions.sort((a, b) => b.startDate.localeCompare(a.startDate))
+
+          // Ordenar jogos dentro de cada sessão por game_n crescente, depois por date
+          for (const s of rawSessions) {
+            s.games.sort((a, b) => {
+              const gnA = a.game_n ?? 0, gnB = b.game_n ?? 0
+              return gnA !== gnB ? gnA - gnB : a.date.localeCompare(b.date)
+            })
+          }
+
+           // Construir displayMatches com separadores (incluir _sessionIdx para unicidade de key)
+           this.displayMatches = []
+           for (let sessionIdx = 0; sessionIdx < rawSessions.length; sessionIdx++) {
+             const s = rawSessions[sessionIdx]
+             const wins = s.games.filter(g => g.win).length
+             this.displayMatches.push({
+               _isSep: true,
+               date: s.startDate,
+               count: s.games.length,
+               wins,
+               _sessionIdx: sessionIdx,
+             })
+             for (const g of s.games) this.displayMatches.push(g)
+           }
 
         this.total      = statsRes.total
         this.wins       = statsRes.wins
