@@ -269,6 +269,8 @@ const RiotApi = (() => {
       if (stats.date)   p.date               = stats.date + ' 00:00:00.000Z'
       if (stats.mvpId)  p.mvp                = stats.mvpId
       if (stats.topPlayerId) p.top_player    = stats.topPlayerId
+      if (stats.win != null) p.win            = stats.win
+      if (stats.side)   p.side               = stats.side
       return p
     },
 

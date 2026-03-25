@@ -646,7 +646,7 @@ document.addEventListener('alpine:init', () => {
       const candidates = this._rankPbCandidates(stats, summary, pbMatches)
       const best       = candidates[0] ?? null
       const autoSafe   = best != null && best.confidence >= 3
-      const canImport  = best != null
+      const canImport  = true  // All found matches are importable (create new or update existing)
 
       this.matchPairs.push({ riotId, stats, pbId: best?.pb?.id ?? null, canImport })
       const pb = best?.pb ?? null
@@ -768,10 +768,10 @@ document.addEventListener('alpine:init', () => {
       if (!pbId) {
         card.pb         = null
         card.confidence = 0
-        card.confLabel  = 'Sem registro'
-        card.canImport  = false
+        card.confLabel  = 'Novo registro'
+        card.canImport  = true  // Still importable — create new record
         card.autoSafe   = false
-        if (pair) { pair.pbId = null; pair.canImport = false }
+        if (pair) { pair.pbId = null; pair.canImport = true }
         return
       }
 
@@ -801,7 +801,7 @@ document.addEventListener('alpine:init', () => {
       const pair = this.matchPairs.find(p => p.riotId === riotId)
       const card = this.cards.find(c => c.riotId === riotId)
       const pbId = card?.manualPbId ?? pair?.pbId ?? null
-      if (!pbId || !pair) return
+      if (!pair) return
 
       const base     = RiotApi.baseUrl(this.region)
       const onStatus = m => this.setStatus(m)
@@ -812,9 +812,28 @@ document.addEventListener('alpine:init', () => {
         const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${riotId}/timeline`, this.apiKey, { onStatus })
 
         const payload = RiotApi.buildMatchPayload(pair.stats, { riotId, snapshot: { match, timeline } })
-        await api.col('matches').update(pbId, payload)
 
-        this.setStatus('Importado. Atualizando…', 'ok')
+        if (pbId) {
+          // Update existing record
+          await api.col('matches').update(pbId, payload)
+          this.setStatus('Importado em registro existente. Atualizando…', 'ok')
+        } else {
+          // Create new record — compute game_n for the date
+          const matchDate = pair.stats.date?.slice(0, 10)
+          if (matchDate) {
+            const enc = s => encodeURIComponent(s)
+            const existing = await fetch(
+              `${PB}/api/collections/matches/records?perPage=1000&sort=-game_n&filter=${enc(`date ~ "${matchDate}"`)}&fields=game_n`
+            ).then(r => r.json()).catch(() => ({ items: [] }))
+            const maxGameN = Math.max(0, ...existing.items?.map(m => m.game_n ?? 0))
+            payload.game_n = maxGameN + 1
+          } else {
+            payload.game_n = 1
+          }
+          await api.col('matches').create(payload)
+          this.setStatus('Novo registro criado e importado. Atualizando…', 'ok')
+        }
+
         await this.loadMissing()
         await this.fetchMatches()
       } catch (e) { this.setStatus(e.message, 'error') }
