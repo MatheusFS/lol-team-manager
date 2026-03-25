@@ -429,6 +429,16 @@ document.addEventListener('alpine:init', () => {
           RiotApi.fetch(`${riotBase}/lol/match/v5/matches/by-puuid/${p}/ids?startTime=${startTime}&endTime=${endTime}&count=20`, this.apiKey)
         )
       )
+
+      // Check for expired key among failed requests
+      for (const r of idResults) {
+        if (r.status === 'rejected' && r.reason?.expired) {
+          this.keyExpired = true
+          break
+        }
+      }
+      if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
+
       const seen = new Set()
       const ids  = []
       for (const r of idResults) {
@@ -455,11 +465,15 @@ document.addEventListener('alpine:init', () => {
           const card = await this._processMatchId(ids[i], knownPuuidSet, puuidToName, puuidToId, { winFilter: this.filters.win })
           if (card) this.cards.push(card)
         } catch (e) {
+          if (e.expired) { this.keyExpired = true; break }
           errors++
           console.warn('Skipping', ids[i], e.message)
         }
         await RiotApi.sleep(80)
       }
+
+      // If key expired mid-loop, show error and bail
+      if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
 
       // Build detailed status message
       const stats = []
@@ -499,6 +513,15 @@ document.addEventListener('alpine:init', () => {
         )
       )
 
+      // Check for expired key among failed requests
+      for (const r of idResults) {
+        if (r.status === 'rejected' && r.reason?.expired) {
+          this.keyExpired = true
+          break
+        }
+      }
+      if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
+
       const seen   = new Set()
       const allIds = []
       for (const r of idResults) {
@@ -529,11 +552,15 @@ document.addEventListener('alpine:init', () => {
           const card = await this._processMatchId(allIds[i], knownPuuidSet, puuidToName, puuidToId)
           if (card) this.cards.push(card)
         } catch (e) {
+          if (e.expired) { this.keyExpired = true; break }
           errors++
           console.warn('Skipping', allIds[i], e.message)
         }
         await RiotApi.sleep(80)
       }
+
+      // If key expired mid-loop, show error and bail
+      if (this.keyExpired) { this.status = 'Chave expirada — substitua e tente novamente.'; return }
 
       // Build detailed status message
       const stats = []
