@@ -96,20 +96,18 @@ let _showAnecdotal = {
 // ── Player Performance Lens Definitions ───────────────────────────────────
 let _playerLens = 'geral'
 
-// ── Rank thresholds (based on LoL playerbase distribution) ──────────────────
-// Score is normalized [0.0, 1.0] and mapped to ranks by cumulative percentile
-const RANK_THRESHOLDS = [
-  { name: 'iron',        label: 'Iron',        minScore: 0.0000 },
-  { name: 'bronze',      label: 'Bronze',      minScore: 0.0240 },
-  { name: 'silver',      label: 'Silver',      minScore: 0.1940 },
-  { name: 'gold',        label: 'Gold',        minScore: 0.4340 },
-  { name: 'platinum',    label: 'Platinum',    minScore: 0.6740 },
-  { name: 'emerald',     label: 'Emerald',     minScore: 0.8540 },
-  { name: 'diamond',     label: 'Diamond',     minScore: 0.9540 },
-  { name: 'master',      label: 'Master',      minScore: 0.9910 },
-  { name: 'grandmaster', label: 'Grandmaster', minScore: 0.9919 },
-  { name: 'challenger',  label: 'Challenger',  minScore: 0.9997 },
-]
+// ── Rank thresholds (absolute fixed values per lens) ──────────────────────────
+// Each lens has its own threshold map. Gold = average (sum of target weights).
+// Thresholds are based on multiples of the calibrated mean and never change.
+const LENS_THRESHOLDS = {
+  carry:     [0, 6.0, 9.0, 11.0, 13.0, 16.0, 20.0, 30.0, 42.0, 60.0],
+  assassino: [0, 4.0, 6.0,  7.4,  8.6, 10.6, 13.4, 20.0, 28.0, 40.0],
+  bruiser:   [0, 3.5, 5.25, 6.4,  7.6,  9.3, 11.7, 17.5, 24.5, 35.0],
+  tank:      [0, 3.5, 5.25, 6.4,  7.6,  9.3, 11.7, 17.5, 24.5, 35.0],
+  suporte:   [0, 2.5, 3.75, 4.6,  5.4, 6.65, 8.35, 12.5, 17.5, 25.0],
+}
+const RANK_NAMES = ['iron','bronze','silver','gold','platinum','emerald','diamond','master','grandmaster','challenger']
+const RANK_LABELS = ['Iron','Bronze','Silver','Gold','Platinum','Emerald','Diamond','Master','Grandmaster','Challenger']
 
 // High-damage classifications for identity filtering
 const HIGH_DMG = new Set(['AD_high','AP_high','Mixed_high'])
@@ -523,65 +521,77 @@ let _playerRows = []
 let _playerSort = { col: 'wr', dir: -1 }
 
 // Compute identity rank for each player based on lens-specific score
+// Uses absolute fixed thresholds per lens, not relative min-max normalization
 function computeIdentityRanks(rows, lens) {
   const lensScoreFunctions = {
     carry: (r) => {
-      const dmgDth  = r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath
-      const goldDth = r.goldPerDeath  === Infinity ? 1000000 : r.goldPerDeath
-      const killDth = r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath
+      // Caps: damPerDeath=20000, goldPerDeath=8000, killsPerDeath=10
+      const dmgDth  = Math.min(r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath,   20000)
+      const goldDth = Math.min(r.goldPerDeath  === Infinity ? 1000000 : r.goldPerDeath,  8000)
+      const killDth = Math.min(r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath, 10)
       return dmgDth  * 0.001042   // ×5  (avg 4800 → contribui 5.0)
            + goldDth * 0.001429   // ×3  (avg 2100 → contribui 3.0)
            + killDth * 1.449      // ×2  (avg 1.38 → contribui 2.0)
            + r.csMin * 0.1613     // ×1  (avg 6.2  → contribui 1.0)
            + r.killShare * 2.105  // ×1  (avg 0.475 → contribui 1.0)
     },
-     assassino: (r) => {
-       const killDth = r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath
-       const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
-       return killDth * 3.247      // ×4  (avg 1.232 → contribui 4.0)
-            + dmgDth * 0.000504    // ×2  (avg 3967 → contribui 2.0)
-            + r.goldMin * 0.002310 // ×1  (avg 433 → contribui 1.0)
-            + r.killShare * 2.110  // ×1  (avg 0.474 → contribui 1.0)
-     },
-     bruiser: (r) => {
-       const dmgDth = r.damPerDeath === Infinity ? 1000000 : r.damPerDeath
-       const goldDth = r.goldPerDeath === Infinity ? 1000000 : r.goldPerDeath
-       return r.netDamPerGame * 0.0001675  // ×4  (avg 23881 → contribui 4.0)
-            + dmgDth * 0.000555            // ×2  (avg 3599 → contribui 2.0)
-            + goldDth * 0.000475           // ×1  (avg 2104 → contribui 1.0)
-     },
-     tank: (r) => {
-       return r.mitMin * 0.00267   // ×4  (avg 1497 → contribui 4.0)
-            + r.dtMin * 0.001834   // ×2  (avg 1091 → contribui 2.0)
-            + r.ccMin * 0.7072     // ×1  (avg 1.4142 → contribui 1.0)
-     },
-     suporte: (r) => {
-       const assPerDth = r.assistsPerDeath === Infinity ? 1000000 : r.assistsPerDeath
-       const visPerDth = r.visionPerDeath === Infinity ? 1000000 : r.visionPerDeath
-       const wardPerDth = r.wardsAndWKPerDeath === Infinity ? 1000000 : r.wardsAndWKPerDeath
-       return assPerDth * 0.763      // ×2  (avg 2.622 → contribui 2.0)
-            + visPerDth * 0.2515     // ×2  (avg 7.963 → contribui 2.0)
-            + wardPerDth * 0.0840    // ×1  (avg 11.911 → contribui 1.0)
+    assassino: (r) => {
+      // Caps: killsPerDeath=10, damPerDeath=20000
+      const killDth = Math.min(r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath, 10)
+      const dmgDth  = Math.min(r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath,   20000)
+      return killDth * 3.247      // ×4  (avg 1.232 → contribui 4.0)
+           + dmgDth  * 0.000504   // ×2  (avg 3967 → contribui 2.0)
+           + r.goldMin * 0.002310 // ×1  (avg 433 → contribui 1.0)
+           + r.killShare * 2.110  // ×1  (avg 0.474 → contribui 1.0)
+    },
+    bruiser: (r) => {
+      // Caps: damPerDeath=20000, goldPerDeath=8000
+      const dmgDth  = Math.min(r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath,   20000)
+      const goldDth = Math.min(r.goldPerDeath  === Infinity ? 1000000 : r.goldPerDeath,  8000)
+      return r.netDamPerGame * 0.0001675  // ×4  (avg 23881 → contribui 4.0)
+           + dmgDth  * 0.000555           // ×2  (avg 3599 → contribui 2.0)
+           + goldDth * 0.000475           // ×1  (avg 2104 → contribui 1.0)
+    },
+    tank: (r) => {
+      return r.mitMin * 0.00267   // ×4  (avg 1497 → contribui 4.0)
+           + r.dtMin * 0.001834   // ×2  (avg 1091 → contribui 2.0)
+           + r.ccMin * 0.7072     // ×1  (avg 1.4142 → contribui 1.0)
+    },
+    suporte: (r) => {
+      // Caps: assistsPerDeath=10, visionPerDeath=50, wardsAndWKPerDeath=50
+      const assPerDth  = Math.min(r.assistsPerDeath     === Infinity ? 1000000 : r.assistsPerDeath,     10)
+      const visPerDth  = Math.min(r.visionPerDeath      === Infinity ? 1000000 : r.visionPerDeath,      50)
+      const wardPerDth = Math.min(r.wardsAndWKPerDeath  === Infinity ? 1000000 : r.wardsAndWKPerDeath,  50)
+      return assPerDth  * 0.763   // ×2  (avg 2.622 → contribui 2.0)
+           + visPerDth  * 0.2515  // ×2  (avg 7.963 → contribui 2.0)
+           + wardPerDth * 0.0840  // ×1  (avg 11.911 → contribui 1.0)
     },
   }
 
   const scoreFn = lensScoreFunctions[lens]
   if (!scoreFn) return // Invalid lens
 
-  // Calculate raw scores for all rows
-  const scores = rows.map(r => scoreFn(r))
-  const minScore = Math.min(...scores)
-  const maxScore = Math.max(...scores)
-  const scoreRange = maxScore - minScore || 1 // avoid division by zero
+  const thresholds = LENS_THRESHOLDS[lens]
+  if (!thresholds) return // Invalid lens
 
-  // Normalize scores to [0.0, 1.0]
-  rows.forEach((r, i) => {
-    const normalizedScore = (scores[i] - minScore) / scoreRange
+  // Calculate raw scores and map to absolute rank thresholds
+  rows.forEach((r) => {
+    const rawScore = scoreFn(r)
+    
+    // Find rank by finding the highest threshold that rawScore meets or exceeds
+    let rankIdx = 0
+    for (let i = thresholds.length - 1; i >= 0; i--) {
+      if (rawScore >= thresholds[i]) {
+        rankIdx = i
+        break
+      }
+    }
+
     r.identRank = {
-      score: normalizedScore,
-      label: RANK_THRESHOLDS.findLast(t => normalizedScore >= t.minScore)?.label || 'Iron',
-      name: RANK_THRESHOLDS.findLast(t => normalizedScore >= t.minScore)?.name || 'iron',
-      imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_THRESHOLDS.findLast(t => normalizedScore >= t.minScore)?.name || 'iron'}.png`,
+      score: rawScore,
+      label: RANK_LABELS[rankIdx],
+      name: RANK_NAMES[rankIdx],
+      imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`,
     }
   })
 }
@@ -647,19 +657,19 @@ function renderPlayerTable() {
        cellHTML += `<td class="text-right text-xs ${cellCls} text-slate-500">${r.unmatched}</td>`
      }
      
-     for (const colKey of dynamicCols) {
-       const meta = COL_META[colKey]
-       const val = r[colKey]
-       
-       // Special rendering for identRank
-       if (colKey === 'identRank' && val) {
-         const formatted = `<img src="${val.imgUrl}" class="w-6 h-6 inline align-text-bottom" title="Score: ${val.score.toFixed(3)}"> <span class="text-xs">${val.label}</span>`
-         cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-       } else {
-         const formatted = meta.fmt(val)
-         cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-       }
-     }
+      for (const colKey of dynamicCols) {
+        const meta = COL_META[colKey]
+        const val = r[colKey]
+        
+        // Special rendering for identRank
+        if (colKey === 'identRank' && val) {
+          const formatted = `<div class="flex items-center justify-end gap-1"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs">${val.label}</span></div>`
+          cellHTML += `<td class="${cellCls}">${formatted}</td>`
+        } else {
+          const formatted = meta.fmt(val)
+          cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+        }
+      }
      
      return cellHTML
    }
