@@ -107,8 +107,8 @@ document.addEventListener('alpine:init', () => {
       const puuidToName = {}
       const puuidToId = {}
       for (const p of players) {
-        puuidToName[p.riot_puuid] = p.name
-        puuidToId[p.riot_puuid] = p.id
+        puuidToName[p.puuid] = p.name
+        puuidToId[p.puuid] = p.id
       }
       return { puuidToName, puuidToId }
     },
