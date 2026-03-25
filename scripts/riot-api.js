@@ -271,6 +271,8 @@ const RiotApi = (() => {
       if (stats.topPlayerId) p.top_player    = stats.topPlayerId
       if (stats.win != null) p.win            = stats.win
       if (stats.side)   p.side               = stats.side
+      if (stats.ourChampKeys?.length)   p.our_champs   = stats.ourChampKeys
+      if (stats.enemyChampKeys?.length) p.enemy_champs = stats.enemyChampKeys
       return p
     },
 

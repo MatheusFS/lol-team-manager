@@ -62,7 +62,7 @@
         <!-- Date range row -->
         <div>
           <label class="block text-xs text-slate-400 mb-1">De</label>
-          <input x-model="startDate" type="date" min="2025-01-01" :max="endDate"
+          <input x-model="startDate" type="date" :max="endDate"
                  class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-yellow-500">
         </div>
         <div>
@@ -389,6 +389,10 @@
                         'bg-slate-700 text-slate-500':          !card.hasData && card.confidence === 0,
                       }"
                       x-text="card.confLabel"></span>
+                <!-- OP.GG link -->
+                <a :href="opggUrl(card.riotId)" target="_blank" rel="noopener noreferrer"
+                   class="shrink-0 text-slate-400 hover:text-slate-200 transition-colors text-xs underline"
+                   title="Abrir no OP.GG">OP.GG</a>
                 <!-- Import button -->
                 <button x-show="card.canImport"
                         @click="importSingle(card.riotId)"

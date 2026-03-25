@@ -5,7 +5,7 @@ document.addEventListener('alpine:init', () => {
     apiKey:        '',
     region:        'BR1',
     summoner:      '',
-    startDate:     '2025-01-01',
+    startDate:     '2026-01-01',
     endDate:       '',
     playerRiotIds: [],
 
@@ -872,6 +872,13 @@ document.addEventListener('alpine:init', () => {
 
     get statusCls() {
       return ({ info:'text-slate-400', error:'text-red-400', ok:'text-green-400' })[this.statusType] ?? 'text-slate-400'
+    },
+
+    opggUrl(riotId) {
+      const regionCode = this.region.toLowerCase().replace(/\d+$/, '')  // BR1 → br, NA1 → na
+      const [gameName, tagLine] = this.summoner.split('#')
+      const summonerName = `${gameName}-${tagLine}`
+      return `https://op.gg/lol/summoners/${regionCode}/${summonerName}/matches/${riotId}`
     },
 
     fmtGdf(v)  { return (v >= 0 ? '+' : '') + v.toLocaleString('en') },
