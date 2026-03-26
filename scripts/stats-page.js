@@ -702,6 +702,17 @@ function buildObjectiveSection(M) {
 // ── Table: Desempenho por Jogador (Consolidated with Sortable Columns) ────────
 let _playerRows = []
 let _playerSort = { col: 'wr', dir: -1 }
+let _identityRanks = {}  // { playerName → { carry, assassino, bruiser, tank, suporte } }
+                         // Each value: identRank object { score, label, name, imgUrl } | null
+
+// Map identity count columns to their lens names
+const IDENTITY_COL_TO_LENS = {
+  nCarry: 'carry',
+  nAssassino: 'assassino',
+  nBruiser: 'bruiser',
+  nTank: 'tank',
+  nSuporte: 'suporte'
+}
 
 // Compute identity rank for each player based on lens-specific score.
 // Uses DB-driven coefficients and thresholds derived from loadRankConfig().
@@ -812,16 +823,30 @@ function renderPlayerTable() {
         const meta = COL_META[colKey]
         const val = r[colKey]
         
-        // Special rendering for identRank
-        if (colKey === 'identRank' && val) {
-          const rankIdx = RANK_NAMES.indexOf(val.name)
-          const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-           const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
-          cellHTML += `<td class="${cellCls}">${formatted}</td>`
-        } else {
-          const formatted = meta.fmt(val)
-          cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-        }
+         // Special rendering for identRank
+         if (colKey === 'identRank' && val) {
+           const rankIdx = RANK_NAMES.indexOf(val.name)
+           const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+            const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
+           cellHTML += `<td class="${cellCls}">${formatted}</td>`
+         } else if (IDENTITY_COL_TO_LENS[colKey] && val >= 10) {
+           // Special rendering for identity count columns when N >= 10: show rank badge
+           const lensKey = IDENTITY_COL_TO_LENS[colKey]
+           const identRank = _identityRanks[r.name]?.[lensKey]
+           if (identRank) {
+             const rankIdx = RANK_NAMES.indexOf(identRank.name)
+             const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+             const formatted = `<div class="flex items-center justify-end gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="Score: ${identRank.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${identRank.label}</span></div>`
+             cellHTML += `<td class="${cellCls}">${formatted}</td>`
+           } else {
+             // No rank data available
+             const formatted = meta.fmt(val)
+             cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+           }
+         } else {
+           const formatted = meta.fmt(val)
+           cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+         }
       }
      
      return cellHTML
@@ -850,49 +875,9 @@ function renderPlayerTable() {
    document.getElementById('player-perf-table').innerHTML = tableHTML
 }
 
-function buildPlayerTable(M) {
-  const riotM = M.filter(m => m.player_stats?.length)
-  if (!riotM.length) {
-    document.getElementById('player-perf-table').innerHTML =
-      '<p class="text-xs text-slate-500">Sem partidas com dados Riot API.</p>'
-    return
-  }
-
-  document.getElementById('player-perf-n').textContent = riotM.length
-
-  // Build champion lookup: normalized key → champion entry (with class, damage_type)
-  const champStore = Alpine.store('champions')
-  const champByKey = {}
-  for (const c of champStore.list) {
-    champByKey[normChampKey(c.key)] = c
-  }
-
-  // Get filter function for current lens
-  const lensFilter = LENS_DEFS[_playerLens].filter
-
-  // First pass: count total, unclassified, and identity distribution per player
-  const mapAll = {}
-  for (const m of riotM) {
-    for (const ps of m.player_stats) {
-      if (!ps.name) continue
-      const champKey = normChampKey(ps.champion)
-      const champEntry = champByKey[champKey] ?? null
-      const p = mapAll[ps.name] ??= { 
-        nTotal: 0, nUnclassified: 0, 
-        nCarry: 0, nAssassino: 0, nBruiser: 0, nTank: 0, nSuporte: 0 
-      }
-      p.nTotal++
-      
-      // Count identity distribution
-      if (isCarry(champEntry)) p.nCarry++
-      else if (champEntry?.class === 'Assassin') p.nAssassino++
-      else if (isBruiser(champEntry)) p.nBruiser++
-      else if (champEntry?.class === 'Tank') p.nTank++
-      else if (champEntry?.class === 'Support') p.nSuporte++
-      else p.nUnclassified++
-    }
-  }
-
+// Helper: aggregate stats for a given lens filter
+// Returns array of row objects with fully computed metrics
+function aggregateRows(riotM, champByKey, lensFilter, mapAll) {
   // Second pass: aggregate stats for matches that pass lens filter
   const map = {}
   for (const m of riotM) {
@@ -934,7 +919,7 @@ function buildPlayerTable(M) {
     }
   }
 
-  _playerRows = Object.entries(map)
+  return Object.entries(map)
     .map(([name, p]) => ({
       name,
       n:         p.n,
@@ -986,12 +971,109 @@ function buildPlayerTable(M) {
       nTank:     mapAll[name]?.nTank ?? 0,
       nSuporte:  mapAll[name]?.nSuporte ?? 0,
     }))
+}
+
+// Compute identity ranks for all 5 identity lenses (Carry, Assassino, Bruiser, Tank, Suporte)
+// Stores results in _identityRanks object: { playerName → { carry, assassino, bruiser, tank, suporte } }
+function buildIdentityRanks(riotM, champByKey) {
+  const identityLenses = ['carry', 'assassino', 'bruiser', 'tank', 'suporte']
+  
+  _identityRanks = {}
+  
+  for (const lensKey of identityLenses) {
+    // Get the filter function for this identity lens
+    const lensFilter = LENS_DEFS[lensKey].filter
+    
+    // Aggregate rows for this lens
+    const mapAll = {}
+    for (const m of riotM) {
+      for (const ps of m.player_stats) {
+        if (!ps.name) continue
+        const champKey = normChampKey(ps.champion)
+        const champEntry = champByKey[champKey] ?? null
+        const p = mapAll[ps.name] ??= { 
+          nTotal: 0, nUnclassified: 0, 
+          nCarry: 0, nAssassino: 0, nBruiser: 0, nTank: 0, nSuporte: 0 
+        }
+        p.nTotal++
+        
+        // Count identity distribution
+        if (isCarry(champEntry)) p.nCarry++
+        else if (champEntry?.class === 'Assassin') p.nAssassino++
+        else if (isBruiser(champEntry)) p.nBruiser++
+        else if (champEntry?.class === 'Tank') p.nTank++
+        else if (champEntry?.class === 'Support') p.nSuporte++
+        else p.nUnclassified++
+      }
+    }
+    
+    // Aggregate rows for this lens
+    const rows = aggregateRows(riotM, champByKey, lensFilter, mapAll)
+    
+    // Compute identity ranks for this lens
+    computeIdentityRanks(rows, lensKey)
+    
+    // Store ranks by player name
+    for (const player of rows) {
+      if (!_identityRanks[player.name]) _identityRanks[player.name] = {}
+      _identityRanks[player.name][lensKey] = player.identRank
+    }
+  }
+}
+
+function buildPlayerTable(M) {
+  const riotM = M.filter(m => m.player_stats?.length)
+  if (!riotM.length) {
+    document.getElementById('player-perf-table').innerHTML =
+      '<p class="text-xs text-slate-500">Sem partidas com dados Riot API.</p>'
+    return
+  }
+
+  document.getElementById('player-perf-n').textContent = riotM.length
+
+  // Build champion lookup: normalized key → champion entry (with class, damage_type)
+  const champStore = Alpine.store('champions')
+  const champByKey = {}
+  for (const c of champStore.list) {
+    champByKey[normChampKey(c.key)] = c
+  }
+
+  // Get filter function for current lens
+  const lensFilter = LENS_DEFS[_playerLens].filter
+
+  // First pass: count total, unclassified, and identity distribution per player
+  const mapAll = {}
+  for (const m of riotM) {
+    for (const ps of m.player_stats) {
+      if (!ps.name) continue
+      const champKey = normChampKey(ps.champion)
+      const champEntry = champByKey[champKey] ?? null
+      const p = mapAll[ps.name] ??= { 
+        nTotal: 0, nUnclassified: 0, 
+        nCarry: 0, nAssassino: 0, nBruiser: 0, nTank: 0, nSuporte: 0 
+      }
+      p.nTotal++
+      
+      // Count identity distribution
+      if (isCarry(champEntry)) p.nCarry++
+      else if (champEntry?.class === 'Assassin') p.nAssassino++
+      else if (isBruiser(champEntry)) p.nBruiser++
+      else if (champEntry?.class === 'Tank') p.nTank++
+      else if (champEntry?.class === 'Support') p.nSuporte++
+      else p.nUnclassified++
+    }
+  }
+
+  // Aggregate stats using the lens filter
+  _playerRows = aggregateRows(riotM, champByKey, lensFilter, mapAll)
 
   // Compute identity ranks for active lens (if not Geral)
   if (_playerLens !== 'geral') {
     computeIdentityRanks(_playerRows, _playerLens)
   } else {
-    // For Geral lens, set identRank to null (not displayed)
+    // For Geral lens, compute identity ranks for all 5 lenses for badge display
+    buildIdentityRanks(riotM, champByKey)
+    // Set identRank to null (not displayed in geral lens)
     _playerRows.forEach(r => { r.identRank = null })
   }
 
