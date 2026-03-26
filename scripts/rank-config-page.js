@@ -128,6 +128,13 @@ Alpine.data('rankConfigPage', () => ({
     const ANCHOR = 4 // Platinum
 
     // ── Runtime-derived fields (not stored in PocketBase) ──────────────────
+    // assists_per_game = kda × deaths − kills
+    const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
+    // kill_secured = kills / (kills + assists)
+    const kill_secured = G.kills_per_game.map((k, i) => {
+      const denom = k + assists_per_game[i]
+      return denom > 0 ? k / denom : 0
+    })
     // per_min = per_game / game_time_min
     const damage_per_min           = G.damage_per_game.map((v, i)           => v / G.game_time_min[i])
     const gold_per_min             = G.gold_per_game.map((v, i)             => v / G.game_time_min[i])
@@ -136,13 +143,9 @@ Alpine.data('rankConfigPage', () => ({
     const damage_taken_per_min     = G.damage_taken_per_game.map((v, i)     => v / G.game_time_min[i])
     const damage_mitigated_per_min = G.damage_mitigated_per_game.map((v, i) => v / G.game_time_min[i])
     const cc_per_min               = G.cc_per_game.map((v, i)               => v / G.game_time_min[i])
-    // assists_per_game = kda × deaths − kills
-    const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
-    // kill_secured = kills / (kills + assists)
-    const kill_secured = G.kills_per_game.map((k, i) => {
-      const denom = k + assists_per_game[i]
-      return denom > 0 ? k / denom : 0
-    })
+    const kills_per_min            = G.kills_per_game.map((v, i)            => v / G.game_time_min[i])
+    const assists_per_min          = assists_per_game.map((v, i)            => v / G.game_time_min[i])
+    const wards_and_wk_per_min     = G.wards_and_wk_per_game.map((v, i)     => v / G.game_time_min[i])
 
     const applyCap = (v, cap) => (cap != null ? Math.min(v, cap) : v)
 
@@ -171,6 +174,9 @@ Alpine.data('rankConfigPage', () => ({
          case 'damage_mitigated_per_min': return damage_mitigated_per_min[ri]
          case 'damage_taken_per_min':     return damage_taken_per_min[ri]
          case 'cc_per_min':               return cc_per_min[ri]
+         case 'kills_per_min':            return kills_per_min[ri]
+         case 'assists_per_min':          return assists_per_min[ri]
+         case 'wards_and_wk_per_min':     return wards_and_wk_per_min[ri]
          // ── Direct empirical ────────────────────────────────────────────────
          case 'kill_participation':   return G.kill_participation[ri]
          case 'kill_secured':         return kill_secured[ri]
@@ -227,6 +233,9 @@ Alpine.data('rankConfigPage', () => ({
       damage_taken_per_min:     G.damage_taken_per_game?.map((v, i)     => v / t[i]),
       damage_mitigated_per_min: G.damage_mitigated_per_game?.map((v, i) => v / t[i]),
       cc_per_min:               G.cc_per_game?.map((v, i)               => v / t[i]),
+      kills_per_min:            G.kills_per_game?.map((v, i)            => v / t[i]),
+      assists_per_min:          assists_per_game?.map((v, i)            => v / t[i]),
+      wards_and_wk_per_min:     G.wards_and_wk_per_game?.map((v, i)     => v / t[i]),
       kill_secured:             G.kills_per_game?.map((k, i) => {
         const denom = k + (assists_per_game?.[i] ?? 0)
         return denom > 0 ? k / denom : 0

@@ -151,7 +151,7 @@ async function loadRankConfig() {
 //   control_wards_placed, wards_and_wk_per_game
 //
 // Runtime-computed fields (derived, NOT stored in PocketBase):
-//   per_min = per_game / game_time_min  (gold, cs, vision_score, damage_taken, damage_mitigated, cc)
+//   per_min = per_game / game_time_min  (gold, cs, vision_score, damage_taken, damage_mitigated, cc, kills, assists, wards_and_wk)
 //   assists_per_game = kda × deaths_per_game − kills_per_game
 //   kill_secured     = kills_per_game / (kills_per_game + assists_per_game)
 //
@@ -174,6 +174,9 @@ async function loadRankConfig() {
 //   'damage_mitigated_per_min' → damage_mitigated_per_game / game_time_min
 //   'damage_taken_per_min'     → damage_taken_per_game / game_time_min
 //   'cc_per_min'               → cc_per_game / game_time_min
+//   'kills_per_min'            → kills_per_game / game_time_min
+//   'assists_per_min'          → assists_per_game / game_time_min
+//   'wards_and_wk_per_min'     → wards_and_wk_per_game / game_time_min
 //   'kill_participation'       → G.kill_participation[ri]
 //   'kill_secured'             → kills_per_game / (kills_per_game + assists_per_game)
 //   'kda'                      → G.kda[ri]
@@ -189,6 +192,13 @@ function deriveScoreConfig(G, lensCfg) {
   const ANCHOR = 4 // Platinum
 
   // ── Runtime-derived fields (not stored in PocketBase) ─────────────────────
+  // assists_per_game = kda × deaths − kills
+  const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
+  // kill_secured = kills / (kills + assists)
+  const kill_secured = G.kills_per_game.map((k, i) => {
+    const denom = k + assists_per_game[i]
+    return denom > 0 ? k / denom : 0
+  })
   // per_min = per_game / game_time_min
   const damage_per_min           = G.damage_per_game.map((v, i)           => v / G.game_time_min[i])
   const gold_per_min             = G.gold_per_game.map((v, i)             => v / G.game_time_min[i])
@@ -197,13 +207,9 @@ function deriveScoreConfig(G, lensCfg) {
   const damage_taken_per_min     = G.damage_taken_per_game.map((v, i)     => v / G.game_time_min[i])
   const damage_mitigated_per_min = G.damage_mitigated_per_game.map((v, i) => v / G.game_time_min[i])
   const cc_per_min               = G.cc_per_game.map((v, i)               => v / G.game_time_min[i])
-  // assists_per_game = kda × deaths − kills
-  const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
-  // kill_secured = kills / (kills + assists)
-  const kill_secured = G.kills_per_game.map((k, i) => {
-    const denom = k + assists_per_game[i]
-    return denom > 0 ? k / denom : 0
-  })
+  const kills_per_min            = G.kills_per_game.map((v, i)            => v / G.game_time_min[i])
+  const assists_per_min          = assists_per_game.map((v, i)            => v / G.game_time_min[i])
+  const wards_and_wk_per_min     = G.wards_and_wk_per_game.map((v, i)     => v / G.game_time_min[i])
 
   // Get raw (uncapped) benchmark value for a metric at rank index ri
   function rawBenchmark(m, ri) {
@@ -223,14 +229,17 @@ function deriveScoreConfig(G, lensCfg) {
       case 'damage_per_min/damage_taken_per_min':           return G.damage_per_game[ri]           / G.damage_taken_per_game[ri]
       case 'damage_mitigated_per_min/damage_taken_per_min': return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
       case 'damage_mitigated/damage_taken':                 return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
-      // ── Direct per_min (runtime-computed) ──────────────────────────────
-      case 'damage_per_min':           return damage_per_min[ri]
-      case 'gold_per_min':             return gold_per_min[ri]
-      case 'cs_per_min':               return cs_per_min[ri]
-      case 'vision_score_per_min':     return vision_score_per_min[ri]
-      case 'damage_mitigated_per_min': return damage_mitigated_per_min[ri]
-      case 'damage_taken_per_min':     return damage_taken_per_min[ri]
-      case 'cc_per_min':               return cc_per_min[ri]
+       // ── Direct per_min (runtime-computed) ──────────────────────────────
+       case 'damage_per_min':           return damage_per_min[ri]
+       case 'gold_per_min':             return gold_per_min[ri]
+       case 'cs_per_min':               return cs_per_min[ri]
+       case 'vision_score_per_min':     return vision_score_per_min[ri]
+       case 'damage_mitigated_per_min': return damage_mitigated_per_min[ri]
+       case 'damage_taken_per_min':     return damage_taken_per_min[ri]
+       case 'cc_per_min':               return cc_per_min[ri]
+       case 'kills_per_min':            return kills_per_min[ri]
+       case 'assists_per_min':          return assists_per_min[ri]
+       case 'wards_and_wk_per_min':     return wards_and_wk_per_min[ri]
       // ── Direct empirical ────────────────────────────────────────────────
       case 'kill_participation':     return G.kill_participation[ri]
       case 'kill_secured':           return kill_secured[ri]
@@ -297,7 +306,7 @@ function hasNoLens(champEntry) {
 
 const LENS_DEFS = {
   geral:     { defaultSort: 'wr',        filter: () => true,                   cols: ['deathMin','killParticipation','controlWardsAvg','nCarry','nAssassino','nBruiser','nTank','nSuporte'] },
-  carry:     { defaultSort: 'identRank', filter: isCarry,                      cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','csPerMin','csPerDeath','killShare','identRank'] },
+  carry:     { defaultSort: 'identRank', filter: isCarry,                      cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','csPerMin','csPerDeath','killParticipation','identRank'] },
   assassino: { defaultSort: 'identRank', filter: c => c?.class === 'Assassin', cols: ['killsMin','damPerDeath','killSecured','goldPerMin','identRank'] },
   bruiser:   { defaultSort: 'identRank', filter: isBruiser,                    cols: ['damPerDmgRec','damPerDeath','goldPerDeath','identRank'] },
    tank:      { defaultSort: 'identRank', filter: c => c?.class === 'Tank',     cols: ['mitPerDmgRec','mitPerMin','mitPerDeath','dtPerDeath','ccMin','identRank'] },
