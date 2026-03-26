@@ -790,9 +790,9 @@ function renderPlayerTable() {
       return dir * (a[col] - b[col])
     })
    
-   const arrow  = c => c === col ? (dir === -1 ? ' ↓' : ' ↑') : ''
-   const th     = (c, label, extra = '') =>
-     `<th class="text-right py-2 cursor-pointer select-none hover:text-slate-300 ${extra}" onclick="sortPlayerTable('${c}')">${label}${arrow(c)}</th>`
+    const arrow  = c => c === col ? (dir === -1 ? ' ↓' : ' ↑') : ''
+    const th     = (c, label, extra = '') =>
+      `<th class="text-center py-2 cursor-pointer select-none hover:text-slate-300 ${extra}" onclick="sortPlayerTable('${c}')">${label}${arrow(c)}</th>`
 
    const validRows = sorted.filter(r => r.n >= 10)
    const anecdotalRows = sorted.filter(r => r.n < 10)
