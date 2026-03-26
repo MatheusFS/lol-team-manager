@@ -823,30 +823,37 @@ function renderPlayerTable() {
         const meta = COL_META[colKey]
         const val = r[colKey]
         
-         // Special rendering for identRank
-         if (colKey === 'identRank' && val) {
-           const rankIdx = RANK_NAMES.indexOf(val.name)
-           const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-            const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
-           cellHTML += `<td class="${cellCls}">${formatted}</td>`
-         } else if (IDENTITY_COL_TO_LENS[colKey] && val >= 10) {
-           // Special rendering for identity count columns when N >= 10: show rank badge
-           const lensKey = IDENTITY_COL_TO_LENS[colKey]
-           const identRank = _identityRanks[r.name]?.[lensKey]
-           if (identRank) {
-             const rankIdx = RANK_NAMES.indexOf(identRank.name)
-             const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-             const formatted = `<div class="flex items-center justify-end gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="Score: ${identRank.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${identRank.label}</span></div>`
-             cellHTML += `<td class="${cellCls}">${formatted}</td>`
-           } else {
-             // No rank data available
-             const formatted = meta.fmt(val)
-             cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-           }
-         } else {
-           const formatted = meta.fmt(val)
-           cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-         }
+          // Special rendering for identRank
+          if (colKey === 'identRank' && val) {
+            const rankIdx = RANK_NAMES.indexOf(val.name)
+            const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+             const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
+            cellHTML += `<td class="${cellCls}">${formatted}</td>`
+          } else if (IDENTITY_COL_TO_LENS[colKey]) {
+            // Special rendering for identity count columns
+            const lensKey = IDENTITY_COL_TO_LENS[colKey]
+            if (val < 5) {
+              // Show travessão when N < 5
+              cellHTML += `<td class="text-right ${cellCls}">—</td>`
+            } else {
+              // Show rank badge with score and N info when N >= 5
+              const identRank = _identityRanks[r.name]?.[lensKey]
+              if (identRank) {
+                const rankIdx = RANK_NAMES.indexOf(identRank.name)
+                const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+                const title = `Score: ${identRank.score.toFixed(2)} | N: ${val}`
+                const formatted = `<div class="flex items-center justify-end gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="${title}"><span class="text-xs font-bold uppercase ${colorCls}">${identRank.label}</span></div>`
+                cellHTML += `<td class="${cellCls}">${formatted}</td>`
+              } else {
+                // No rank data available, show raw count
+                const formatted = meta.fmt(val)
+                cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+              }
+            }
+          } else {
+            const formatted = meta.fmt(val)
+            cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
+          }
       }
      
      return cellHTML
