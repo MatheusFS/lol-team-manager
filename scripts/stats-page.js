@@ -307,7 +307,7 @@ function hasNoLens(champEntry) {
 const LENS_DEFS = {
   geral:     { defaultSort: 'wr',        filter: () => true,                   cols: ['deathMin','killParticipation','controlWardsAvg','nCarry','nAssassino','nBruiser','nTank','nSuporte'] },
   carry:     { defaultSort: 'identRank', filter: isCarry,                      cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','csPerMin','csPerDeath','killParticipation','identRank'] },
-  assassino: { defaultSort: 'identRank', filter: c => c?.class === 'Assassin', cols: ['killsMin','damPerDeath','killSecured','goldPerMin','identRank'] },
+  assassino: { defaultSort: 'identRank', filter: c => c?.class === 'Assassin', cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','identRank'] },
   bruiser:   { defaultSort: 'identRank', filter: isBruiser,                    cols: ['damPerDmgRec','damPerDeath','goldPerDeath','identRank'] },
    tank:      { defaultSort: 'identRank', filter: c => c?.class === 'Tank',     cols: ['mitPerDmgRec','mitPerMin','mitPerDeath','dtPerDeath','ccMin','identRank'] },
   suporte:   { defaultSort: 'identRank', filter: c => c?.class === 'Support',  cols: ['assistsMin','assistsPerDeath','visionMin','visionPerDeath','controlWardsAvg','wardsMin','wardsAndWKPerDeath','identRank'] },
