@@ -96,18 +96,168 @@ let _showAnecdotal = {
 // ── Player Performance Lens Definitions ───────────────────────────────────
 let _playerLens = 'geral'
 
-// ── Rank thresholds (absolute fixed values per lens) ──────────────────────────
-// Each lens has its own threshold map. Gold = average (sum of target weights).
-// Thresholds are based on multiples of the calibrated mean and never change.
-const LENS_THRESHOLDS = {
-  carry:     [0, 6.0, 9.0, 11.0, 13.0, 16.0, 20.0, 30.0, 42.0, 60.0],
-  assassino: [0, 4.0, 6.0,  7.4,  8.6, 10.6, 13.4, 20.0, 28.0, 40.0],
-  bruiser:   [0, 3.5, 5.25, 6.4,  7.6,  9.3, 11.7, 17.5, 24.5, 35.0],
-  tank:      [0, 3.5, 5.25, 6.4,  7.6,  9.3, 11.7, 17.5, 24.5, 35.0],
-  suporte:   [0, 2.5, 3.75, 4.6,  5.4, 6.65, 8.35, 12.5, 17.5, 25.0],
-}
-const RANK_NAMES = ['iron','bronze','silver','gold','platinum','emerald','diamond','master','grandmaster','challenger']
+// ── Rank config (loaded from DB; derived at runtime from benchmarks + lens params) ──
+const RANK_NAMES  = ['iron','bronze','silver','gold','platinum','emerald','diamond','master','grandmaster','challenger']
 const RANK_LABELS = ['Iron','Bronze','Silver','Gold','Platinum','Emerald','Diamond','Master','Grandmaster','Challenger']
+// Tailwind text-color classes aligned to LoL rank palette
+// Iron=zinc, Bronze=amber-dark, Silver=slate-light, Gold=yellow, Platinum=teal,
+// Emerald=emerald, Diamond=cyan, Master=purple, Grandmaster=red, Challenger=vivid-orange
+const RANK_COLORS = [
+  'text-zinc-500',    // 0 Iron
+  'text-amber-700',   // 1 Bronze
+  'text-slate-300',   // 2 Silver
+  'text-yellow-400',  // 3 Gold
+  'text-teal-400',    // 4 Platinum
+  'text-emerald-400', // 5 Emerald
+  'text-cyan-300',    // 6 Diamond
+  'text-purple-400',  // 7 Master
+  'text-red-500',     // 8 Grandmaster
+  'text-orange-400',  // 9 Challenger
+]
+
+// In-memory cache populated by loadRankConfig(). Keyed by lens name.
+// Each entry: { thresholds: number[10], coefficients: { [metricKey]: number } }
+let _rankConfig = {}
+
+// Load rank_config records from PocketBase and derive per-lens thresholds + coefficients.
+// Falls back to empty config (no-op) on error — ranks simply won't render.
+async function loadRankConfig() {
+  try {
+    const data = await api.col('rank_config').list({ perPage: 20 })
+    const records = data.items
+    const globalRec = records.find(r => r.name === 'global')
+    if (!globalRec) return
+    const G = globalRec.config.benchmarks  // { damage_per_game, gold_per_game, kda, cs_per_min, game_time_min }
+
+    for (const rec of records) {
+      if (rec.name === 'global') continue
+      _rankConfig[rec.name] = deriveScoreConfig(G, rec.config)
+    }
+  } catch (err) {
+    console.error('[rank_config] Failed to load rank config from DB:', err)
+  }
+}
+
+// Derive thresholds and coefficients for a single lens from global benchmarks + lens config.
+//
+// Rank order in all arrays (index 0–9):
+//   [Iron, Bronze, Silver, Gold, Platinum, Emerald, Diamond, Master, Grandmaster, Challenger]
+//
+// Global benchmark fields stored in PocketBase (empirical, editable):
+//   kills_per_game, deaths_per_game, kda, kill_participation,
+//   game_time_min, damage_per_game,
+//   gold_per_game, cs_per_game, vision_score_per_game,
+//   damage_taken_per_game, damage_mitigated_per_game, cc_per_game,
+//   control_wards_placed, wards_and_wk_per_game
+//
+// Runtime-computed fields (derived, NOT stored in PocketBase):
+//   per_min = per_game / game_time_min  (gold, cs, vision_score, damage_taken, damage_mitigated, cc)
+//   assists_per_game = kda × deaths_per_game − kills_per_game
+//   kill_secured     = kills_per_game / (kills_per_game + assists_per_game)
+//
+// Metric sources (m.source string → formula):
+//   'damage_per_game/deaths'                       → damage_per_game / deaths_per_game
+//   'gold_per_game/deaths'                         → gold_per_game / deaths_per_game
+//   'kills_per_game/deaths'                       → kills_per_game / deaths_per_game
+//   'assists_per_game/deaths'                     → assists_per_game / deaths_per_game
+//   'cs_per_game/deaths'                           → cs_per_game / deaths_per_game
+//   'vision_score_per_game/deaths'                 → vision_score_per_game / deaths_per_game
+//   'damage_mitigated_per_game/deaths'             → damage_mitigated_per_game / deaths_per_game
+//   'damage_taken_per_game/deaths'                 → damage_taken_per_game / deaths_per_game
+//   'control_wards/deaths'                        → control_wards_placed / deaths_per_game
+//   'wards_and_wk/deaths'                         → wards_and_wk_per_game / deaths_per_game
+//   'damage_per_min/damage_taken_per_min'         → damage_per_game / damage_taken_per_game
+//   'damage_mitigated_per_min/damage_taken_per_min' → damage_mitigated_per_game / damage_taken_per_game
+//   'gold_per_min'             → gold_per_game / game_time_min
+//   'cs_per_min'               → cs_per_game / game_time_min
+//   'vision_score_per_min'     → vision_score_per_game / game_time_min
+//   'damage_mitigated_per_min' → damage_mitigated_per_game / game_time_min
+//   'damage_taken_per_min'     → damage_taken_per_game / game_time_min
+//   'cc_per_min'               → cc_per_game / game_time_min
+//   'kill_participation'       → G.kill_participation[ri]
+//   'kill_secured'             → kills_per_game / (kills_per_game + assists_per_game)
+//   'kda'                      → G.kda[ri]
+//   'control_wards_per_game'   → G.control_wards_placed[ri]
+//
+// Coefficient anchor: Platinum (index 4).
+// coefficient = weight_points / Platinum_value  (so that Platinum score = sum of weight_points)
+//
+// 10 rank thresholds computed directly — no interpolation step.
+function deriveScoreConfig(G, lensCfg) {
+  const { assumptions = {}, metrics } = lensCfg
+  const R = 10
+  const ANCHOR = 4 // Platinum
+
+  // ── Runtime-derived fields (not stored in PocketBase) ─────────────────────
+  // per_min = per_game / game_time_min
+  const damage_per_min           = G.damage_per_game.map((v, i)           => v / G.game_time_min[i])
+  const gold_per_min             = G.gold_per_game.map((v, i)             => v / G.game_time_min[i])
+  const cs_per_min               = G.cs_per_game.map((v, i)               => v / G.game_time_min[i])
+  const vision_score_per_min     = G.vision_score_per_game.map((v, i)     => v / G.game_time_min[i])
+  const damage_taken_per_min     = G.damage_taken_per_game.map((v, i)     => v / G.game_time_min[i])
+  const damage_mitigated_per_min = G.damage_mitigated_per_game.map((v, i) => v / G.game_time_min[i])
+  const cc_per_min               = G.cc_per_game.map((v, i)               => v / G.game_time_min[i])
+  // assists_per_game = kda × deaths − kills
+  const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
+  // kill_secured = kills / (kills + assists)
+  const kill_secured = G.kills_per_game.map((k, i) => {
+    const denom = k + assists_per_game[i]
+    return denom > 0 ? k / denom : 0
+  })
+
+  // Get raw (uncapped) benchmark value for a metric at rank index ri
+  function rawBenchmark(m, ri) {
+    switch (m.source) {
+      // ── Per-death: X_per_game / deaths_per_game ────────────────────────
+      case 'damage_per_game/deaths':           return G.damage_per_game[ri]           / G.deaths_per_game[ri]
+      case 'kills_per_game/deaths':           return G.kills_per_game[ri]            / G.deaths_per_game[ri]
+      case 'assists_per_game/deaths':         return assists_per_game[ri]            / G.deaths_per_game[ri]
+      case 'gold_per_game/deaths':             return G.gold_per_game[ri]             / G.deaths_per_game[ri]
+      case 'cs_per_game/deaths':               return G.cs_per_game[ri]               / G.deaths_per_game[ri]
+      case 'vision_score_per_game/deaths':     return G.vision_score_per_game[ri]     / G.deaths_per_game[ri]
+      case 'damage_mitigated_per_game/deaths': return G.damage_mitigated_per_game[ri] / G.deaths_per_game[ri]
+      case 'damage_taken_per_game/deaths':     return G.damage_taken_per_game[ri]     / G.deaths_per_game[ri]
+      case 'control_wards/deaths':            return G.control_wards_placed[ri]      / G.deaths_per_game[ri]
+      case 'wards_and_wk/deaths':             return G.wards_and_wk_per_game[ri]     / G.deaths_per_game[ri]
+      // ── Ratio: per_game / per_game ──────────────────────────────────────
+      case 'damage_per_min/damage_taken_per_min':           return G.damage_per_game[ri]           / G.damage_taken_per_game[ri]
+      case 'damage_mitigated_per_min/damage_taken_per_min': return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
+      // ── Direct per_min (runtime-computed) ──────────────────────────────
+      case 'damage_per_min':           return damage_per_min[ri]
+      case 'gold_per_min':             return gold_per_min[ri]
+      case 'cs_per_min':               return cs_per_min[ri]
+      case 'vision_score_per_min':     return vision_score_per_min[ri]
+      case 'damage_mitigated_per_min': return damage_mitigated_per_min[ri]
+      case 'damage_taken_per_min':     return damage_taken_per_min[ri]
+      case 'cc_per_min':               return cc_per_min[ri]
+      // ── Direct empirical ────────────────────────────────────────────────
+      case 'kill_participation':     return G.kill_participation[ri]
+      case 'kill_secured':           return kill_secured[ri]
+      case 'kda':                    return G.kda[ri]
+      case 'control_wards_per_game': return G.control_wards_placed[ri]
+      default:
+        console.warn(`[deriveScoreConfig] Unknown source: ${m.source} (key: ${m.key})`)
+        return 0
+    }
+  }
+
+  // Cap a value (null cap = no cap)
+  const applyCap = (v, cap) => (cap != null ? Math.min(v, cap) : v)
+
+  // Compute coefficient anchored at Platinum (index 4)
+  const coefficients = {}
+  for (const m of metrics) {
+    const anchorVal = applyCap(rawBenchmark(m, ANCHOR), m.cap)
+    coefficients[m.key] = anchorVal > 0 ? m.weight_points / anchorVal : 0
+  }
+
+  // Compute 10 rank thresholds directly — no interpolation
+  const thresholds = Array.from({ length: R }, (_, ri) =>
+    metrics.reduce((sum, m) => sum + applyCap(rawBenchmark(m, ri), m.cap) * coefficients[m.key], 0)
+  )
+
+  return { thresholds, coefficients, metrics }
+}
 
 // High-damage classifications for identity filtering
 const HIGH_DMG = new Set(['AD_high','AP_high','Mixed_high'])
@@ -133,41 +283,51 @@ function hasNoLens(champEntry) {
 }
 
 const LENS_DEFS = {
-  geral:     { defaultSort: 'wr',          filter: () => true,                      cols: ['deathMin', 'killPct', 'nCarry', 'nAssassino', 'nBruiser', 'nTank', 'nSuporte'] },
-   carry:     { defaultSort: 'identRank',   filter: isCarry,                         cols: ['damPerDeath', 'goldPerDeath', 'killsPerDeath', 'csMin', 'killShare', 'identRank'] },
-   assassino: { defaultSort: 'identRank',   filter: c => c?.class === 'Assassin',   cols: ['killsPerDeath', 'damPerDeath', 'killShare', 'goldMin', 'identRank'] },
-  bruiser:   { defaultSort: 'identRank',   filter: isBruiser,                       cols: ['netDamPerGame', 'damPerDeath', 'goldPerDeath', 'identRank'] },
-  tank:      { defaultSort: 'identRank',   filter: c => c?.class === 'Tank',       cols: ['mitMin', 'dtMin', 'ccMin', 'identRank'] },
-  suporte:   { defaultSort: 'identRank',   filter: c => c?.class === 'Support',    cols: ['assistsPerDeath', 'visionPerDeath', 'wardsAndWKPerDeath', 'identRank'] },
+  geral:     { defaultSort: 'wr',        filter: () => true,                   cols: ['deathMin','killParticipation','controlWardsAvg','nCarry','nAssassino','nBruiser','nTank','nSuporte'] },
+  carry:     { defaultSort: 'identRank', filter: isCarry,                      cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','csPerMin','csPerDeath','killShare','identRank'] },
+  assassino: { defaultSort: 'identRank', filter: c => c?.class === 'Assassin', cols: ['killsMin','damPerDeath','killSecured','goldPerMin','identRank'] },
+  bruiser:   { defaultSort: 'identRank', filter: isBruiser,                    cols: ['damPerDmgRec','damPerDeath','goldPerDeath','identRank'] },
+  tank:      { defaultSort: 'identRank', filter: c => c?.class === 'Tank',     cols: ['mitPerDmgRec','mitPerDeath','dtPerDeath','ccMin','identRank'] },
+  suporte:   { defaultSort: 'identRank', filter: c => c?.class === 'Support',  cols: ['assistsMin','assistsPerDeath','visionMin','visionPerDeath','controlWardsAvg','wardsMin','wardsAndWKPerDeath','identRank'] },
 }
 
 const COL_META = {
-  damMin:     { label: 'Dano/min',     fmt: v => v.toFixed(0)                         },
-  goldMin:    { label: 'Ouro/min',     fmt: v => v.toFixed(0)                         },
+  damPerMin:    { label: 'Dano/min',     fmt: v => v.toFixed(0)                         },
+  goldPerMin:   { label: 'Ouro/min',     fmt: v => v.toFixed(0)                         },
   deathMin:   { label: 'Mortes/min',   fmt: v => v.toFixed(3)                         },
-  csMin:      { label: 'CS/min',       fmt: v => v.toFixed(1)                         },
+  csPerMin:     { label: 'CS/min',       fmt: v => v.toFixed(1)                         },
   fbKills:    { label: 'FB Kills',     fmt: v => v                                    },
   killsAvg:   { label: 'Kills',        fmt: v => v.toFixed(1)                         },
   dtMin:      { label: 'DmgRec/min',   fmt: v => v.toFixed(0)                         },
   mitMin:     { label: 'Mitigado/min', fmt: v => v.toFixed(0)                         },
   turrets:    { label: 'Turrets',      fmt: v => v.toFixed(1)                         },
   ccMin:      { label: 'CC/min',       fmt: v => v.toFixed(2)                         },
-  killPct:    { label: 'Kill Part%',   fmt: v => v != null ? `${Math.round(v*100)}%` : '—' },
+  killParticipation: { label: 'Kill Part%',   fmt: v => v != null ? `${Math.round(v*100)}%` : '—' },
   assistsAvg: { label: 'Assists',      fmt: v => v.toFixed(1)                         },
   visionMin:  { label: 'Visão/min',    fmt: v => v.toFixed(2)                         },
   wardsMin:   { label: 'Wards/min',    fmt: v => v.toFixed(2)                         },
   wkAvg:      { label: 'WardKills',    fmt: v => v.toFixed(1)                         },
-  // New columns
+  // Per-death metrics
   damPerDeath: { label: 'Dano/Morte',  fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
   goldPerDeath: { label: 'Ouro/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
-   kMinusA:    { label: 'K-A',          fmt: v => v.toFixed(2)                         },
-   killShare:  { label: 'Kill Share',   fmt: v => `${(v * 100).toFixed(1)}%`           },
-  netDtMin:   { label: 'DanoLiq/min',  fmt: v => v.toFixed(0)                         },
+  killShare:  { label: 'Kill Part.',    fmt: v => `${(v * 100).toFixed(1)}%`           },
+  killSecured:{ label: 'Kill Secured',  fmt: v => `${(v * 100).toFixed(1)}%`           },
   killsPerDeath: { label: 'Kills/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
   assistsPerDeath: { label: 'Assists/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
   visionPerDeath: { label: 'Visão/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
-  wardsAndWKPerDeath: { label: 'Wards/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
-  netDamPerGame: { label: 'SaldoDano/jogo', fmt: v => v.toFixed(0) },
+  controlWardsPerDeath: { label: 'CW/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
+  controlWardsAvg: { label: 'Control Wards', fmt: v => v.toFixed(2)                  },
+  wardsAndWKPerDeath:   { label: 'Wards/Morte',     fmt: v => v === Infinity ? '∞' : v.toFixed(2)  },
+  // New per-min columns
+  killsMin:   { label: 'Kills/min',    fmt: v => v.toFixed(2) },
+  assistsMin: { label: 'Assist/min',   fmt: v => v.toFixed(2) },
+  // New per-death columns
+  csPerDeath:  { label: 'CS/Morte',          fmt: v => v === Infinity ? '∞' : v.toFixed(1)  },
+  mitPerDeath: { label: 'Mitigado/Morte',    fmt: v => v === Infinity ? '∞' : v.toFixed(0)  },
+  dtPerDeath:  { label: 'DmgRec/Morte',      fmt: v => v === Infinity ? '∞' : v.toFixed(0)  },
+  // New ratio columns
+  damPerDmgRec: { label: 'Dano/DmgRec', fmt: v => v.toFixed(3) },
+  mitPerDmgRec: { label: 'Mit/DmgRec',  fmt: v => v.toFixed(3) },
   // Identity counts (Geral lens)
   nCarry:     { label: 'Carry',        fmt: v => v                                    },
   nAssassino: { label: 'Assassino',    fmt: v => v                                    },
@@ -520,77 +680,35 @@ function buildObjectiveSection(M) {
 let _playerRows = []
 let _playerSort = { col: 'wr', dir: -1 }
 
-// Compute identity rank for each player based on lens-specific score
-// Uses absolute fixed thresholds per lens, not relative min-max normalization
+// Compute identity rank for each player based on lens-specific score.
+// Uses DB-driven coefficients and thresholds derived from loadRankConfig().
+// If config is not loaded yet (or failed), rows get identRank = null.
 function computeIdentityRanks(rows, lens) {
-  const lensScoreFunctions = {
-    carry: (r) => {
-      // Caps: damPerDeath=20000, goldPerDeath=8000, killsPerDeath=10
-      const dmgDth  = Math.min(r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath,   20000)
-      const goldDth = Math.min(r.goldPerDeath  === Infinity ? 1000000 : r.goldPerDeath,  8000)
-      const killDth = Math.min(r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath, 10)
-      return dmgDth  * 0.001042   // ×5  (avg 4800 → contribui 5.0)
-           + goldDth * 0.001429   // ×3  (avg 2100 → contribui 3.0)
-           + killDth * 1.449      // ×2  (avg 1.38 → contribui 2.0)
-           + r.csMin * 0.1613     // ×1  (avg 6.2  → contribui 1.0)
-           + r.killShare * 2.105  // ×1  (avg 0.475 → contribui 1.0)
-    },
-    assassino: (r) => {
-      // Caps: killsPerDeath=10, damPerDeath=20000
-      const killDth = Math.min(r.killsPerDeath === Infinity ? 1000000 : r.killsPerDeath, 10)
-      const dmgDth  = Math.min(r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath,   20000)
-      return killDth * 3.247      // ×4  (avg 1.232 → contribui 4.0)
-           + dmgDth  * 0.000504   // ×2  (avg 3967 → contribui 2.0)
-           + r.goldMin * 0.002310 // ×1  (avg 433 → contribui 1.0)
-           + r.killShare * 2.110  // ×1  (avg 0.474 → contribui 1.0)
-    },
-    bruiser: (r) => {
-      // Caps: damPerDeath=20000, goldPerDeath=8000
-      const dmgDth  = Math.min(r.damPerDeath   === Infinity ? 1000000 : r.damPerDeath,   20000)
-      const goldDth = Math.min(r.goldPerDeath  === Infinity ? 1000000 : r.goldPerDeath,  8000)
-      return r.netDamPerGame * 0.0001675  // ×4  (avg 23881 → contribui 4.0)
-           + dmgDth  * 0.000555           // ×2  (avg 3599 → contribui 2.0)
-           + goldDth * 0.000475           // ×1  (avg 2104 → contribui 1.0)
-    },
-    tank: (r) => {
-      return r.mitMin * 0.00267   // ×4  (avg 1497 → contribui 4.0)
-           + r.dtMin * 0.001834   // ×2  (avg 1091 → contribui 2.0)
-           + r.ccMin * 0.7072     // ×1  (avg 1.4142 → contribui 1.0)
-    },
-    suporte: (r) => {
-      // Caps: assistsPerDeath=10, visionPerDeath=50, wardsAndWKPerDeath=50
-      const assPerDth  = Math.min(r.assistsPerDeath     === Infinity ? 1000000 : r.assistsPerDeath,     10)
-      const visPerDth  = Math.min(r.visionPerDeath      === Infinity ? 1000000 : r.visionPerDeath,      50)
-      const wardPerDth = Math.min(r.wardsAndWKPerDeath  === Infinity ? 1000000 : r.wardsAndWKPerDeath,  50)
-      return assPerDth  * 0.763   // ×2  (avg 2.622 → contribui 2.0)
-           + visPerDth  * 0.2515  // ×2  (avg 7.963 → contribui 2.0)
-           + wardPerDth * 0.0840  // ×1  (avg 11.911 → contribui 1.0)
-    },
-  }
+  const cfg = _rankConfig[lens]
+  if (!cfg) return  // config not loaded or invalid lens
 
-  const scoreFn = lensScoreFunctions[lens]
-  if (!scoreFn) return // Invalid lens
+  const { thresholds, coefficients, metrics } = cfg
 
-  const thresholds = LENS_THRESHOLDS[lens]
-  if (!thresholds) return // Invalid lens
-
-  // Calculate raw scores and map to absolute rank thresholds
   rows.forEach((r) => {
-    const rawScore = scoreFn(r)
-    
-    // Find rank by finding the highest threshold that rawScore meets or exceeds
+    // Compute weighted score: Σ( cap(row[metric]) × coefficient )
+    const rawScore = metrics.reduce((sum, m) => {
+      let val = r[m.key]
+      // Replace Infinity (zero-death players) with a large number, then cap
+      if (val === Infinity) val = 1e9
+      if (m.cap != null) val = Math.min(val, m.cap)
+      return sum + val * (coefficients[m.key] ?? 0)
+    }, 0)
+
+    // Find rank: highest threshold that rawScore meets or exceeds
     let rankIdx = 0
     for (let i = thresholds.length - 1; i >= 0; i--) {
-      if (rawScore >= thresholds[i]) {
-        rankIdx = i
-        break
-      }
+      if (rawScore >= thresholds[i]) { rankIdx = i; break }
     }
 
     r.identRank = {
-      score: rawScore,
-      label: RANK_LABELS[rankIdx],
-      name: RANK_NAMES[rankIdx],
+      score:  rawScore,
+      label:  RANK_LABELS[rankIdx],
+      name:   RANK_NAMES[rankIdx],
       imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`,
     }
   })
@@ -663,7 +781,9 @@ function renderPlayerTable() {
         
         // Special rendering for identRank
         if (colKey === 'identRank' && val) {
-          const formatted = `<div class="flex items-center justify-end gap-1"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs">${val.label}</span></div>`
+          const rankIdx = RANK_NAMES.indexOf(val.name)
+          const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+           const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
           cellHTML += `<td class="${cellCls}">${formatted}</td>`
         } else {
           const formatted = meta.fmt(val)
@@ -755,17 +875,18 @@ function buildPlayerTable(M) {
         n: 0, wins: 0, kdaSum: 0, damSum: 0, goldSum: 0, csSum: 0, 
         durSum: 0, deathsSum: 0, fbKills: 0, killsSum: 0, assistsSum: 0,
         dtSum: 0, mitSum: 0, ccSum: 0, bldSum: 0, wkSum: 0, cwSum: 0,
-        kpSum: 0, kpN: 0, visionSum: 0, wardsSum: 0
+        kpSum: 0, kpN: 0, visionSum: 0, wardsSum: 0, teamKillsSum: 0
       }
       p.n++
       if (m.win) p.wins++
-      p.kdaSum     += ps.kda               ?? 0
-      p.damSum     += ps.damage            ?? 0
-      p.goldSum    += ps.gold              ?? 0
-      p.csSum      += ps.cs                ?? 0
-      p.deathsSum  += ps.deaths            ?? 0
-      p.durSum     += m.duration           ?? 0
-      p.killsSum   += ps.kills             ?? 0
+      p.kdaSum      += ps.kda               ?? 0
+      p.damSum      += ps.damage            ?? 0
+      p.goldSum     += ps.gold              ?? 0
+      p.csSum       += ps.cs                ?? 0
+      p.deathsSum   += ps.deaths            ?? 0
+      p.durSum      += m.duration           ?? 0
+      p.teamKillsSum += m.team_kills        ?? 0
+      p.killsSum    += ps.kills             ?? 0
       p.assistsSum += ps.assists           ?? 0
       p.dtSum      += ps.damageTaken       ?? 0
       p.mitSum     += ps.damageSelfMitigated ?? 0
@@ -788,10 +909,10 @@ function buildPlayerTable(M) {
       unmatched: mapAll[name]?.nUnclassified ?? 0,
       wr:        p.wins / p.n,
       kda:       p.kdaSum / p.n,
-      damMin:    p.durSum ? p.damSum / p.durSum : 0,
-      goldMin:   p.durSum ? p.goldSum / p.durSum : 0,
+      damPerMin: p.durSum ? p.damSum / p.durSum : 0,
+      goldPerMin: p.durSum ? p.goldSum / p.durSum : 0,
       deathMin:  p.durSum ? p.deathsSum / p.durSum : 0,
-      csMin:     p.durSum ? p.csSum / p.durSum : 0,
+      csPerMin:  p.durSum ? p.csSum / p.durSum : 0,
       fbKills:   p.fbKills,
       killsAvg:  p.n ? p.killsSum / p.n : 0,
       assistsAvg: p.n ? p.assistsSum / p.n : 0,
@@ -802,17 +923,28 @@ function buildPlayerTable(M) {
       visionMin: p.durSum ? p.visionSum / p.durSum : 0,
       wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
       wkAvg:     p.n ? p.wkSum / p.n : 0,
-       killPct:   p.kpN ? p.kpSum / p.kpN : null,
-       // New calculated columns
-       damPerDeath: p.deathsSum ? p.damSum / p.deathsSum : Infinity,
-       goldPerDeath: p.deathsSum ? p.goldSum / p.deathsSum : Infinity,
-       killShare: (p.killsSum + p.assistsSum) > 0 ? p.killsSum / (p.killsSum + p.assistsSum) : 0,
-       netDtMin:  p.durSum ? (p.dtSum - p.mitSum) / p.durSum : 0,
-       killsPerDeath: p.deathsSum ? p.killsSum / p.deathsSum : Infinity,
-       assistsPerDeath: p.deathsSum ? p.assistsSum / p.deathsSum : Infinity,
-       visionPerDeath: p.deathsSum ? p.visionSum / p.deathsSum : Infinity,
-       wardsAndWKPerDeath: p.deathsSum ? (p.wardsSum + p.wkSum * 10) / p.deathsSum : Infinity,
-       netDamPerGame: p.n ? (p.damSum - (p.dtSum - p.mitSum)) / p.n : 0,
+        killParticipation: p.kpN ? p.kpSum / p.kpN : 0,
+       // Per-death metrics: sum / deathsSum (total / total deaths)
+       damPerDeath:   p.deathsSum ? p.damSum   / p.deathsSum : Infinity,
+       goldPerDeath:  p.deathsSum ? p.goldSum  / p.deathsSum : Infinity,
+       killShare:     p.teamKillsSum ? p.killsSum / p.teamKillsSum : 0,
+       killSecured:   (p.killsSum + p.assistsSum) > 0 ? p.killsSum / (p.killsSum + p.assistsSum) : 0,
+       killsPerDeath:        p.deathsSum ? p.killsSum / p.deathsSum : Infinity,
+       assistsPerDeath:      p.deathsSum ? p.assistsSum / p.deathsSum : Infinity,
+       visionPerDeath:       p.deathsSum ? p.visionSum / p.deathsSum : Infinity,
+       controlWardsPerDeath: p.deathsSum ? p.cwSum / p.deathsSum : Infinity,
+       controlWardsAvg:      p.n ? p.cwSum / p.n : 0,
+       wardsAndWKPerDeath:   p.deathsSum ? (p.wardsSum + p.wkSum * 10) / p.deathsSum : Infinity,
+       // New per-min metrics
+       killsMin:   p.durSum ? p.killsSum   / p.durSum : 0,
+       assistsMin: p.durSum ? p.assistsSum / p.durSum : 0,
+       // New per-death metrics (sum/deathsSum pattern)
+       csPerDeath:   p.deathsSum ? p.csSum  / p.deathsSum : Infinity,
+       mitPerDeath:  p.deathsSum ? p.mitSum / p.deathsSum : Infinity,
+       dtPerDeath:   p.deathsSum ? p.dtSum  / p.deathsSum : Infinity,
+       // New ratio metrics (dealt / taken — same time units cancel)
+       damPerDmgRec: p.dtSum ? p.damSum / p.dtSum : 0,
+       mitPerDmgRec: p.dtSum ? p.mitSum / p.dtSum : 0,
        // Identity counts (from Geral lens full data)
       nCarry:    mapAll[name]?.nCarry ?? 0,
       nAssassino: mapAll[name]?.nAssassino ?? 0,
@@ -1010,6 +1142,7 @@ document.addEventListener('alpine:init', () => {
         Alpine.store('champions').load(),
         api.col('formations').list({ sort: '-active,name', perPage: 100 }),
         api.col('matches').list({ perPage: 500, expand: 'mvc,formation,mvp' }),
+        loadRankConfig(),
       ])
       this.formations = fData.items
       this.allMatches = data.items
