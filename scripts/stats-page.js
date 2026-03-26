@@ -770,17 +770,25 @@ function renderPlayerTable() {
     const dynamicCols = lens.cols
     const showUnmatched = _playerLens !== 'geral' && _playerRows.some(r => r.unmatched > 0)
    
-   const sorted = [..._playerRows].sort((a, b) => {
-     const aOk = a.n >= 10, bOk = b.n >= 10
-     if (aOk !== bOk) return aOk ? -1 : 1
-     
-     // Special sorting for identRank (by score, not alphabetically)
-     if (col === 'identRank') {
-       return dir * ((a.identRank?.score ?? 0) - (b.identRank?.score ?? 0))
-     }
-     
-     return dir * (a[col] - b[col])
-   })
+    const sorted = [..._playerRows].sort((a, b) => {
+      const aOk = a.n >= 10, bOk = b.n >= 10
+      if (aOk !== bOk) return aOk ? -1 : 1
+      
+      // Special sorting for identRank (by score, not alphabetically)
+      if (col === 'identRank') {
+        return dir * ((a.identRank?.score ?? 0) - (b.identRank?.score ?? 0))
+      }
+      
+      // Special sorting for identity columns in geral lens (by rank score, not by count)
+      if (IDENTITY_COL_TO_LENS[col]) {
+        const lensKey = IDENTITY_COL_TO_LENS[col]
+        const aScore = _identityRanks[a.name]?.[lensKey]?.score ?? 0
+        const bScore = _identityRanks[b.name]?.[lensKey]?.score ?? 0
+        return dir * (bScore - aScore)  // descending by default (higher score first)
+      }
+      
+      return dir * (a[col] - b[col])
+    })
    
    const arrow  = c => c === col ? (dir === -1 ? ' ↓' : ' ↑') : ''
    const th     = (c, label, extra = '') =>
@@ -799,10 +807,14 @@ function renderPlayerTable() {
      headerHTML += th('unmatched', 'Sem classe')
    }
    
-   for (const colKey of dynamicCols) {
-     const meta = COL_META[colKey]
-     headerHTML += th(colKey, meta.label)
-   }
+    for (const colKey of dynamicCols) {
+      const meta = COL_META[colKey]
+      // Add justify-center for identity columns in geral lens
+      const isIdentityCol = IDENTITY_COL_TO_LENS[colKey]
+      const centerClass = _playerLens === 'geral' && isIdentityCol ? 'justify-center' : ''
+      const headerExtra = centerClass ? `text-center ${centerClass}` : ''
+      headerHTML += th(colKey, meta.label, headerExtra)
+    }
 
    // Build row template function
    const buildRowHTML = (r, isAnecdotal = false) => {
@@ -819,42 +831,45 @@ function renderPlayerTable() {
        cellHTML += `<td class="text-right text-xs ${cellCls} text-slate-500">${r.unmatched}</td>`
      }
      
-      for (const colKey of dynamicCols) {
-        const meta = COL_META[colKey]
-        const val = r[colKey]
-        
-          // Special rendering for identRank
-          if (colKey === 'identRank' && val) {
-            const rankIdx = RANK_NAMES.indexOf(val.name)
-            const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-             const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
-            cellHTML += `<td class="${cellCls}">${formatted}</td>`
-          } else if (IDENTITY_COL_TO_LENS[colKey]) {
-            // Special rendering for identity count columns
-            const lensKey = IDENTITY_COL_TO_LENS[colKey]
-            if (val < 5) {
-              // Show travessão when N < 5
-              cellHTML += `<td class="text-right ${cellCls}">—</td>`
-            } else {
-              // Show rank badge with score and N info when N >= 5
-              const identRank = _identityRanks[r.name]?.[lensKey]
-              if (identRank) {
-                const rankIdx = RANK_NAMES.indexOf(identRank.name)
-                const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-                const title = `Score: ${identRank.score.toFixed(2)} | N: ${val}`
-                const formatted = `<div class="flex items-center justify-end gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="${title}"><span class="text-xs font-bold uppercase ${colorCls}">${identRank.label}</span></div>`
-                cellHTML += `<td class="${cellCls}">${formatted}</td>`
-              } else {
-                // No rank data available, show raw count
-                const formatted = meta.fmt(val)
-                cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-              }
-            }
-          } else {
-            const formatted = meta.fmt(val)
-            cellHTML += `<td class="text-right ${cellCls}">${formatted}</td>`
-          }
-      }
+       for (const colKey of dynamicCols) {
+         const meta = COL_META[colKey]
+         const val = r[colKey]
+         const isIdentityCol = IDENTITY_COL_TO_LENS[colKey]
+         const centerClass = _playerLens === 'geral' && isIdentityCol ? 'text-center' : 'text-right'
+         
+           // Special rendering for identRank
+           if (colKey === 'identRank' && val) {
+             const rankIdx = RANK_NAMES.indexOf(val.name)
+             const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+              const formatted = `<div class="flex items-center justify-end gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
+             cellHTML += `<td class="${cellCls}">${formatted}</td>`
+           } else if (isIdentityCol) {
+             // Special rendering for identity count columns
+             const lensKey = IDENTITY_COL_TO_LENS[colKey]
+              if (val < 5) {
+                // Show travessão when N < 5
+                cellHTML += `<td class="${centerClass}">—</td>`
+             } else {
+               // Show rank badge with score and N info when N >= 5
+               const identRank = _identityRanks[r.name]?.[lensKey]
+               if (identRank) {
+                 const rankIdx = RANK_NAMES.indexOf(identRank.name)
+                 const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+                 const title = `Score: ${identRank.score.toFixed(2)} | N: ${val}`
+                 const justifyClass = _playerLens === 'geral' ? 'justify-center' : 'justify-end'
+                 const formatted = `<div class="flex items-center ${justifyClass} gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="${title}"><span class="text-xs font-bold uppercase ${colorCls}">${identRank.label}</span></div>`
+                 cellHTML += `<td class="${centerClass}">${formatted}</td>`
+               } else {
+                 // No rank data available, show raw count
+                 const formatted = meta.fmt(val)
+                 cellHTML += `<td class="${centerClass}">${formatted}</td>`
+               }
+             }
+           } else {
+             const formatted = meta.fmt(val)
+             cellHTML += `<td class="${centerClass}">${formatted}</td>`
+           }
+       }
      
      return cellHTML
    }
