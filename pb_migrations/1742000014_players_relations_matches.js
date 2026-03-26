@@ -50,7 +50,7 @@ migrate((app) => {
     const matches = app.findCollectionByNameOrId("matches")
     matches.fields.removeByName("top_player")
     matches.fields.removeByName("mvp")
-    const PLAYERS = ["Klebão","GdN","Conkreto","Digo","Kelly","Pixek","Nunes","Eden","Xuao"]
+     const PLAYERS = ["Klé","GdN","Vitão","Digo","Kelly","Pixek","Nunes","Eden","Xuao"]
     matches.fields.add(new Field({ type: "select", name: "top_player", values: PLAYERS, maxSelect: 1 }))
     matches.fields.add(new Field({ type: "select", name: "mvp",        values: PLAYERS, maxSelect: 1 }))
     app.save(matches)

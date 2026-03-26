@@ -3,7 +3,7 @@ migrate((app) => {
     const champions = app.findCollectionByNameOrId("champions")
 
     const PLAYERS = [
-        "Klebão", "GdN", "Conkreto", "Digo", "Kelly",
+        "Klé", "GdN", "Vitão", "Digo", "Kelly",
         "Pixek", "Nunes", "Eden", "Xuao",
     ]
 

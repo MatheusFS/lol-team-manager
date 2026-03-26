@@ -53,8 +53,8 @@
     <!-- CI legend -->
     <p class="text-xs text-slate-500 mb-5">
       Barras mostram aproveitamento. Bigodes = intervalo de confiança 95% (Wilson).
-      <span class="text-slate-400">⚠️</span> = menos de 5 partidas — trate como anedótico.
-      Cores: <span class="text-green-400">verde ≥ 60%</span> · <span class="text-yellow-400">ouro 40–60%</span> · <span class="text-red-400">vermelho ≤ 40%</span> · <span class="text-slate-500">cinza &lt; 5 partidas</span>.
+      <span class="text-slate-400">⚠️</span> = menos de 10 partidas — trate como anedótico.
+      Cores: <span class="text-purple-400">roxo ≥ 70%</span> · <span class="text-green-400">verde 56%-70%</span> · <span class="text-yellow-400">ouro 46%-56%</span> · <span class="text-red-400">vermelho ≤ 45%</span> · <span class="text-slate-500">cinza &lt; 10 partidas</span>.
     </p>
 
     <!-- ── TIME ──────────────────────────────────────────────────────────── -->
@@ -67,31 +67,51 @@
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Tipo de Comp</h3>
           <p class="text-xs text-slate-500 mb-3">Desempenho de cada estratégia que jogamos</p>
-          <div class="relative h-52"><canvas id="c-comp-type"></canvas></div>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-comp-type" x-model="showAnecdotal['comp-type']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-comp-type" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-80"><canvas id="c-comp-type"></canvas></div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento vs Tipo de Comp Inimiga</h3>
-          <p class="text-xs text-slate-500 mb-3">⚠️ A maioria dos tipos inimigos tem N &lt; 5 — apenas Split é significativo</p>
-          <div class="relative h-52"><canvas id="c-enemy-type"></canvas></div>
+          <p class="text-xs text-slate-500 mb-3">⚠️ A maioria dos tipos inimigos tem N &lt; 10 — apenas Split é significativo</p>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-enemy-type" x-model="showAnecdotal['enemy-type']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-enemy-type" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-80"><canvas id="c-enemy-type"></canvas></div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Número de Jogo</h3>
           <p class="text-xs text-slate-500 mb-3">Desempenho ao longo do dia de Clash — J1 = primeiro jogo do bracket</p>
-          <div class="relative h-48"><canvas id="c-game-n"></canvas></div>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-game-n" x-model="showAnecdotal['game-n']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-game-n" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-72"><canvas id="c-game-n"></canvas></div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Lado</h3>
           <p class="text-xs text-slate-500 mb-3">Red side vs Blue side — território de cara ou coroa indica sem viés de lado</p>
-          <div class="relative h-48"><canvas id="c-side"></canvas></div>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-side" x-model="showAnecdotal['side']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-side" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-72"><canvas id="c-side"></canvas></div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 lg:col-span-2">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Duração de Jogo</h3>
           <p class="text-xs text-slate-500 mb-3">O tempo de jogo nos favorece?</p>
-          <div class="relative h-40"><canvas id="c-duration"></canvas></div>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-duration" x-model="showAnecdotal['duration']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-duration" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-72"><canvas id="c-duration"></canvas></div>
         </div>
 
       </div>
@@ -127,44 +147,64 @@
     <!-- ── JOGADORES ──────────────────────────────────────────────────────── -->
     <div x-show="activeTab === 'players'">
 
-      <!-- Mortes por Jogador (prioridade) -->
+      <!-- Desempenho por Jogador (Consolidated) -->
       <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-5">
-        <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Mortes por Jogador — Quem está morrendo mais?</h3>
-        <p class="text-xs text-slate-500 mb-3">Ordenado por mortes desc · <span id="player-stats-n">0</span> partidas com dados Riot API</p>
-        <div id="player-death-table"></div>
-      </div>
-
-      <!-- Performance Geral -->
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-5">
-        <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Performance Geral por Jogador</h3>
-        <p class="text-xs text-slate-500 mb-3">KDA, dano, ouro e CS/min médios</p>
-        <div id="player-stats-table"></div>
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Desempenho por Jogador</h3>
+            <p class="text-xs text-slate-500">Performance consolidada · <span id="player-perf-n">0</span> partidas com dados Riot API</p>
+          </div>
+          <div class="flex gap-1 flex-wrap">
+            <template x-for="l in lenses" :key="l.key">
+              <button
+                @click="playerLens = l.key"
+                :class="`px-3 py-1 text-xs rounded border transition ${playerLens === l.key ? 'bg-slate-600 border-slate-500 text-slate-100' : 'border-slate-700 text-slate-400 hover:text-slate-300'}`"
+                x-text="l.label">
+              </button>
+            </template>
+          </div>
+        </div>
+        <div id="player-perf-table"></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
+        <!-- Frequência Charts -->
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Frequência de MVP</h3>
           <p class="text-xs text-slate-500 mb-3">% de partidas onde cada jogador foi MVP (N=<span id="mvp-n"></span>)</p>
-          <div class="relative h-44"><canvas id="c-mvp-freq"></canvas></div>
-        </div>
-
-        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
-          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento quando o Jogador é MVP</h3>
-          <p class="text-xs text-slate-500 mb-3">Aproveitamento do time nas partidas onde aquele jogador se destacou</p>
-          <div class="relative h-44"><canvas id="c-mvp-wr"></canvas></div>
-        </div>
-
-        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
-          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Formação</h3>
-          <p class="text-xs text-slate-500 mb-3">Aproveitamento do time segmentado por escalação · <span id="formation-n"></span> partidas com formação registrada</p>
-          <div class="relative h-36"><canvas id="c-formation"></canvas></div>
+          <div class="relative h-80"><canvas id="c-mvp-freq"></canvas></div>
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
           <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Campeões MVC Mais Frequentes</h3>
           <p class="text-xs text-slate-500 mb-3">Campeões que ganharam MVC com mais frequência</p>
-          <div class="relative h-64"><canvas id="c-mvc"></canvas></div>
+          <div class="relative h-80"><canvas id="c-mvc"></canvas></div>
+        </div>
+
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+
+        <!-- Win Rate Charts -->
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento quando o Jogador é MVP</h3>
+          <p class="text-xs text-slate-500 mb-3">Aproveitamento do time nas partidas onde aquele jogador se destacou</p>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-mvp-wr" x-model="showAnecdotal['mvp-wr']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-mvp-wr" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-80"><canvas id="c-mvp-wr"></canvas></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-0.5">Aproveitamento por Formação</h3>
+          <p class="text-xs text-slate-500 mb-3">Aproveitamento do time segmentado por escalação · <span id="formation-n"></span> partidas com formação registrada</p>
+          <div class="flex items-center gap-2 mb-3">
+            <input type="checkbox" id="show-formation" x-model="showAnecdotal['formation']" class="w-4 h-4 cursor-pointer accent-yellow-500">
+            <label for="show-formation" class="text-xs text-slate-400 cursor-pointer">Mostrar dados anedóticos (N &lt; 10)</label>
+          </div>
+          <div class="relative h-80"><canvas id="c-formation"></canvas></div>
         </div>
 
       </div>

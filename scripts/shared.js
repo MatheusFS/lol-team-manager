@@ -140,10 +140,11 @@ const utils = {
   pct(v) { return v == null ? null : Math.round(v * 100) },
 
   rateColor(rate, n) {
-    if (n < 5)       return 'rgba(100,116,139,0.5)'
-    if (rate >= 0.6) return 'rgba(74,222,128,0.78)'
-    if (rate >= 0.4) return 'rgba(234,179,8,0.78)'
-    return 'rgba(248,113,113,0.78)'
+    if (n < 10)      return 'rgba(100,116,139,0.5)'   // Gray < 10 matches
+    if (rate >= 0.7) return 'rgba(168,85,247,0.78)'   // Purple ≥ 70%
+    if (rate >= 0.56) return 'rgba(74,222,128,0.78)'  // Green 56%-70%
+    if (rate >= 0.46) return 'rgba(234,179,8,0.78)'   // Gold 46%-56%
+    return 'rgba(248,113,113,0.78)'                    // Red ≤ 45%
   },
 
   groupWR(matches, keyFn, sort = 'rate') {
@@ -268,22 +269,28 @@ function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToNam
       ? (p.kills + p.assists)
       : Math.round(((p.kills + p.assists) / p.deaths) * 100) / 100
     return {
-      puuid:       p.puuid,
-      name:        puuidToName[p.puuid] ?? null,
-      role:        p.teamPosition || p.individualPosition || null,
-      champion:    p.championName,
-      kills:       p.kills       ?? 0,
-      deaths:      p.deaths      ?? 0,
-      assists:     p.assists     ?? 0,
-      cs:          (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0),
-      damage:      p.totalDamageDealtToChampions ?? 0,
-      damageTaken: p.totalDamageTaken ?? 0,
-      gold:        p.goldEarned  ?? 0,
-      visionScore: p.visionScore ?? 0,
-      wardsPlaced: p.wardsPlaced ?? 0,
-      level:       p.champLevel  ?? null,
+      puuid:                p.puuid,
+      name:                 puuidToName[p.puuid] ?? null,
+      role:                 p.teamPosition || p.individualPosition || null,
+      champion:             p.championName,
+      kills:                p.kills       ?? 0,
+      deaths:               p.deaths      ?? 0,
+      assists:              p.assists     ?? 0,
+      cs:                   (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0),
+      damage:               p.totalDamageDealtToChampions ?? 0,
+      damageTaken:          p.totalDamageTaken ?? 0,
+      gold:                 p.goldEarned  ?? 0,
+      visionScore:          p.visionScore ?? 0,
+      wardsPlaced:          p.wardsPlaced ?? 0,
+      level:                p.champLevel  ?? null,
       kda,
-      firstBlood:  p.firstBloodKill ?? false,
+      firstBlood:           p.firstBloodKill ?? false,
+      damageSelfMitigated:  p.damageSelfMitigated ?? 0,
+      timeCCingOthers:      p.timeCCingOthers ?? 0,
+      wardsKilled:          p.wardsKilled ?? 0,
+      damageToBuildings:    p.damageDealtToBuildings ?? 0,
+      killParticipation:    p.challenges?.killParticipation ?? null,
+      controlWardsPlaced:   p.challenges?.controlWardsPlaced ?? 0,
     }
   })
 
@@ -343,6 +350,7 @@ function stripSnapshot({ match, timeline }) {
     'goldEarned','totalDamageDealtToChampions','totalDamageTaken',
     'wardsPlaced','visionScore','totalMinionsKilled','neutralMinionsKilled',
     'championName','teamPosition','individualPosition','champLevel','firstBloodKill',
+    'damageSelfMitigated','timeCCingOthers','wardsKilled','damageDealtToBuildings',
   ]
 
   const strippedMatch = {
@@ -354,6 +362,13 @@ function stripSnapshot({ match, timeline }) {
       participants:       match.info.participants.map(p => {
         const out = {}
         for (const k of PARTICIPANT_FIELDS) if (k in p) out[k] = p[k]
+        // Preserve specific challenges fields
+        if (p.challenges) {
+          out.challenges = {
+            killParticipation:  p.challenges.killParticipation  ?? null,
+            controlWardsPlaced: p.challenges.controlWardsPlaced ?? 0,
+          }
+        }
         return out
       }),
     },

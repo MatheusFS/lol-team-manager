@@ -222,6 +222,7 @@ function deriveScoreConfig(G, lensCfg) {
       // ── Ratio: per_game / per_game ──────────────────────────────────────
       case 'damage_per_min/damage_taken_per_min':           return G.damage_per_game[ri]           / G.damage_taken_per_game[ri]
       case 'damage_mitigated_per_min/damage_taken_per_min': return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
+      case 'damage_mitigated/damage_taken':                 return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
       // ── Direct per_min (runtime-computed) ──────────────────────────────
       case 'damage_per_min':           return damage_per_min[ri]
       case 'gold_per_min':             return gold_per_min[ri]
@@ -299,21 +300,22 @@ const LENS_DEFS = {
   carry:     { defaultSort: 'identRank', filter: isCarry,                      cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','csPerMin','csPerDeath','killShare','identRank'] },
   assassino: { defaultSort: 'identRank', filter: c => c?.class === 'Assassin', cols: ['killsMin','damPerDeath','killSecured','goldPerMin','identRank'] },
   bruiser:   { defaultSort: 'identRank', filter: isBruiser,                    cols: ['damPerDmgRec','damPerDeath','goldPerDeath','identRank'] },
-  tank:      { defaultSort: 'identRank', filter: c => c?.class === 'Tank',     cols: ['mitPerDmgRec','mitPerDeath','dtPerDeath','ccMin','identRank'] },
+   tank:      { defaultSort: 'identRank', filter: c => c?.class === 'Tank',     cols: ['mitPerDmgRec','mitPerMin','mitPerDeath','dtPerDeath','ccMin','identRank'] },
   suporte:   { defaultSort: 'identRank', filter: c => c?.class === 'Support',  cols: ['assistsMin','assistsPerDeath','visionMin','visionPerDeath','controlWardsAvg','wardsMin','wardsAndWKPerDeath','identRank'] },
 }
 
 const COL_META = {
   damPerMin:    { label: 'Dano/min',     fmt: v => v.toFixed(0)                         },
   goldPerMin:   { label: 'Ouro/min',     fmt: v => v.toFixed(0)                         },
-  deathMin:   { label: 'Mortes/min',   fmt: v => v.toFixed(3)                         },
-  csPerMin:     { label: 'CS/min',       fmt: v => v.toFixed(1)                         },
-  fbKills:    { label: 'FB Kills',     fmt: v => v                                    },
-  killsAvg:   { label: 'Kills',        fmt: v => v.toFixed(1)                         },
-  dtMin:      { label: 'DmgRec/min',   fmt: v => v.toFixed(0)                         },
-  mitMin:     { label: 'Mitigado/min', fmt: v => v.toFixed(0)                         },
-  turrets:    { label: 'Turrets',      fmt: v => v.toFixed(1)                         },
-  ccMin:      { label: 'CC/min',       fmt: v => v.toFixed(2)                         },
+   deathMin:   { label: 'Mortes/min',   fmt: v => v.toFixed(3)                         },
+   csPerMin:     { label: 'CS/min',       fmt: v => v.toFixed(1)                         },
+   fbKills:    { label: 'FB Kills',     fmt: v => v                                    },
+   killsAvg:   { label: 'Kills',        fmt: v => v.toFixed(1)                         },
+   dtMin:      { label: 'DmgRec/min',   fmt: v => v.toFixed(0)                         },
+   mitMin:     { label: 'Mitigado/min', fmt: v => v.toFixed(0)                         },
+   mitPerMin:  { label: 'Mit/min',      fmt: v => v.toFixed(0)                         },
+   turrets:    { label: 'Turrets',      fmt: v => v.toFixed(1)                         },
+   ccMin:      { label: 'CC/min',       fmt: v => v.toFixed(2)                         },
   killParticipation: { label: 'Kill Part%',   fmt: v => v != null ? `${Math.round(v*100)}%` : '—' },
   assistsAvg: { label: 'Assists',      fmt: v => v.toFixed(1)                         },
   visionMin:  { label: 'Visão/min',    fmt: v => v.toFixed(2)                         },
@@ -935,36 +937,37 @@ function buildPlayerTable(M) {
       goldPerMin: p.durSum ? p.goldSum / p.durSum : 0,
       deathMin:  p.durSum ? p.deathsSum / p.durSum : 0,
       csPerMin:  p.durSum ? p.csSum / p.durSum : 0,
-      fbKills:   p.fbKills,
-      killsAvg:  p.n ? p.killsSum / p.n : 0,
-      assistsAvg: p.n ? p.assistsSum / p.n : 0,
-      dtMin:     p.durSum ? p.dtSum / p.durSum : 0,
-      mitMin:    p.durSum ? p.mitSum / p.durSum : 0,
-      ccMin:     p.durSum ? p.ccSum / p.durSum : 0,
-      turrets:   p.n ? p.bldSum / p.n : 0,
-      visionMin: p.durSum ? p.visionSum / p.durSum : 0,
-      wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
-      wkAvg:     p.n ? p.wkSum / p.n : 0,
-        killParticipation: p.kpN ? p.kpSum / p.kpN : 0,
-       // Per-death metrics: sum / deathsSum (total / total deaths)
-       damPerDeath:   p.deathsSum ? p.damSum   / p.deathsSum : Infinity,
-       goldPerDeath:  p.deathsSum ? p.goldSum  / p.deathsSum : Infinity,
-       killShare:     p.teamKillsSum ? p.killsSum / p.teamKillsSum : 0,
-       killSecured:   (p.killsSum + p.assistsSum) > 0 ? p.killsSum / (p.killsSum + p.assistsSum) : 0,
-       killsPerDeath:        p.deathsSum ? p.killsSum / p.deathsSum : Infinity,
-       assistsPerDeath:      p.deathsSum ? p.assistsSum / p.deathsSum : Infinity,
-       visionPerDeath:       p.deathsSum ? p.visionSum / p.deathsSum : Infinity,
-       controlWardsPerDeath: p.deathsSum ? p.cwSum / p.deathsSum : Infinity,
-       controlWardsAvg:      p.n ? p.cwSum / p.n : 0,
-       wardsAndWKPerDeath:   p.deathsSum ? (p.wardsSum + p.wkSum * 10) / p.deathsSum : Infinity,
-       // New per-min metrics
-       killsMin:   p.durSum ? p.killsSum   / p.durSum : 0,
-       assistsMin: p.durSum ? p.assistsSum / p.durSum : 0,
-       // New per-death metrics (sum/deathsSum pattern)
-       csPerDeath:   p.deathsSum ? p.csSum  / p.deathsSum : Infinity,
-       mitPerDeath:  p.deathsSum ? p.mitSum / p.deathsSum : Infinity,
-       dtPerDeath:   p.deathsSum ? p.dtSum  / p.deathsSum : Infinity,
-       // New ratio metrics (dealt / taken — same time units cancel)
+       fbKills:   p.fbKills,
+       killsAvg:  p.n ? p.killsSum / p.n : 0,
+       assistsAvg: p.n ? p.assistsSum / p.n : 0,
+       dtMin:     p.durSum ? p.dtSum / p.durSum : 0,
+       mitMin:    p.durSum ? p.mitSum / p.durSum : 0,
+       mitPerMin: p.durSum ? p.mitSum / p.durSum : 0,
+       ccMin:     p.durSum ? p.ccSum / p.durSum : 0,
+       turrets:   p.n ? p.bldSum / p.n : 0,
+       visionMin: p.durSum ? p.visionSum / p.durSum : 0,
+       wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
+       wkAvg:     p.n ? p.wkSum / p.n : 0,
+         killParticipation: p.kpN ? p.kpSum / p.kpN : 0,
+        // Per-death metrics: sum / deathsSum (total / total deaths)
+        damPerDeath:   p.deathsSum ? p.damSum   / p.deathsSum : Infinity,
+        goldPerDeath:  p.deathsSum ? p.goldSum  / p.deathsSum : Infinity,
+        killShare:     p.teamKillsSum ? p.killsSum / p.teamKillsSum : 0,
+        killSecured:   (p.killsSum + p.assistsSum) > 0 ? p.killsSum / (p.killsSum + p.assistsSum) : 0,
+        killsPerDeath:        p.deathsSum ? p.killsSum / p.deathsSum : Infinity,
+        assistsPerDeath:      p.deathsSum ? p.assistsSum / p.deathsSum : Infinity,
+        visionPerDeath:       p.deathsSum ? p.visionSum / p.deathsSum : Infinity,
+        controlWardsPerDeath: p.deathsSum ? p.cwSum / p.deathsSum : Infinity,
+        controlWardsAvg:      p.n ? p.cwSum / p.n : 0,
+        wardsAndWKPerDeath:   p.deathsSum ? (p.wardsSum + p.wkSum * 10) / p.deathsSum : Infinity,
+        // New per-min metrics
+        killsMin:   p.durSum ? p.killsSum   / p.durSum : 0,
+        assistsMin: p.durSum ? p.assistsSum / p.durSum : 0,
+        // New per-death metrics (sum/deathsSum pattern)
+        csPerDeath:   p.deathsSum ? p.csSum  / p.deathsSum : Infinity,
+        mitPerDeath:  p.deathsSum ? p.mitSum / p.deathsSum : Infinity,
+        dtPerDeath:   p.deathsSum ? p.dtSum  / p.deathsSum : Infinity,
+        // New ratio metrics (dealt / taken — same time units cancel)
        damPerDmgRec: p.dtSum ? p.damSum / p.dtSum : 0,
        mitPerDmgRec: p.dtSum ? p.mitSum / p.dtSum : 0,
        // Identity counts (from Geral lens full data)

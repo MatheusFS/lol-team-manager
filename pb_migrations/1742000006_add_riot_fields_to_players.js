@@ -9,9 +9,9 @@ migrate((app) => {
     // Seed riot_id for the 9 existing players
     const RIOT_IDS = {
         'GdN':      'GdN#MFS',
-        'Klebão':   'Kerido#ADTR',
+        'Klé':      'Kerido#ADTR',
         'Digo':     'NOT OK#rdz',
-        'Conkreto': 'Conkreto#N64',
+        'Vitão':    'Conkreto#N64',
         'Kelly':    'KellyOhana#FLA',
         'Pixek':    'Worst Player TFT#001',
         'Eden':     'EI DIIGTO RPADIO#EVDD',

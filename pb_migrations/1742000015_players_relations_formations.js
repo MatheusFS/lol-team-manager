@@ -50,7 +50,7 @@ migrate((app) => {
     // Rollback: restore select fields (stored IDs will be lost)
     const formations = app.findCollectionByNameOrId("formations")
     const ROLES   = ["top", "jungle", "mid", "adc", "support"]
-    const PLAYERS = ["Klebão","GdN","Conkreto","Digo","Kelly","Pixek","Nunes","Eden","Xuao"]
+     const PLAYERS = ["Klé","GdN","Vitão","Digo","Kelly","Pixek","Nunes","Eden","Xuao"]
     for (const r of ROLES) formations.fields.removeByName(r)
     for (const r of ROLES) {
         formations.fields.add(new Field({ type: "select", name: r, values: PLAYERS, maxSelect: 1, required: true }))

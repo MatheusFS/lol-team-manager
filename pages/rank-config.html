@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calibração de Rank – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Hide native number input spinners — they overlap content in dense tables */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+  </style>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/rank-config-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="rankConfigPage" class="bg-slate-950 text-slate-100 min-h-screen pb-16">
+<script src="/scripts/layout.js"></script>
+
+<main class="max-w-6xl mx-auto px-4 py-6">
+
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-xl font-bold">Calibração de Rank</h1>
+    <p class="text-xs text-slate-500 mt-1">
+      Benchmarks empíricos por rank e pesos por identidade. O sistema deriva automaticamente os 10 limiares de rank a partir desses dados — sem interpolação.
+    </p>
+  </div>
+
+  <!-- Loading / error state -->
+  <div x-show="loading" class="text-slate-500 text-sm py-8 text-center">Carregando configuração...</div>
+  <div x-show="error" class="text-red-400 text-sm py-4 bg-red-900/20 border border-red-800 rounded px-4" x-text="error"></div>
+
+  <div x-show="!loading && !error">
+
+    <!-- ── Section 1: Global Benchmarks ──────────────────────────────────────── -->
+    <section class="mb-8">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-base font-semibold text-slate-200">Benchmarks Globais</h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Estatísticas empíricas por rank (dados reais). Rank order:
+            <span class="font-mono text-slate-400">I=Iron | B=Bronze | S=Silver | G=Gold | P=Platinum | E=Emerald | D=Diamond | M=Master | GM=Grandmaster | C=Challenger</span>
+          </p>
+        </div>
+        <button @click="saveGlobal()"
+                :disabled="saving"
+                class="text-sm bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 px-4 py-1.5 rounded transition-colors">
+          Salvar
+        </button>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-slate-500 border-b border-slate-700 uppercase tracking-wide">
+              <th class="text-left px-4 py-2.5 min-w-[180px]">Estatística</th>
+              <template x-for="(abbr, ri) in rankAbbr" :key="abbr">
+                <th class="text-right px-1.5 py-2.5"
+                    :class="rankColors[ri]"
+                    x-text="abbr"></th>
+              </template>
+              <th class="text-left px-4 py-2.5 text-slate-600 min-w-[90px]">Unidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in globalRows" :key="row.key">
+              <tr class="border-b border-slate-800/60" :class="row.editable ? '' : 'bg-slate-900/40'">
+                <td class="px-4 py-2 text-xs" :class="row.editable ? 'text-slate-300' : 'text-slate-500 italic'" x-text="row.label"></td>
+                <template x-for="(_, ri) in Array(10)" :key="ri">
+                  <td class="px-1 py-1.5 text-right">
+                    <!-- Editable input for empirical fields -->
+                    <template x-if="row.editable">
+                      <input type="number"
+                             x-model.number="globalData[row.key][ri]"
+                             step="any"
+                             class="w-14 bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-right text-xs
+                                     focus:outline-none focus:border-yellow-500 transition-colors"
+                              :class="{
+                                'border-yellow-600': ri === 4,
+                                'border-blue-700':   ri === 6,
+                                'border-purple-700': ri === 7,
+                              }">
+                    </template>
+                    <!-- Read-only display for derived fields (per_min computed from per_game / game_time_min) -->
+                     <template x-if="!row.editable">
+                       <span class="text-xs font-mono text-slate-500 px-1.5"
+                             x-text="(v => v != null ? v.toFixed(3) : '—')(globalDataDisplay()[row.key]?.[ri])"></span>
+                     </template>
+                  </td>
+                </template>
+                <td class="px-4 py-2 text-xs text-slate-600" x-text="row.unit"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <p x-show="saveMsg.global" class="mt-2 text-xs text-green-400" x-text="saveMsg.global"></p>
+    </section>
+
+    <!-- ── Section 2: Lens Config (tabs) ─────────────────────────────────────── -->
+    <section>
+      <h2 class="text-base font-semibold text-slate-200 mb-3">Configuração por Identidade</h2>
+
+      <!-- Tabs -->
+      <div class="flex gap-1 mb-4 bg-slate-900 p-1 rounded-lg border border-slate-800 w-fit">
+        <template x-for="lens in lensKeys" :key="lens">
+          <button @click="activeLens = lens"
+                  :class="activeLens === lens
+                    ? 'bg-slate-700 text-slate-100'
+                    : 'text-slate-400 hover:text-slate-200'"
+                  class="px-4 py-1.5 rounded text-sm transition-colors capitalize">
+            <span x-text="lensLabel(lens)"></span>
+          </button>
+        </template>
+      </div>
+
+      <!-- Per-lens panel -->
+      <template x-for="lens in lensKeys" :key="lens">
+        <div x-show="activeLens === lens">
+
+          <!-- Metrics table -->
+          <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Métricas e Pesos</h3>
+          <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-x-auto mb-4">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-xs text-slate-500 border-b border-slate-700 uppercase tracking-wide">
+                  <th class="text-left px-4 py-2 min-w-[130px]">Métrica</th>
+                  <th class="text-left px-4 py-2 min-w-[160px]">Fonte</th>
+                  <th class="text-right px-2 py-2">Pontos</th>
+                  <th class="text-right px-2 py-2">Cap</th>
+                   <template x-for="(abbr, ri) in rankAbbr" :key="abbr">
+                     <th class="text-right px-1 py-2 border-l border-slate-700/50"
+                         :class="rankColors[ri]"
+                         x-text="abbr"></th>
+                   </template>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(m, mi) in lensData[lens].metrics" :key="m.key">
+                  <tr class="border-b border-slate-800/60">
+                    <td class="px-4 py-2 font-mono text-xs text-slate-300" x-text="m.key"></td>
+                    <td class="px-4 py-2 text-xs text-slate-500" x-text="m.source"></td>
+                    <td class="px-2 py-1.5 text-right">
+                      <input type="number"
+                             :value="m.weight_points"
+                             @change="setMetricField(lens, mi, 'weight_points', +$event.target.value)"
+                             min="0" step="0.5"
+                             class="w-14 bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-right text-sm
+                                    focus:outline-none focus:border-yellow-500 transition-colors">
+                    </td>
+                    <td class="px-2 py-1.5 text-right">
+                      <input type="number"
+                             :value="m.cap ?? ''"
+                             @change="setMetricField(lens, mi, 'cap', $event.target.value === '' ? null : +$event.target.value)"
+                             min="0" step="any" placeholder="—"
+                             class="w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-right text-sm
+                                    focus:outline-none focus:border-yellow-500 transition-colors placeholder-slate-600">
+                    </td>
+                    <!-- Benchmark columns (read-only, calculated) -->
+                    <template x-for="(abbr, ri) in rankAbbr" :key="ri">
+                      <td class="px-1.5 py-1.5 text-right border-l border-slate-700/30"
+                          :class="{
+                            'border-yellow-900': ri === 4,
+                            'border-blue-900':   ri === 6,
+                          }">
+                        <span class="text-xs font-mono text-slate-400"
+                              x-text="derivedPreview(lens).rawBenchmarks[m.key]?.[ri] != null
+                                       ? derivedPreview(lens).rawBenchmarks[m.key][ri].toFixed(2)
+                                       : '—'"></span>
+                      </td>
+                    </template>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Derived preview -->
+          <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4 mb-4">
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-3">Preview Derivado</h3>
+
+            <!-- Rank thresholds: 10 values directly -->
+            <div class="mb-4">
+              <p class="text-xs text-slate-600 mb-2">Limiares de rank (calculados direto — sem interpolação)</p>
+              <div class="grid grid-cols-5 gap-x-6 gap-y-1">
+                <template x-for="(thresh, ri) in derivedPreview(lens).thresholds" :key="ri">
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="font-mono"
+                          :class="rankColors[ri]"
+                          x-text="rankNames[ri]"></span>
+                    <span class="font-mono text-slate-300 ml-2" x-text="thresh.toFixed(2)"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Coefficient table -->
+            <div>
+              <p class="text-xs text-slate-600 mb-2">Coeficientes derivados (peso / valor_Platinum)</p>
+              <div class="flex flex-wrap gap-3">
+                <template x-for="[key, coeff] in Object.entries(derivedPreview(lens).coefficients)" :key="key">
+                  <div class="bg-slate-800 rounded px-2 py-1 text-xs">
+                    <span class="text-slate-400 font-mono" x-text="key"></span>
+                    <span class="text-slate-600 mx-1">×</span>
+                    <span class="text-yellow-400 font-mono" x-text="coeff.toFixed(6)"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Save button -->
+          <div class="flex items-center gap-3">
+            <button @click="saveLens(lens)"
+                    :disabled="saving"
+                    class="text-sm bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 px-5 py-2 rounded transition-colors">
+              Salvar <span class="capitalize" x-text="lensLabel(lens)"></span>
+            </button>
+            <p x-show="saveMsg[lens]" class="text-xs text-green-400" x-text="saveMsg[lens]"></p>
+          </div>
+
+        </div>
+      </template>
+    </section>
+
+  </div><!-- /!loading -->
+
+</main>
+</body>
+</html>

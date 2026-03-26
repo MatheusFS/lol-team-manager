@@ -15,6 +15,8 @@
     { href: '/pages/champion-pool.html', label: '🎯 Pool de Campeões' },
     { href: '/pages/import.html',    label: '📥 Importar' },
     { href: '/pages/team.html',      label: '🛡️ Formações' },
+    { href: '/pages/rank-config.html', label: '📊 Calibração de Rank' },
+    { href: '/pages/repair-snapshots.html', label: '🔧 Reparar Snapshots' },
   ]
 
   function isActive(href) {
