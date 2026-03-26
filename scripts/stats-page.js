@@ -256,7 +256,19 @@ function deriveScoreConfig(G, lensCfg) {
     metrics.reduce((sum, m) => sum + applyCap(rawBenchmark(m, ri), m.cap) * coefficients[m.key], 0)
   )
 
-  return { thresholds, coefficients, metrics }
+  // KDA penalty: if player's KDA < Iron benchmark, apply a smooth multiplier
+  // multiplier = (playerKDA / ironKDA) ^ exponent
+  // exponent = sqrt(kda_weight / total_weight) — self-adjusts if weights change
+  let kdaPenalty = null
+  const kdaMetric = metrics.find(m => m.source === 'kda')
+  if (kdaMetric) {
+    const totalWeight = metrics.reduce((sum, m) => sum + m.weight_points, 0)
+    const ironKdaValue = rawBenchmark(kdaMetric, 0)  // rank 0 = Iron
+    const exponent = Math.sqrt(kdaMetric.weight_points / totalWeight)
+    kdaPenalty = { ironValue: ironKdaValue, exponent }
+  }
+
+  return { thresholds, coefficients, metrics, kdaPenalty }
 }
 
 // High-damage classifications for identity filtering
@@ -683,21 +695,31 @@ let _playerSort = { col: 'wr', dir: -1 }
 // Compute identity rank for each player based on lens-specific score.
 // Uses DB-driven coefficients and thresholds derived from loadRankConfig().
 // If config is not loaded yet (or failed), rows get identRank = null.
+// 
+// KDA Penalty: If player's KDA < Iron benchmark, apply smooth multiplier:
+//   multiplier = (playerKDA / ironKDA) ^ sqrt(kdaWeight / totalWeight)
+// This prevents players with very low KDA from being carried to high ranks by other metrics.
 function computeIdentityRanks(rows, lens) {
   const cfg = _rankConfig[lens]
   if (!cfg) return  // config not loaded or invalid lens
 
-  const { thresholds, coefficients, metrics } = cfg
+  const { thresholds, coefficients, metrics, kdaPenalty } = cfg
 
   rows.forEach((r) => {
     // Compute weighted score: Σ( cap(row[metric]) × coefficient )
-    const rawScore = metrics.reduce((sum, m) => {
+    let rawScore = metrics.reduce((sum, m) => {
       let val = r[m.key]
       // Replace Infinity (zero-death players) with a large number, then cap
       if (val === Infinity) val = 1e9
       if (m.cap != null) val = Math.min(val, m.cap)
       return sum + val * (coefficients[m.key] ?? 0)
     }, 0)
+
+    // Apply KDA penalty if player's KDA is below Iron benchmark
+    if (kdaPenalty && r.kda < kdaPenalty.ironValue) {
+      const multiplier = Math.pow(r.kda / kdaPenalty.ironValue, kdaPenalty.exponent)
+      rawScore *= multiplier
+    }
 
     // Find rank: highest threshold that rawScore meets or exceeds
     let rankIdx = 0
