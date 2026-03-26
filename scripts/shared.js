@@ -142,9 +142,10 @@ const utils = {
   rateColor(rate, n) {
     if (n < 10)      return 'rgba(100,116,139,0.5)'   // Gray < 10 matches
     if (rate >= 0.7) return 'rgba(168,85,247,0.78)'   // Purple ≥ 70%
-    if (rate >= 0.56) return 'rgba(74,222,128,0.78)'  // Green 56%-70%
-    if (rate >= 0.46) return 'rgba(234,179,8,0.78)'   // Gold 46%-56%
-    return 'rgba(248,113,113,0.78)'                    // Red ≤ 45%
+    if (rate >= 0.6) return 'rgba(74,222,128,0.78)'   // Green 60%-70%
+    if (rate >= 0.5) return 'rgba(234,179,8,0.78)'    // Gold 50%-60%
+    if (rate >= 0.4) return 'rgba(249,115,22,0.78)'   // Orange 40%-50%
+    return 'rgba(248,113,113,0.78)'                    // Red ≤ 40%
   },
 
   groupWR(matches, keyFn, sort = 'rate') {

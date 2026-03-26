@@ -496,7 +496,7 @@ function buildDeathSection(M) {
   const avgDW = mean(dthM.filter(m => m.win).map(m => m.team_deaths))
   const avgDL = mean(dthM.filter(m => !m.win).map(m => m.team_deaths))
 
-  const rateCls = r => r == null ? 'text-slate-400' : r >= 0.6 ? 'text-green-400' : r >= 0.4 ? 'text-yellow-400' : 'text-red-400'
+  const rateCls = r => r == null ? 'text-slate-400' : r >= 0.7 ? 'text-purple-400' : r >= 0.6 ? 'text-green-400' : r >= 0.5 ? 'text-yellow-400' : r >= 0.4 ? 'text-orange-400' : 'text-red-400'
 
   document.getElementById('death-cards').innerHTML = [
     { label: 'First Blood → Win%', big: fbRate != null ? `${utils.pct(fbRate)}%` : '—',
@@ -628,7 +628,7 @@ function buildObjectiveSection(M) {
     <div class="grid grid-cols-2 gap-2 mb-4">
       ${statCard('Drag médio — Vitórias', avgDragW?.toFixed(1) ?? '—', `N=${oW.length}`, 'text-green-400')}
       ${statCard('Drag médio — Derrotas', avgDragL?.toFixed(1) ?? '—', `N=${oL.length}`, 'text-red-400')}
-      ${statCard('Win% com ≥3 Drags', dragWR3 != null ? `${utils.pct(dragWR3)}%` : '—', `N=${soul3plus.length}`, dragWR3==null?'text-slate-400':dragWR3>=0.6?'text-green-400':dragWR3>=0.4?'text-yellow-400':'text-red-400')}
+       ${statCard('Win% com ≥3 Drags', dragWR3 != null ? `${utils.pct(dragWR3)}%` : '—', `N=${soul3plus.length}`, dragWR3==null?'text-slate-400':dragWR3>=0.7?'text-purple-400':dragWR3>=0.6?'text-green-400':dragWR3>=0.5?'text-yellow-400':dragWR3>=0.4?'text-orange-400':'text-red-400')}
       ${statCard('Win% com <3 Drags', objM.length-soul3plus.length ? `${utils.pct((objM.filter(m=>m.obj.d<3&&m.win).length)/(objM.length-soul3plus.length))}%` : '—', `N=${objM.length-soul3plus.length}`, 'text-slate-300')}
     </div>
     <table class="w-full text-xs text-slate-300">
@@ -639,7 +639,7 @@ function buildObjectiveSection(M) {
         ${['0–1','2','3','4+'].map(k => {
           const { w, n } = dragBuckets[k]
           const wr = n ? utils.pct(w/n) : null
-          const cls = wr == null ? 'text-slate-500' : wr >= 60 ? 'text-green-400' : wr >= 40 ? 'text-yellow-400' : 'text-red-400'
+          const cls = wr == null ? 'text-slate-500' : wr >= 70 ? 'text-purple-400' : wr >= 60 ? 'text-green-400' : wr >= 50 ? 'text-yellow-400' : wr >= 40 ? 'text-orange-400' : 'text-red-400'
           return `<tr class="border-b border-slate-800">
             <td class="py-1">${k}</td>
             <td class="text-right ${cls}">${wr != null ? wr+'%' : '—'}</td>
@@ -663,7 +663,7 @@ function buildObjectiveSection(M) {
   const avgHW  = mean(oW.map(m => m.obj.g))
   const avgHL  = mean(oL.map(m => m.obj.g))
 
-  const rateClass = r => r >= 0.6 ? 'text-green-400' : r >= 0.4 ? 'text-yellow-400' : 'text-red-400'
+  const rateClass = r => r >= 0.7 ? 'text-purple-400' : r >= 0.6 ? 'text-green-400' : r >= 0.5 ? 'text-yellow-400' : r >= 0.4 ? 'text-orange-400' : 'text-red-400'
 
   document.getElementById('obj-structures').innerHTML = `
     <h3 class="text-sm font-semibold text-slate-200 mb-3">🏰 Estruturas Early (T1 + Herald)</h3>
@@ -822,7 +822,7 @@ function renderPlayerTable() {
 
    // Build row template function
    const buildRowHTML = (r, isAnecdotal = false) => {
-     const wrCls = isAnecdotal ? 'text-slate-500' : (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.56 ? 'text-green-400' : r.wr >= 0.46 ? 'text-yellow-400' : 'text-red-400')
+     const wrCls = isAnecdotal ? 'text-slate-500' : (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.6 ? 'text-green-400' : r.wr >= 0.5 ? 'text-yellow-400' : r.wr >= 0.4 ? 'text-orange-400' : 'text-red-400')
      const cellCls = isAnecdotal ? 'text-slate-600' : ''
      const nameCls = isAnecdotal ? 'text-slate-500' : ''
      
@@ -1141,7 +1141,7 @@ function renderChampTable() {
       </tr></thead>
       <tbody>
         ${sorted.map(r => {
-          const wrCls = r.n >= 10 ? (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.56 ? 'text-green-400' : r.wr >= 0.46 ? 'text-yellow-400' : 'text-red-400') : 'text-slate-400'
+          const wrCls = r.n >= 10 ? (r.wr >= 0.7 ? 'text-purple-400' : r.wr >= 0.6 ? 'text-green-400' : r.wr >= 0.5 ? 'text-yellow-400' : r.wr >= 0.4 ? 'text-orange-400' : 'text-red-400') : 'text-slate-400'
           const img = r.key ? `<img src="${champImgUrl(r.key)}" class="w-6 h-6 rounded" title="${r.name}">` : '<span class="text-slate-600 text-xs">?</span>'
           return `<tr class="border-b border-slate-800">
             <td class="py-1.5">${img}</td>
