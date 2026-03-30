@@ -18,6 +18,30 @@ const RANK_COLORS = [
   'text-red-500',     // 8 Grandmaster
   'text-orange-400',  // 9 Challenger
 ]
+const RANK_BORDER_COLORS = [
+  'border-zinc-500',    // 0 Iron
+  'border-amber-700',   // 1 Bronze
+  'border-slate-300',   // 2 Silver
+  'border-yellow-400',  // 3 Gold
+  'border-teal-400',    // 4 Platinum
+  'border-emerald-400', // 5 Emerald
+  'border-cyan-300',    // 6 Diamond
+  'border-purple-400',  // 7 Master
+  'border-red-500',     // 8 Grandmaster
+  'border-orange-400',  // 9 Challenger
+]
+const RANK_BG_COLORS = [
+  'bg-zinc-500',    // 0 Iron
+  'bg-amber-700',   // 1 Bronze
+  'bg-slate-300',   // 2 Silver
+  'bg-yellow-400',  // 3 Gold
+  'bg-teal-400',    // 4 Platinum
+  'bg-emerald-400', // 5 Emerald
+  'bg-cyan-300',    // 6 Diamond
+  'bg-purple-400',  // 7 Master
+  'bg-red-500',     // 8 Grandmaster
+  'bg-orange-400',  // 9 Challenger
+]
 const RANK_ABBR = ['IR', 'BR', 'SL', 'GD', 'PT', 'EM', 'DI', 'MS', 'GM', 'CL']
 
 // ── Rank Config State & Loading ────────────────────────────────────────────

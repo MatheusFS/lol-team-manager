@@ -399,7 +399,7 @@ document.addEventListener('alpine:init', () => {
 
       await RiotApi.sleep(80)
       const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}/timeline`, this.apiKey)
-      const stats = extractMatchStats(match, timeline, { knownPuuidSet, puuidToName, puuidToId })
+      const stats = await extractMatchStats(match, timeline, { knownPuuidSet, puuidToName, puuidToId })
       if (!stats) return null
 
       // Cache the summary for future use

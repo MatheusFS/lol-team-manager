@@ -480,15 +480,13 @@ document.addEventListener('alpine:init', () => {
       this.showResults = false
 
       try {
-        // ── 1. PUUID (cache 24h) ───────────────────────────────────────────
-        this.setStatus('Buscando conta…')
-        const puuid = await RiotApi.resolvePuuid(this.summoner, this.apiKey, base)
-
-        // ── 2. Jogadores ───────────────────────────────────────────────────
+        // ── 1. Jogadores ───────────────────────────────────────────────────
         this.setStatus('Carregando jogadores…')
         const puuidToName = {}
         const puuidToId   = {}
         const knownPuuids = new Set()
+        let searchPlayer  = null
+        const missingPuuid = []
         try {
           const players = await api.col('players').list({ perPage: 50 })
           for (const p of players.items) {
@@ -496,9 +494,42 @@ document.addEventListener('alpine:init', () => {
               puuidToName[p.puuid] = p.name
               puuidToId[p.puuid]   = p.id
               knownPuuids.add(p.puuid)
+            } else if (p.riot_id) {
+              missingPuuid.push(p)
             }
+            if (p.riot_id?.toLowerCase() === this.summoner.toLowerCase()) searchPlayer = p
           }
         } catch (_) {}
+
+        // ── 1b. Resolver PUUIDs faltantes (jogadores com riot_id mas sem puuid) ──
+        if (missingPuuid.length) {
+          this.setStatus(`Resolvendo ${missingPuuid.length} PUUID(s) faltante(s)…`)
+          for (const p of missingPuuid) {
+            try {
+              const resolved = await RiotApi.resolvePuuid(p.riot_id, this.apiKey, base, { playerId: p.id })
+              if (resolved) {
+                knownPuuids.add(resolved)
+                puuidToName[resolved] = p.name
+                puuidToId[resolved]   = p.id
+              }
+            } catch (_) { /* ignora falha individual */ }
+          }
+        }
+
+        // ── 2. PUUID (cache 24h) ───────────────────────────────────────────
+        this.setStatus('Buscando conta…')
+        const puuid = await RiotApi.resolvePuuid(
+          this.summoner, this.apiKey, base,
+          { playerId: searchPlayer?.id, existingPuuid: searchPlayer?.puuid }
+        )
+        // Se o jogador buscado está cadastrado mas sem PUUID, inclui agora
+        if (searchPlayer && !knownPuuids.has(puuid)) {
+          knownPuuids.add(puuid)
+          puuidToName[puuid] = searchPlayer.name
+          puuidToId[puuid]   = searchPlayer.id
+        }
+
+        const knownFingerprint = [...knownPuuids].sort().join(',')
 
         // ── 3. IDs semanais (cache para semanas passadas) ──────────────────
         const weeks  = this._buildWeeks(this.startDate, this.endDate)
@@ -509,7 +540,10 @@ document.addEventListener('alpine:init', () => {
           const { startTime, endTime, label } = weeks[wi]
           const idsKey = `riot-ids-${puuid}-${startTime}-${endTime}`
           const isPast = endTime < nowSec - 3600
-          let ids = isPast ? RiotApi.cache.get(idsKey) : null
+          const cachedIds = isPast ? RiotApi.cache.get(idsKey) : null
+          // TTL de 7 dias: re-busca semanas passadas recentemente cacheadas
+          const idsStale = cachedIds && (Date.now() - (cachedIds._ts ?? 0)) > 7 * 86400000
+          let ids = (cachedIds && !idsStale) ? cachedIds.ids : null
 
           if (!ids) {
             this.setStatus(`Buscando semana ${wi + 1}/${weeks.length} (${label})…`)
@@ -517,7 +551,7 @@ document.addEventListener('alpine:init', () => {
               `${base}/lol/match/v5/matches/by-puuid/${puuid}/ids?startTime=${startTime}&endTime=${endTime}&count=100`,
               this.apiKey, { onStatus }
             )
-            if (isPast) RiotApi.cache.set(idsKey, ids)
+            if (isPast) RiotApi.cache.set(idsKey, { ids, _ts: Date.now() })
             if (ids.length > 0) await RiotApi.sleep(80)
           }
           allMatchIds.push(...ids)
@@ -544,6 +578,9 @@ document.addEventListener('alpine:init', () => {
         for (let i = 0; i < n; i++) {
           const matchId = uniqueIds[i]
           let summary = RiotApi.cache.get(`riot-summary-${matchId}`)
+          if (summary && !summary.teamComplete && summary._knownFingerprint !== knownFingerprint) {
+            summary = null // set de jogadores mudou — re-avaliar esta partida
+          }
 
           if (!summary) {
             this.setStatus(`Verificando ${i + 1}/${n} (${this.cards.length} do time)…`)
@@ -557,7 +594,7 @@ document.addEventListener('alpine:init', () => {
             }
 
             if (RiotApi.countRosterOnSameTeam(participants, knownPuuids) < 5) {
-              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now() })
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now(), _knownFingerprint: knownFingerprint })
               continue
             }
 
@@ -565,9 +602,9 @@ document.addEventListener('alpine:init', () => {
             const timeline = await RiotApi.fetch(`${base}/lol/match/v5/matches/${matchId}/timeline`, this.apiKey, { onStatus })
             await RiotApi.sleep(80)
 
-            const stats = extractMatchStats(match, timeline, { knownPuuidSet: knownPuuids, puuidToName, puuidToId })
+            const stats = await extractMatchStats(match, timeline, { knownPuuidSet: knownPuuids, puuidToName, puuidToId })
             if (!stats) {
-              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now() })
+              RiotApi.cache.set(`riot-summary-${matchId}`, { teamComplete: false, _ts: Date.now(), _knownFingerprint: knownFingerprint })
               continue
             }
 

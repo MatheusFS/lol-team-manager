@@ -188,7 +188,7 @@ function normChampKey(name) {
   return _CHAMP_ALIASES[clean] ?? clean
 }
 
-function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToName = {}, puuidToId = {} } = {}) {
+async function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToName = {}, puuidToId = {} } = {}) {
   const info = match?.info
   if (!info) return null
 
@@ -213,6 +213,9 @@ function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToNam
   const allEnm  = participants.filter(p => p.teamId !== ourTeamId)
   const ourTeam = info.teams?.find(t => t.teamId === ourTeamId)
   if (!ourTeam) return null
+
+  // Fetch DDragon item data for bonus stat calculation (cached)
+  const itemDataMap = await fetchDDragonItems()
 
   const ourIds = new Set(allOur.map(p => p.participantId))
   const dur    = Math.round(info.gameDuration / 60) || 1
@@ -292,6 +295,7 @@ function extractMatchStats(match, timeline, { knownPuuidSet, ourSide, puuidToNam
       damageToBuildings:    p.damageDealtToBuildings ?? 0,
       killParticipation:    p.challenges?.killParticipation ?? null,
       controlWardsPlaced:   p.challenges?.controlWardsPlaced ?? 0,
+      ...calcItemStats([p.item0, p.item1, p.item2, p.item3, p.item4, p.item5, p.item6], itemDataMap),
     }
   })
 
@@ -352,6 +356,7 @@ function stripSnapshot({ match, timeline }) {
     'wardsPlaced','visionScore','totalMinionsKilled','neutralMinionsKilled',
     'championName','teamPosition','individualPosition','champLevel','firstBloodKill',
     'damageSelfMitigated','timeCCingOthers','wardsKilled','damageDealtToBuildings',
+    'item0','item1','item2','item3','item4','item5','item6',
   ]
 
   const strippedMatch = {
@@ -407,6 +412,65 @@ fetch(`${PB}/scripts/ddragon-version.txt`)
 function champImgUrl(key) {
   if (!key || !_ddragonVersion) return ''
   return `https://ddragon.leagueoflegends.com/cdn/${_ddragonVersion}/img/champion/${key}.png`
+}
+
+// ── DDragon items ─────────────────────────────────────────────────────────────
+// Fetches items.json from DDragon and caches in localStorage for 7 days.
+// Returns a map: { [itemId: string]: { FlatHPPoolMod, FlatPhysicalDamageMod, ... } }
+let _itemDataCache = null
+async function fetchDDragonItems() {
+  if (_itemDataCache) return _itemDataCache
+
+  const version = _ddragonVersion
+  const cacheKey = `ddragon-items-${version}`
+  const TTL = 7 * 24 * 60 * 60 * 1000
+
+  try {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      const { ts, data } = JSON.parse(cached)
+      if (Date.now() - ts < TTL) {
+        _itemDataCache = data
+        return _itemDataCache
+      }
+    }
+  } catch {}
+
+  try {
+    const res = await fetch(`https://ddragon.leagueoflegends.com/cdn/${version}/data/en_US/item.json`)
+    if (!res.ok) return {}
+    const json = await res.json()
+    // Flatten to { itemId: stats } — only keep the stat fields we use
+    const data = {}
+    for (const [id, item] of Object.entries(json.data ?? {})) {
+      if (item.stats && Object.keys(item.stats).length) data[id] = item.stats
+    }
+    try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data })) } catch {}
+    _itemDataCache = data
+    return _itemDataCache
+  } catch {
+    return {}
+  }
+}
+
+// Sums bonus stats from a participant's items using DDragon item data.
+// itemIds: array of item IDs (item0…item6), 0 = empty slot.
+// itemDataMap: result of fetchDDragonItems().
+// Returns: { bHP, bAD, bAP, bAS, bArmor, bMR }
+function calcItemStats(itemIds, itemDataMap) {
+  let bHP = 0, bAD = 0, bAP = 0, bAS = 0, bArmor = 0, bMR = 0
+  for (const id of itemIds) {
+    if (!id) continue
+    const stats = itemDataMap[String(id)]
+    if (!stats) continue
+    bHP    += stats.FlatHPPoolMod          ?? 0
+    bAD    += stats.FlatPhysicalDamageMod  ?? 0
+    bAP    += stats.FlatMagicDamageMod     ?? 0
+    bAS    += stats.PercentAttackSpeedMod  ?? 0
+    bArmor += stats.FlatArmorMod           ?? 0
+    bMR    += stats.FlatSpellBlockMod      ?? 0
+  }
+  return { bHP, bAD, bAP, bAS, bArmor, bMR }
 }
 
 // ── Formation detection ───────────────────────────────────────────────────────

@@ -58,7 +58,7 @@ document.addEventListener('alpine:init', () => {
 
             // Re-extract player stats with new fields
             const { puuidToName, puuidToId } = await this._resolvePlayersMap(match)
-            const stats = extractMatchStats(riotMatch, riotTimeline, {
+            const stats = await extractMatchStats(riotMatch, riotTimeline, {
               ourSide: match.side,
               puuidToName,
               puuidToId,

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Calibração de Rank – Clash Manager</title>
+  <title>Calibração de Rank – LoL Team Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* Hide native number input spinners — they overlap content in dense tables */
@@ -12,6 +12,7 @@
     input[type=number] { -moz-appearance: textfield; }
   </style>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/rank-derivation.js"></script>
   <script src="/scripts/rank-config-page.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
@@ -68,7 +69,7 @@
             <template x-for="row in globalRows" :key="row.key">
               <tr class="border-b border-slate-800/60" :class="row.editable ? '' : 'bg-slate-900/40'">
                 <td class="px-4 py-2 text-xs" :class="row.editable ? 'text-slate-300' : 'text-slate-500 italic'" x-text="row.label"></td>
-                <template x-for="(_, ri) in Array(10)" :key="ri">
+                <template x-for="(abbr, ri) in rankAbbr" :key="ri">
                   <td class="px-1 py-1.5 text-right">
                     <!-- Editable input for empirical fields -->
                     <template x-if="row.editable">

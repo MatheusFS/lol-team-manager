@@ -2,9 +2,7 @@
 // Alpine component for the rank calibration config page.
 // Allows editing global benchmarks and per-lens identity assumptions + metric weights/caps.
 // Changes are saved to the 'rank_config' PocketBase collection.
-
-// Re-implements the derivation logic from stats-page.js so the preview works standalone.
-// (Kept in sync manually — if you change the derivation algorithm in stats-page.js, update here too.)
+// Derivation logic: rank-derivation.js (shared with stats-page.js)
 
 document.addEventListener('alpine:init', () => {
 Alpine.data('rankConfigPage', () => ({
@@ -51,8 +49,8 @@ Alpine.data('rankConfigPage', () => ({
       game_time_min:                [30.62,   31.07,   31.20,   30.97,   30.55,   29.97,   29.07,   27.87,   27.38,   27.07  ],
       damage_per_game:              [9000,    12000,   14250,   16500,   18300,   21000,   22600,   25000,   26333,   27667  ],
       gold_per_game:                [11222.2, 12241.6, 12645.4, 12691.5, 12620.2, 12470.5, 12142.5, 11811.3, 11822.7, 11970.4],
-      cs_per_game:                  [147.6,   155.0,   164.4,   170.3,   173.5,   175.0,   173.5,   170.8,   169.5,   169.7  ],
-      vision_score_per_game:        [26.9,    29.5,    32.1,    33.8,    34.2,    34.5,    34.3,    33.7,    34.2,    34.9   ],
+      cs_per_min:                   [4.82,    4.99,    5.27,    5.50,    5.68,    5.84,    5.97,    6.13,    6.19,    6.27   ],
+      vision_score_per_min:         [0.88,    0.95,    1.03,    1.09,    1.12,    1.15,    1.18,    1.21,    1.25,    1.29   ],
       damage_taken_per_game:        [25108.4, 26720.2, 28080.0, 27253.6, 25662.0, 23976.0, 21802.5, 19509.0, 18070.8, 16783.4],
       damage_mitigated_per_game:    [5511.6,  6214.0,  7176.0,  8052.2,  8859.5,  9590.4,  10465.2, 11148.0, 12047.2, 12993.6],
       cc_per_game:                  [27.6,    31.1,    37.4,    43.4,    48.9,    53.9,    61.0,    66.9,    73.9,    81.2   ],
@@ -70,8 +68,10 @@ Alpine.data('rankConfigPage', () => ({
     { key: 'damage_per_game',           label: 'Dano',                 unit: 'dano/jogo',        editable: true  },
     { key: 'damage_per_min',            label: 'Dano/min',             unit: 'dano/min',         editable: false },
     { key: 'gold_per_game',             label: 'Ouro',                 unit: 'ouro/jogo',        editable: true  },
-    { key: 'cs_per_game',               label: 'CS',                   unit: 'cs/jogo',          editable: true  },
-    { key: 'vision_score_per_game',     label: 'Vision Score',         unit: 'pontos/jogo',      editable: true  },
+    { key: 'cs_per_min',                label: 'CS/min',               unit: 'cs/min',           editable: true  },
+    { key: 'cs_per_game',               label: 'CS/jogo',              unit: 'cs/jogo',          editable: false },
+    { key: 'vision_score_per_min',      label: 'Vision Score/min',     unit: 'pontos/min',       editable: true  },
+    { key: 'vision_score_per_game',     label: 'Vision Score/jogo',    unit: 'pontos/jogo',      editable: false },
     { key: 'damage_taken_per_game',     label: 'Dano Recebido',        unit: 'dano/jogo',        editable: true  },
     { key: 'damage_mitigated_per_game', label: 'Dano Mitigado',        unit: 'dano/jogo',        editable: true  },
     { key: 'cc_per_game',               label: 'CC',                   unit: 'cc/jogo',          editable: true  },
@@ -80,9 +80,8 @@ Alpine.data('rankConfigPage', () => ({
     // ── duração (editável) ─────────────────────────────────────────────────
     { key: 'game_time_min',             label: 'Duração',              unit: 'minutos',          editable: true  },
     // ── per_min (read-only — derivado: per_game / game_time_min) ──────────
+    { key: 'kills_per_min',             label: 'Kills/min',            unit: 'kills/min',        editable: false },
     { key: 'gold_per_min',              label: 'Ouro/min',             unit: 'ouro/min',         editable: false },
-    { key: 'cs_per_min',                label: 'CS/min',               unit: 'cs/min',           editable: false },
-    { key: 'vision_score_per_min',      label: 'Vision Score/min',     unit: 'pontos/min',       editable: false },
     { key: 'damage_taken_per_min',      label: 'Dano Recebido/min',    unit: 'dano/min',         editable: false },
     { key: 'damage_mitigated_per_min',  label: 'Dano Mitigado/min',    unit: 'dano/min',         editable: false },
     { key: 'cc_per_min',                label: 'CC/min',               unit: 'cc/min',           editable: false },
@@ -97,7 +96,7 @@ Alpine.data('rankConfigPage', () => ({
       for (const rec of data.items) {
         this.recordIds[rec.name] = rec.id
         if (rec.name === 'global') {
-          this.globalData = JSON.parse(JSON.stringify(rec.config.benchmarks))
+          this.globalData = migrateBenchmarks(JSON.parse(JSON.stringify(rec.config.benchmarks)))
         } else {
           this.lensData[rec.name] = JSON.parse(JSON.stringify(rec.config))
         }
@@ -119,128 +118,20 @@ Alpine.data('rankConfigPage', () => ({
     this.lensData[lens].metrics[mi][field] = val
   },
 
-  // ── Derivation (mirrors deriveScoreConfig in stats-page.js) ──────────────
-  // 10-rank direct computation — no interpolation.
-  // Anchor: Platinum (index 4).
-  _deriveScoreConfig(G, lensCfg) {
-    const { assumptions = {}, metrics } = lensCfg
-    const R = 10
-    const ANCHOR = 4 // Platinum
-
-    // ── Runtime-derived fields (not stored in PocketBase) ──────────────────
-    // assists_per_game = kda × deaths − kills
-    const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
-    // kill_secured = kills / (kills + assists)
-    const kill_secured = G.kills_per_game.map((k, i) => {
-      const denom = k + assists_per_game[i]
-      return denom > 0 ? k / denom : 0
-    })
-    // per_min = per_game / game_time_min
-    const damage_per_min           = G.damage_per_game.map((v, i)           => v / G.game_time_min[i])
-    const gold_per_min             = G.gold_per_game.map((v, i)             => v / G.game_time_min[i])
-    const cs_per_min               = G.cs_per_game.map((v, i)               => v / G.game_time_min[i])
-    const vision_score_per_min     = G.vision_score_per_game.map((v, i)     => v / G.game_time_min[i])
-    const damage_taken_per_min     = G.damage_taken_per_game.map((v, i)     => v / G.game_time_min[i])
-    const damage_mitigated_per_min = G.damage_mitigated_per_game.map((v, i) => v / G.game_time_min[i])
-    const cc_per_min               = G.cc_per_game.map((v, i)               => v / G.game_time_min[i])
-    const kills_per_min            = G.kills_per_game.map((v, i)            => v / G.game_time_min[i])
-    const assists_per_min          = assists_per_game.map((v, i)            => v / G.game_time_min[i])
-    const wards_and_wk_per_min     = G.wards_and_wk_per_game.map((v, i)     => v / G.game_time_min[i])
-
-    const applyCap = (v, cap) => (cap != null ? Math.min(v, cap) : v)
-
-    const rawBenchmark = (m, ri) => {
-      switch (m.source) {
-         // ── Per-death: X_per_game / deaths_per_game ────────────────────────
-         case 'damage_per_game/deaths':           return G.damage_per_game[ri]         / G.deaths_per_game[ri]
-         case 'kills_per_game/deaths':           return G.kills_per_game[ri]          / G.deaths_per_game[ri]
-         case 'assists_per_game/deaths':         return assists_per_game[ri]          / G.deaths_per_game[ri]
-         case 'gold_per_game/deaths':             return G.gold_per_game[ri]           / G.deaths_per_game[ri]
-         case 'cs_per_game/deaths':               return G.cs_per_game[ri]             / G.deaths_per_game[ri]
-         case 'vision_score_per_game/deaths':     return G.vision_score_per_game[ri]   / G.deaths_per_game[ri]
-         case 'damage_mitigated_per_game/deaths': return G.damage_mitigated_per_game[ri] / G.deaths_per_game[ri]
-         case 'damage_taken_per_game/deaths':     return G.damage_taken_per_game[ri]   / G.deaths_per_game[ri]
-         case 'control_wards/deaths':            return G.control_wards_placed[ri]    / G.deaths_per_game[ri]
-         case 'wards_and_wk/deaths':             return G.wards_and_wk_per_game[ri]   / G.deaths_per_game[ri]
-         // ── Ratio: per_game / per_game ──────────────────────────────────────
-         case 'damage_per_min/damage_taken_per_min':           return G.damage_per_game[ri] / G.damage_taken_per_game[ri]
-         case 'damage_mitigated_per_min/damage_taken_per_min': return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
-         case 'damage_mitigated/damage_taken':                 return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
-         // ── Direct per_min (runtime-computed) ──────────────────────────────
-         case 'damage_per_min':           return damage_per_min[ri]
-         case 'gold_per_min':             return gold_per_min[ri]
-         case 'cs_per_min':               return cs_per_min[ri]
-         case 'vision_score_per_min':     return vision_score_per_min[ri]
-         case 'damage_mitigated_per_min': return damage_mitigated_per_min[ri]
-         case 'damage_taken_per_min':     return damage_taken_per_min[ri]
-         case 'cc_per_min':               return cc_per_min[ri]
-         case 'kills_per_min':            return kills_per_min[ri]
-         case 'assists_per_min':          return assists_per_min[ri]
-         case 'wards_and_wk_per_min':     return wards_and_wk_per_min[ri]
-         // ── Direct empirical ────────────────────────────────────────────────
-         case 'kill_participation':   return G.kill_participation[ri]
-         case 'kill_secured':         return kill_secured[ri]
-         case 'kda':                  return G.kda[ri]
-         case 'control_wards_per_game': return G.control_wards_placed[ri]
-         default: return 0
-       }
-    }
-
-    const coefficients = {}
-    for (const m of metrics) {
-      const anchorVal = applyCap(rawBenchmark(m, ANCHOR), m.cap)
-      coefficients[m.key] = anchorVal > 0 ? m.weight_points / anchorVal : 0
-    }
-
-    // Capture rawBenchmarks per metric for display
-    const rawBenchmarks = {}
-    for (const m of metrics) {
-      rawBenchmarks[m.key] = Array.from({ length: R }, (_, ri) => rawBenchmark(m, ri))
-    }
-
-    // 10 rank thresholds directly — no interpolation
-    const thresholds = Array.from({ length: R }, (_, ri) =>
-      metrics.reduce((sum, m) => sum + applyCap(rawBenchmark(m, ri), m.cap) * coefficients[m.key], 0)
-    )
-
-    return { thresholds, coefficients, rawBenchmarks }
-  },
-
   derivedPreview(lens) {
     const ld = this.lensData[lens]
     if (!ld) return { thresholds: Array(10).fill(0), coefficients: {}, rawBenchmarks: {} }
     try {
-      return this._deriveScoreConfig(this.globalData, ld)
+      return deriveScoreConfig(this.globalData, ld)
     } catch (_) {
       return { thresholds: Array(10).fill(0), coefficients: {}, rawBenchmarks: {} }
     }
   },
 
-  // Returns globalData enriched with runtime-derived values for display in the table.
-  // The per_min keys and kill_secured are read-only rows in globalRows — they don't exist
-  // in globalData, so we compute them here for the template to render.
+  // Returns globalData enriched with runtime-derived values for read-only rows.
   globalDataDisplay() {
-    const G = this.globalData
-    const t = G.game_time_min
-    if (!t) return G
-    const assists_per_game = G.kda?.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
-    return {
-      ...G,
-      damage_per_min:           G.damage_per_game?.map((v, i)           => v / t[i]),
-      gold_per_min:             G.gold_per_game?.map((v, i)             => v / t[i]),
-      cs_per_min:               G.cs_per_game?.map((v, i)               => v / t[i]),
-      vision_score_per_min:     G.vision_score_per_game?.map((v, i)     => v / t[i]),
-      damage_taken_per_min:     G.damage_taken_per_game?.map((v, i)     => v / t[i]),
-      damage_mitigated_per_min: G.damage_mitigated_per_game?.map((v, i) => v / t[i]),
-      cc_per_min:               G.cc_per_game?.map((v, i)               => v / t[i]),
-      kills_per_min:            G.kills_per_game?.map((v, i)            => v / t[i]),
-      assists_per_min:          assists_per_game?.map((v, i)            => v / t[i]),
-      wards_and_wk_per_min:     G.wards_and_wk_per_game?.map((v, i)     => v / t[i]),
-      kill_secured:             G.kills_per_game?.map((k, i) => {
-        const denom = k + (assists_per_game?.[i] ?? 0)
-        return denom > 0 ? k / denom : 0
-      }),
-    }
+    try { return expandBenchmarks(this.globalData) }
+    catch (_) { return this.globalData }
   },
 
   // ── Save ──────────────────────────────────────────────────────────────────

@@ -174,7 +174,9 @@ document.addEventListener('alpine:init', () => {
     achievements: [],  // strengths where teamRank === 1
     bestIdentity: null,
     identityGameCounts: {},  // { carry: n, assassino: n, bruiser: n, tank: n, suporte: n }
-    
+    playerRankMap: {},  // { [playerId]: { rankIdx } | null }
+    identityRankColors: {},  // { [lensKey]: rankIdx }
+
     loading: true,
     error: null,
 
@@ -192,6 +194,41 @@ document.addEventListener('alpine:init', () => {
       if (lensKey === 'geral') return this.identityGameCounts.nTotal || 0
       const key = `n${lensKey.charAt(0).toUpperCase()}${lensKey.slice(1)}`
       return this.identityGameCounts[key] || 0
+    },
+
+    _computeAllPlayerRanks() {
+      const riotMatches = this.allMatches.filter(m => m.player_stats?.length)
+      const mapAll = {}
+      for (const m of riotMatches) {
+        for (const ps of m.player_stats) {
+          if (!ps.name) continue
+          const champEntry = this.allChampions[normChampKey(ps.champion)] ?? null
+          const p = mapAll[ps.name] ??= { nTotal:0, nCarry:0, nAssassino:0, nBruiser:0, nTank:0, nSuporte:0 }
+          p.nTotal++
+          if (isCarry(champEntry)) p.nCarry++
+          else if (champEntry?.class === 'Assassin') p.nAssassino++
+          else if (isBruiser(champEntry)) p.nBruiser++
+          else if (champEntry?.class === 'Tank') p.nTank++
+          else if (champEntry?.class === 'Support') p.nSuporte++
+        }
+      }
+
+      const identityRowsPerLens = {}
+      for (const identLens of ['carry','assassino','bruiser','tank','suporte']) {
+        const rows = aggregateRows(riotMatches, this.allChampions, LENS_DEFS[identLens].filter, mapAll)
+        computeIdentityRanks(rows, identLens)
+        identityRowsPerLens[identLens] = rows
+      }
+
+      this.playerRankMap = {}
+      for (const player of this.players) {
+        let total = 0, count = 0
+        for (const identLens of ['carry','assassino','bruiser','tank','suporte']) {
+          const row = identityRowsPerLens[identLens].find(r => r.name === player.name)
+          if (row?.n >= 5 && row?.identRank) { total += row.identRank.rankIdx; count++ }
+        }
+        this.playerRankMap[player.id] = count > 0 ? { rankIdx: Math.round(total / count) } : null
+      }
     },
 
     async init() {
@@ -229,6 +266,9 @@ document.addEventListener('alpine:init', () => {
         this.players = this.allPlayers
           .filter(p => playerNamesInMatches.has(p.name))
           .sort((a, b) => a.name.localeCompare(b.name))
+
+        // Compute geral rank for all players
+        this._computeAllPlayerRanks()
 
         // Select first player by default
         if (this.players.length > 0) {
@@ -325,6 +365,15 @@ document.addEventListener('alpine:init', () => {
         }
       }
 
+      // Populate identityRankColors for button styling
+      this.identityRankColors = {}
+      for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
+        const row = identityMetrics[identLens]
+        if (row?.identRank) this.identityRankColors[identLens] = row.identRank.rankIdx
+      }
+      if (validIdentityCount > 0)
+        this.identityRankColors['geral'] = Math.round(totalRankIdx / validIdentityCount)
+
       // ── 3. Aggregate all player metrics by current lens ──
       const lensFilter = LENS_DEFS[this.lens].filter
       const allRows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
@@ -361,19 +410,22 @@ document.addEventListener('alpine:init', () => {
           label: 'Win Rate',
           value: `${(this.playerMetrics.wr * 100).toFixed(0)}%`,
           sub: `${this.playerMetrics.n} partidas`,
-          color: this.playerMetrics.wr >= 0.6 ? 'text-green-400' : 'text-yellow-400'
+          color: this.playerMetrics.wr >= 0.6 ? 'text-green-400' : 'text-yellow-400',
+          borderColor: 'border-slate-800'
         },
         {
           label: 'KDA',
           value: this.playerMetrics.kda?.toFixed(2) ?? '—',
           sub: `média`,
-          color: this.playerMetrics.kda >= 2.5 ? 'text-green-400' : 'text-slate-300'
+          color: this.playerMetrics.kda >= 2.5 ? 'text-green-400' : 'text-slate-300',
+          borderColor: 'border-slate-800'
         },
         {
           label: this.lens === 'geral' ? 'Rank (Geral)' : 'Rank (Identidade)',
           value: rankLabel,
           sub: '',
           color: rankLabel !== 'N/A' ? RANK_COLORS[RANK_NAMES.indexOf(rankLabel.toLowerCase())] : 'text-slate-400',
+          borderColor: rankLabel !== 'N/A' ? RANK_BORDER_COLORS[RANK_NAMES.indexOf(rankLabel.toLowerCase())] : 'border-slate-800',
           imgUrl: rankImg
         }
       ]
@@ -420,7 +472,9 @@ document.addEventListener('alpine:init', () => {
           rankLabel: evalResult.rankLabel,
           rankImgUrl: evalResult.rankImgUrl,
           teamRank: evalResult.teamRank,
-          teamSize: evalResult.teamSize
+          teamSize: evalResult.teamSize,
+          rankColor: RANK_COLORS[evalResult.rankIdx] ?? 'text-slate-300',
+          borderColor: RANK_BORDER_COLORS[evalResult.rankIdx] ?? 'border-slate-700'
         }
 
         if (evalResult.isStrength) {
@@ -447,6 +501,31 @@ document.addEventListener('alpine:init', () => {
 
       // Extract achievements: strengths where player is 1º no time
       this.achievements = this.strengths.filter(p => p.teamRank === 1)
+    },
+
+    playerButtonClass(p) {
+      const rank = this.playerRankMap[p.id]
+      const sel  = this.selectedPlayerId === p.id
+      if (!rank) return sel
+        ? 'bg-yellow-500 text-slate-900 border-yellow-500 font-medium'
+        : 'border-slate-700 text-slate-400 hover:text-slate-300'
+      const { rankIdx } = rank
+      return sel
+        ? `${RANK_BG_COLORS[rankIdx]} text-slate-900 ${RANK_BORDER_COLORS[rankIdx]} font-medium`
+        : `${RANK_BORDER_COLORS[rankIdx]} ${RANK_COLORS[rankIdx]} hover:opacity-80`
+    },
+
+    identityButtonClass(l) {
+      const sel      = this.lens === l.key
+      const rankIdx  = this.identityRankColors[l.key]
+      const disabled = this.getIdentityGameCount(l.key) < 1
+      const dis      = disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+      if (rankIdx == null) return `${sel
+        ? 'bg-yellow-500 text-slate-900 border-yellow-500 font-medium'
+        : 'border-slate-700 text-slate-400 hover:text-slate-300'} ${dis}`
+      return `${sel
+        ? `${RANK_BG_COLORS[rankIdx]} text-slate-900 ${RANK_BORDER_COLORS[rankIdx]} font-medium`
+        : `${RANK_BORDER_COLORS[rankIdx]} ${RANK_COLORS[rankIdx]} hover:opacity-80`} ${dis}`
     }
   }))
 })

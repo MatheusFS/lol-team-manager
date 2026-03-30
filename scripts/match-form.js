@@ -231,7 +231,7 @@ document.addEventListener('alpine:init', () => {
       if (this.win === null) { alert('Selecione VITÓRIA ou DERROTA.'); return }
       this.saving = true
       try {
-        if (this.riotSnapshot) this._extractStatsFromSnapshot()
+        if (this.riotSnapshot) await this._extractStatsFromSnapshot()
 
         const num = v => (v !== '' && v != null) ? +v : undefined
         const str = v => (typeof v === 'string' ? v.trim() : String(v ?? '')).trim() || undefined
@@ -307,9 +307,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     // ── Extract all stats from stored snapshot (called on save when snapshot exists) ──
-    _extractStatsFromSnapshot() {
+    async _extractStatsFromSnapshot() {
       const { match, timeline } = this.riotSnapshot
-      const stats = extractMatchStats(match, timeline, { ourSide: this.side })
+      const stats = await extractMatchStats(match, timeline, { ourSide: this.side })
       if (!stats) return
 
       this.duration    = stats.duration
@@ -419,7 +419,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const snap = this.riotSnapshot
         const { puuidToName, puuidToId, players } = await this._resolvePlayersMap()
-        const stats = extractMatchStats(snap.match, snap.timeline, { ourSide: this.side, puuidToName, puuidToId })
+        const stats = await extractMatchStats(snap.match, snap.timeline, { ourSide: this.side, puuidToName, puuidToId })
         await this._applyRepairPayload(stats, snap, players)
       } catch (e) {
         this.repairStatus = 'Erro: ' + e.message
@@ -444,7 +444,7 @@ document.addEventListener('alpine:init', () => {
         this.repairStatus = 'Calculando estatísticas…'
         const { puuidToName, puuidToId, players } = await this._resolvePlayersMap()
         const snap  = { match, timeline }
-        const stats = extractMatchStats(match, timeline, { ourSide: this.side, puuidToName, puuidToId })
+        const stats = await extractMatchStats(match, timeline, { ourSide: this.side, puuidToName, puuidToId })
         await this._applyRepairPayload(stats, snap, players)
       } catch (e) {
         this.repairStatus = 'Erro: ' + e.message

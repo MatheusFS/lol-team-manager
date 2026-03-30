@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalhes da Partida – Clash Manager</title>
+  <title>Detalhes da Partida – LoL Team Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
   <script src="/scripts/riot-api.js"></script>
@@ -155,7 +155,7 @@
         },
 
         champKey(championName) {
-          const c = Alpine.store('champions').list.find(x => x.name === championName)
+          const c = Alpine.store('champions').list.find(x => normChampKey(x.key) === normChampKey(championName))
           return c?.key ?? ''
         },
 
@@ -182,6 +182,62 @@
         get mvcChamp() {
           if (!this.match?.expand?.mvc) return null
           return this.match.expand.mvc
+        },
+
+        // ── Role derivation breakdown ──────────────────────────────────────
+        get roleDerivations() {
+          const champList = Alpine.store('champions').list
+          return this.sortedPlayers.map(p => {
+            const entry  = champList.find(x => normChampKey(x.key) === normChampKey(p.champion))
+            const cls    = entry?.class ?? null
+            const bHP    = p.bHP    ?? 0
+            const bAD    = p.bAD    ?? 0
+            const bAP    = p.bAP    ?? 0
+            const bAS    = p.bAS    ?? 0
+            const bArmor = p.bArmor ?? 0
+            const bMR    = p.bMR    ?? 0
+
+            const derive = (ratioOff, ratioDef) => {
+              if (cls === 'Assassin') return 'Assassino'
+              if (cls === 'Support')  return 'Suporte'
+              if (cls === 'Tank')     return ratioDef >= 0.6  ? 'Tank'    : 'Bruiser'
+              if (cls === 'Marksman') return ratioOff >= 0.6  ? 'Carry'   : null
+              if (cls === 'Mage')     return ratioOff >= 0.6  ? 'Carry'   : null
+              if (cls === 'Fighter') {
+                if (ratioOff >= 0.65) return 'Carry'
+                if (ratioDef >= 0.65) return 'Tank'
+                return 'Bruiser'
+              }
+              return null
+            }
+
+            if (!bHP && !bAD && !bAP) {
+              return { name: p.name, champion: p.champion, cls,
+                bHP, bAD, bAP, bAS, bArmor, bMR,
+                offense: null, defense: null, ratioOff: null, ratioDef: null,
+                role: derive(0, 0), method: 'estático' }
+            }
+
+            const offense  = bAD * 35 + bAP * 20 + bAS * 250
+            const defense  = bHP * 3 + bArmor * 20 + bMR * 18
+            const total    = offense + defense || 1
+            const ratioOff = offense / total
+            const ratioDef = defense / total
+            return { name: p.name, champion: p.champion, cls,
+              bHP, bAD, bAP, bAS, bArmor, bMR,
+              offense, defense, ratioOff, ratioDef,
+              role: derive(ratioOff, ratioDef), method: 'stats' }
+          })
+        },
+
+        roleCls(role) {
+          return {
+            'Carry':     'text-blue-400',
+            'Assassino': 'text-red-400',
+            'Bruiser':   'text-orange-400',
+            'Tank':      'text-slate-300',
+            'Suporte':   'text-green-400',
+          }[role] ?? 'text-slate-600'
         },
 
         // ── Detect incomplete data ─────────────────────────────────────────
@@ -226,7 +282,7 @@
               }
             } catch (_) {}
 
-            const stats   = extractMatchStats(match, timeline, { ourSide: this.match.side, puuidToName, puuidToId })
+            const stats   = await extractMatchStats(match, timeline, { ourSide: this.match.side, puuidToName, puuidToId })
             const payload = RiotApi.buildMatchPayload(stats, { snapshot: { match, timeline } })
 
             // MVC (champion of the MVP)
@@ -274,7 +330,7 @@
               }
             } catch (_) {}
 
-            const stats   = extractMatchStats(snap.match, snap.timeline, { ourSide: this.match.side, puuidToName, puuidToId })
+            const stats   = await extractMatchStats(snap.match, snap.timeline, { ourSide: this.match.side, puuidToName, puuidToId })
             const payload = RiotApi.buildMatchPayload(stats, { snapshot: snap })
 
             // MVC
@@ -382,6 +438,64 @@
                     <td class="px-3 py-2.5 text-right text-slate-400 font-mono text-xs" x-text="fmtNum(p.gold)"></td>
                     <td class="px-3 py-2.5 text-right text-slate-400 text-xs" x-text="p.visionScore ?? '—'"></td>
                     <td class="px-3 py-2.5 text-center text-slate-500 text-xs" x-text="p.level ?? '—'"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ── Role derivation ──────────────────────────────────────────── -->
+        <section x-show="sortedPlayers.length" x-data="{ show: false }"
+                 class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+          <button @click="show = !show"
+                  class="w-full px-5 py-3 flex items-center gap-3 text-left border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-1">Derivação de Role</h2>
+            <span class="text-xs font-mono text-slate-600" x-text="show ? '▲ Ocultar' : '▼ Ver'"></span>
+          </button>
+          <div x-show="show" x-transition class="overflow-x-auto">
+            <table class="w-full text-xs font-mono">
+              <thead class="bg-slate-900/60 text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th class="px-4 py-2.5 text-left font-sans">Jogador</th>
+                  <th class="px-3 py-2.5 text-left font-sans">Campeão</th>
+                  <th class="px-3 py-2.5 text-center font-sans">Classe</th>
+                  <th class="px-3 py-2.5 text-right" title="Bonus Health (itens)">bHP</th>
+                  <th class="px-3 py-2.5 text-right" title="Bonus Attack Damage (itens)">bAD</th>
+                  <th class="px-3 py-2.5 text-right" title="Bonus Ability Power (itens)">bAP</th>
+                  <th class="px-3 py-2.5 text-right" title="Bonus Attack Speed (itens)">bAS</th>
+                  <th class="px-3 py-2.5 text-right" title="Bonus Armor (itens)">bARM</th>
+                  <th class="px-3 py-2.5 text-right" title="Bonus Magic Resist (itens)">bMR</th>
+                  <th class="px-3 py-2.5 text-right border-l border-slate-800" title="bAD + bAP×0.8 + bAS×50">Offense</th>
+                  <th class="px-3 py-2.5 text-right" title="bHP + bARM×15 + bMR×15">Defense</th>
+                  <th class="px-3 py-2.5 text-right text-blue-500" title="Offense / (Offense + Defense)">Off%</th>
+                  <th class="px-3 py-2.5 text-right text-slate-400" title="Defense / (Offense + Defense)">Def%</th>
+                  <th class="px-3 py-2.5 text-center border-l border-slate-800 font-sans">Role</th>
+                  <th class="px-3 py-2.5 text-center font-sans">Método</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60">
+                <template x-for="d in roleDerivations" :key="d.name ?? d.champion">
+                  <tr class="hover:bg-slate-800/40 transition-colors">
+                    <td class="px-4 py-2 text-slate-200 font-sans" x-text="d.name ?? '—'"></td>
+                    <td class="px-3 py-2 text-slate-400 font-sans" x-text="d.champion ?? '—'"></td>
+                    <td class="px-3 py-2 text-center text-slate-500 font-sans" x-text="d.cls ?? '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-300" x-text="d.bHP    ? '+' + Math.round(d.bHP)    : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-300" x-text="d.bAD    ? '+' + Math.round(d.bAD)    : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-300" x-text="d.bAP    ? '+' + Math.round(d.bAP)    : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-300" x-text="d.bAS    ? '+' + (d.bAS * 100).toFixed(0) + '%' : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-300" x-text="d.bArmor ? '+' + Math.round(d.bArmor) : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-300" x-text="d.bMR    ? '+' + Math.round(d.bMR)    : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-400 border-l border-slate-800" x-text="d.offense != null ? Math.round(d.offense) : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-400" x-text="d.defense != null ? Math.round(d.defense) : '—'"></td>
+                    <td class="px-3 py-2 text-right text-blue-400" x-text="d.ratioOff != null ? (d.ratioOff * 100).toFixed(1) + '%' : '—'"></td>
+                    <td class="px-3 py-2 text-right text-slate-400" x-text="d.ratioDef != null ? (d.ratioDef * 100).toFixed(1) + '%' : '—'"></td>
+                    <td class="px-3 py-2 text-center font-semibold font-sans border-l border-slate-800"
+                        :class="roleCls(d.role)"
+                        x-text="d.role ?? '—'"></td>
+                    <td class="px-3 py-2 text-center font-sans"
+                        :class="d.method === 'estático' ? 'text-amber-500/70' : 'text-slate-600'"
+                        x-text="d.method"></td>
                   </tr>
                 </template>
               </tbody>

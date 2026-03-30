@@ -47,13 +47,28 @@ document.addEventListener('alpine:init', () => {
 
       this.saving = true
       try {
+        const riotId = this.form.riot_id.trim()
+        let puuid    = this.form.puuid.trim()
+
+        // Auto-resolve PUUID se riot_id preenchido e puuid vazio
+        if (riotId && !puuid) {
+          const apiKey = localStorage.getItem('riot-api-key')
+          const region = localStorage.getItem('riot-region') || 'BR1'
+          if (apiKey) {
+            try {
+              const base = RiotApi.baseUrl(region)
+              puuid = await RiotApi.resolvePuuid(riotId, apiKey, base)
+            } catch (_) { /* sem API key válida ou erro de rede — salva sem PUUID */ }
+          }
+        }
+
         const payload = {
           name:            this.form.name.trim(),
           role:            this.form.role,
           secondary_role:  this.form.secondary_role,
           is_sub:          this.form.is_sub,
-          riot_id:         this.form.riot_id.trim(),
-          puuid:           this.form.puuid.trim(),
+          riot_id:         riotId,
+          puuid,
         }
 
         if (this.editId) {

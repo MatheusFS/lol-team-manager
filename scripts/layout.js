@@ -11,11 +11,14 @@
   ]
 
   const CONFIG_ITEMS = [
-    { href: '/pages/champions.html', label: '👑 Campeões' },
     { href: '/pages/players.html',   label: '👥 Jogadores' },
     { href: '/pages/champion-pool.html', label: '🎯 Pool de Campeões' },
     { href: '/pages/import.html',    label: '📥 Importar' },
     { href: '/pages/team.html',      label: '🛡️ Formações' },
+  ]
+
+  const ADMIN_ITEMS = [
+    { href: '/pages/champions.html', label: '👑 Campeões' },
     { href: '/pages/rank-config.html', label: '📊 Calibração de Rank' },
     { href: '/pages/repair-snapshots.html', label: '🔧 Reparar Snapshots' },
   ]
@@ -40,7 +43,13 @@
       return `<a href="${item.href}" class="block px-4 py-1.5 ${active ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'}">${item.label}</a>`
     }).join('')
 
-    const dropdown = `<div class="relative group">
+    const adminActive = ADMIN_ITEMS.some(i => isActive(i.href))
+    const adminLinks = ADMIN_ITEMS.map(item => {
+      const active = isActive(item.href)
+      return `<a href="${item.href}" class="block px-4 py-1.5 ${active ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'}">${item.label}</a>`
+    }).join('')
+
+    const configDropdown = `<div class="relative group">
         <span class="cursor-default ${configActive ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'} flex items-center gap-1 select-none">⚙️ Configurações <span class="text-xs">▾</span></span>
         <div class="absolute hidden group-hover:block right-0 top-full pt-1 z-50">
           <div class="bg-slate-800 border border-slate-700 rounded shadow-xl py-1 min-w-[10rem]">
@@ -49,10 +58,19 @@
         </div>
       </div>`
 
+    const adminDropdown = `<div class="relative group">
+        <span class="cursor-default ${adminActive ? 'text-yellow-400 font-medium' : 'text-slate-300 hover:text-slate-100'} flex items-center gap-1 select-none">🔐 Admin <span class="text-xs">▾</span></span>
+        <div class="absolute hidden group-hover:block right-0 top-full pt-1 z-50">
+          <div class="bg-slate-800 border border-slate-700 rounded shadow-xl py-1 min-w-[10rem]">
+            ${adminLinks}
+          </div>
+        </div>
+      </div>`
+
     return `<nav class="bg-slate-900 border-b border-slate-800">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        <a href="/index.html" class="font-bold text-yellow-500 tracking-wide">⚔ Clash Manager</a>
-        <div class="flex gap-6 text-sm items-center">${pageLinks}${dropdown}</div>
+        <a href="/index.html" class="font-bold text-yellow-500 tracking-wide">⚔ LoL Team Manager</a>
+        <div class="flex gap-6 text-sm items-center">${pageLinks}${configDropdown}${adminDropdown}</div>
       </div>
     </nav>`
   }
