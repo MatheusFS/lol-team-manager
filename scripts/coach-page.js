@@ -171,6 +171,7 @@ document.addEventListener('alpine:init', () => {
     overviewCards: [],
     strengths: [],
     weaknesses: [],
+    achievements: [],  // strengths where teamRank === 1
     bestIdentity: null,
     identityGameCounts: {},  // { carry: n, assassino: n, bruiser: n, tank: n, suporte: n }
     
@@ -443,6 +444,9 @@ document.addEventListener('alpine:init', () => {
         // Secondary: delta asc (more below team average)
         return (a.delta ?? 0) - (b.delta ?? 0)
       })
+
+      // Extract achievements: strengths where player is 1º no time
+      this.achievements = this.strengths.filter(p => p.teamRank === 1)
     }
   }))
 })

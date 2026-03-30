@@ -99,6 +99,28 @@
           </template>
         </div>
 
+        <!-- Achievements Section -->
+        <template x-if="achievements.length > 0">
+          <div class="mb-8">
+            <h2 class="text-lg font-bold text-yellow-400 mb-4">🏆 Conquistas</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <template x-for="achievement in achievements" :key="achievement.metric">
+                <div class="bg-yellow-500/5 border border-yellow-500/40 rounded-lg p-4 text-center">
+                  <div class="text-sm font-bold text-yellow-300 mb-2" x-text="achievement.label"></div>
+                  <div class="text-xs text-slate-400 mb-3" x-text="`1º de ${achievement.teamSize}`"></div>
+                  <div class="flex items-center justify-center gap-2 mb-2">
+                    <template x-if="achievement.rankImgUrl">
+                      <img :src="achievement.rankImgUrl" class="w-4 h-4" :title="achievement.rankLabel">
+                    </template>
+                    <span class="text-xs font-semibold text-yellow-300" x-text="achievement.rankLabel"></span>
+                  </div>
+                  <div class="text-sm font-bold text-yellow-200" x-text="achievement.formatted"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
         <!-- No data message -->
         <template x-if="playerMetrics && playerMetrics.n < 1">
           <div class="bg-slate-800 border border-slate-700 rounded-lg p-6 text-center">
@@ -130,28 +152,21 @@
                               <img :src="point.rankImgUrl" class="w-5 h-5" :title="point.rankLabel">
                             </template>
                           </div>
-                          <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
-                          <div class="flex items-center gap-1 mt-2 text-xs text-slate-500">
-                            <span>No time:</span>
-                            <span x-text="point.teamRank === 1 ? '🥇' : point.teamRank === 2 ? '🥈' : point.teamRank === 3 ? '🥉' : point.teamRank + 'º'"></span>
-                            <span x-text="`de ${point.teamSize}`"></span>
-                          </div>
-                        </div>
-                        <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-green-400' : 'text-green-300'}`"
-                             x-text="point.formatted"></div>
-                      </div>
-                      <template x-if="point.delta">
-                        <div class="text-xs text-green-300">
-                          <span x-text="`+${Math.round(point.delta)}% vs time`"></span>
-                        </div>
-                      </template>
-                    </div>
-                  </template>
-                </div>
-              </template>
-            </div>
+                           <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
+                           <div class="flex items-center gap-1 mt-2 text-xs text-slate-500">
+                             <span x-text="`${point.teamRank}º de ${point.teamSize}`"></span>
+                           </div>
+                         </div>
+                         <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-green-400' : 'text-green-300'}`"
+                              x-text="point.formatted"></div>
+                       </div>
+                     </div>
+                   </template>
+                 </div>
+               </template>
+             </div>
 
-            <!-- Precisa melhorar -->
+             <!-- Precisa melhorar -->
             <div>
               <h2 class="text-lg font-bold text-red-400 mb-4">⚠️ Precisa melhorar</h2>
               <template x-if="weaknesses.length === 0">
@@ -169,29 +184,22 @@
                               <img :src="point.rankImgUrl" class="w-5 h-5" :title="point.rankLabel">
                             </template>
                           </div>
-                          <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
-                          <div class="flex items-center gap-1 mt-2 text-xs text-slate-500">
-                            <span>No time:</span>
-                            <span x-text="point.teamRank === 1 ? '🥇' : point.teamRank === 2 ? '🥈' : point.teamRank === 3 ? '🥉' : point.teamRank + 'º'"></span>
-                            <span x-text="`de ${point.teamSize}`"></span>
-                          </div>
-                        </div>
-                        <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-red-400' : 'text-red-300'}`"
-                             x-text="point.formatted"></div>
-                      </div>
-                      <template x-if="point.delta">
-                        <div class="text-xs text-red-300">
-                          <span x-text="`${Math.round(point.delta)}% vs time`"></span>
-                        </div>
-                      </template>
-                    </div>
-                  </template>
-                </div>
-              </template>
-            </div>
+                           <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
+                           <div class="flex items-center gap-1 mt-2 text-xs text-slate-500">
+                             <span x-text="`${point.teamRank}º de ${point.teamSize}`"></span>
+                           </div>
+                         </div>
+                         <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-red-400' : 'text-red-300'}`"
+                              x-text="point.formatted"></div>
+                       </div>
+                     </div>
+                   </template>
+                 </div>
+               </template>
+             </div>
 
-          </div>
-        </template>
+           </div>
+         </template>
 
       </div>
     </template>
