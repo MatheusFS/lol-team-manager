@@ -332,7 +332,7 @@ document.addEventListener('alpine:init', () => {
           color: this.playerMetrics.kda >= 2.5 ? 'text-green-400' : 'text-slate-300'
         },
         {
-          label: 'Rank',
+          label: this.lens === 'geral' ? 'Rank (Melhor)' : 'Rank (Identidade)',
           value: rankLabel,
           sub: rankScore,
           color: rankLabel !== 'N/A' ? RANK_COLORS[RANK_NAMES.indexOf(rankLabel.toLowerCase())] : 'text-slate-400',
