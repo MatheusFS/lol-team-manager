@@ -27,41 +27,118 @@ const COACH_METRICS_BY_LENS = {
   ]
 }
 
-// ── Evaluation Helper ──────────────────────────────────────────────────────
-// Compares player metric against team average and benchmark
-// Returns: { delta %, isStrength, isWeakness, severity, comparison }
-function evaluateMetric(playerValue, teamAvg, metricKey, benchmarks) {
-  if (playerValue == null || isNaN(playerValue)) return null
-  if (teamAvg == null || isNaN(teamAvg)) return null
+// ── Metrics where lower values are better ──────────────────────────────────
+const LOWER_IS_BETTER = new Set(['deathMin'])
 
-  // Skip infinite values (handle separately as "perfect")
+// ── For Geral lens: which lens config has benchmarks for each metric ─────────
+const GERAL_BENCHMARK_SOURCE = {
+  kda:               'carry',
+  killParticipation: 'carry',
+  controlWardsAvg:   'suporte',
+  // deathMin and wr have no benchmarks → team-relative fallback
+}
+
+// ── Evaluation Helper ──────────────────────────────────────────────────────
+// Compares player metric against benchmarks (primary) and team average (secondary)
+// Returns: { isStrength, isWeakness, rankIdx, rankLabel, rankImgUrl, teamRank, teamSize, delta, comparison, severity }
+function evaluateMetric(playerValue, teamRows, metricKey, benchmarks, lens) {
+  if (playerValue == null || isNaN(playerValue)) return null
+
+  const lowerIsBetter = LOWER_IS_BETTER.has(metricKey)
+  
+  // Handle infinite values (no deaths → infinite damage per death)
   if (!isFinite(playerValue)) {
     return {
-      delta: null,
       isStrength: true,
       isWeakness: false,
-      severity: 'high',
-      comparison: 'Perfeição (sem mortes nessa métrica)'
+      rankIdx: 9,
+      rankLabel: 'Challenger',
+      rankImgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/challenger.png`,
+      teamRank: 1,
+      teamSize: teamRows.length,
+      delta: null,
+      comparison: 'Perfeição (sem mortes nessa métrica)',
+      severity: 'high'
     }
   }
 
-  // Calculate delta vs team average
+  // ── Calculate effective value (inverted if lower-is-better) ─────────────
+  const effectiveValue = lowerIsBetter ? -playerValue : playerValue
+
+  // ── Team statistics ───────────────────────────────────────────────────
+  const validTeamValues = teamRows
+    .map(r => r[metricKey])
+    .filter(v => v != null && isFinite(v))
+  
+  let teamAvg = 0
   let delta = 0
-  if (teamAvg !== 0) {
-    delta = ((playerValue - teamAvg) / Math.abs(teamAvg)) * 100
+  let teamRank = teamRows.length
+  let teamSize = validTeamValues.length
+
+  if (validTeamValues.length > 0) {
+    teamAvg = validTeamValues.reduce((a, b) => a + b, 0) / validTeamValues.length
+    const effectiveTeamAvg = lowerIsBetter ? -teamAvg : teamAvg
+    
+    if (effectiveTeamAvg !== 0) {
+      delta = ((effectiveValue - effectiveTeamAvg) / Math.abs(effectiveTeamAvg)) * 100
+    }
+    
+    // Compute team rank (1 = best)
+    const sortedByEffectiveDesc = teamRows
+      .slice()
+      .sort((a, b) => {
+        const aVal = a[metricKey]
+        const bVal = b[metricKey]
+        const aEff = aVal != null && isFinite(aVal) ? (lowerIsBetter ? -aVal : aVal) : -Infinity
+        const bEff = bVal != null && isFinite(bVal) ? (lowerIsBetter ? -bVal : bVal) : -Infinity
+        return bEff - aEff
+      })
+    
+    for (let i = 0; i < sortedByEffectiveDesc.length; i++) {
+      if (sortedByEffectiveDesc[i][metricKey] === playerValue) {
+        teamRank = i + 1
+        break
+      }
+    }
   }
 
-  // Determine strength/weakness based on threshold (±15% from team avg)
-  const threshold = 15  // 15% deviation from team average
-  const isStrength = delta > threshold
-  const isWeakness = delta < -threshold
+  // ── Determine strength/weakness based on global benchmarks (primary) ──
+  let rankIdx = 0
+  let rankLabel = 'Iron'
+  let rankImgUrl = ''
+  let isStrength = false
+  let isWeakness = false
 
-  // Build comparison text
+  if (benchmarks && benchmarks.length > 0) {
+    // Find rank tier from benchmarks
+    for (let i = benchmarks.length - 1; i >= 0; i--) {
+      const benchVal = benchmarks[i]
+      if (lowerIsBetter ? (effectiveValue >= -benchVal) : (effectiveValue >= benchVal)) {
+        rankIdx = i
+        break
+      }
+    }
+    
+    rankLabel = RANK_LABELS[rankIdx]
+    rankImgUrl = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
+    
+    // Strength = Gold+ (rankIdx >= 3), Weakness = Bronze or below (rankIdx <= 1)
+    isStrength = rankIdx >= 3
+    isWeakness = rankIdx <= 1
+  } else {
+    // Fallback: team-relative threshold (deathMin, wr)
+    const threshold = 15
+    isStrength = delta > threshold
+    isWeakness = delta < -threshold
+  }
+
+  // ── Build comparison text ──────────────────────────────────────────────
   let comparison = ''
-  const direction = delta > 0 ? '↑' : '↓'
   const deltaAbs = Math.abs(Math.round(delta))
   
-  if (deltaAbs === 0) {
+  if (validTeamValues.length === 0) {
+    comparison = 'Sem dados da equipe para comparar'
+  } else if (deltaAbs === 0) {
     comparison = 'Alinhado com a média do time'
   } else if (delta > 0) {
     comparison = `${deltaAbs}% acima da média do time (${teamAvg.toFixed(1)})`
@@ -69,21 +146,13 @@ function evaluateMetric(playerValue, teamAvg, metricKey, benchmarks) {
     comparison = `${deltaAbs}% abaixo da média do time (${teamAvg.toFixed(1)})`
   }
 
-  // Add benchmark context if available
-  if (benchmarks && benchmarks.length > 0) {
-    let rankName = '?'
-    for (let i = benchmarks.length - 1; i >= 0; i--) {
-      if (playerValue >= benchmarks[i]) {
-        rankName = RANK_NAMES[i]
-        break
-      }
-    }
-    comparison += ` · Nível ${rankName}`
-  }
-
   const severity = Math.abs(delta) > 25 ? 'high' : 'medium'
 
-  return { delta, isStrength, isWeakness, severity, comparison }
+  return { 
+    isStrength, isWeakness, severity, comparison,
+    rankIdx, rankLabel, rankImgUrl,
+    teamRank, teamSize, delta
+  }
 }
 
 // ── Alpine Component ───────────────────────────────────────────────────────
@@ -102,6 +171,7 @@ document.addEventListener('alpine:init', () => {
     overviewCards: [],
     strengths: [],
     weaknesses: [],
+    bestIdentity: null,
     
     loading: true,
     error: null,
@@ -178,10 +248,7 @@ document.addEventListener('alpine:init', () => {
       const playerName = selectedPlayer.name
       const riotMatches = this.allMatches.filter(m => m.player_stats?.length)
 
-      // ── 1. Aggregate all player metrics by lens ──
-      const lensFilter = LENS_DEFS[this.lens].filter
-
-      // Build mapAll: counts of each identity
+      // ── 1. Build mapAll: counts of each identity ──
       const mapAll = {}
       for (const m of riotMatches) {
         for (const ps of m.player_stats) {
@@ -200,10 +267,31 @@ document.addEventListener('alpine:init', () => {
         }
       }
 
-      // Aggregate rows for current lens
-      const allRows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
+      // ── 2. Handle best identity for Geral lens ──
+      this.bestIdentity = null
+      if (this.lens === 'geral') {
+        // Compute identity rank for all 5 identities, pick the best score
+        let bestScore = -Infinity
+        for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
+          const lensFilter = LENS_DEFS[identLens].filter
+          const rows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
+          computeIdentityRanks(rows, identLens)
+          const playerRow = rows.find(r => r.name === playerName)
+          
+          if (playerRow?.identRank?.score > bestScore) {
+            bestScore = playerRow.identRank.score
+            this.bestIdentity = {
+              key: identLens,
+              label: this.lenses.find(l => l.key === identLens)?.label,
+              identRank: playerRow.identRank
+            }
+          }
+        }
+      }
 
-      // Compute identity rank for current lens
+      // ── 3. Aggregate all player metrics by current lens ──
+      const lensFilter = LENS_DEFS[this.lens].filter
+      const allRows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
       computeIdentityRanks(allRows, this.lens)
 
       // Find selected player in aggregated rows
@@ -212,12 +300,23 @@ document.addEventListener('alpine:init', () => {
         this.playerMetrics = { name: playerName, n: 0 }
       }
 
-      // ── 2. Calculate team averages ──
-      this.teamMetrics = allRows.filter(r => r.n >= 3)  // only players with 3+ games
+      // ── 4. Calculate team metrics (3+ games) ──
+      this.teamMetrics = allRows.filter(r => r.n >= 3)
 
-      // ── 3. Build overview cards ──
-      const rankLabel = this.playerMetrics.identRank?.label ?? 'N/A'
-      const rankImg = this.playerMetrics.identRank?.imgUrl ?? ''
+      // ── 5. Build overview cards ──
+      let rankLabel = 'N/A'
+      let rankImg = ''
+      let rankScore = 'N/A'
+      
+      if (this.lens === 'geral' && this.bestIdentity?.identRank) {
+        rankLabel = this.bestIdentity.identRank.label
+        rankImg = this.bestIdentity.identRank.imgUrl
+        rankScore = `${this.bestIdentity.identRank.score.toFixed(1)} pts`
+      } else if (this.playerMetrics.identRank) {
+        rankLabel = this.playerMetrics.identRank.label
+        rankImg = this.playerMetrics.identRank.imgUrl
+        rankScore = `${this.playerMetrics.identRank.score.toFixed(1)} pts`
+      }
 
       this.overviewCards = [
         {
@@ -235,13 +334,13 @@ document.addEventListener('alpine:init', () => {
         {
           label: 'Rank',
           value: rankLabel,
-          sub: this.playerMetrics.identRank ? `${this.playerMetrics.identRank.score.toFixed(1)} pts` : 'N/A',
-          color: this.playerMetrics.identRank ? RANK_COLORS[RANK_NAMES.indexOf(this.playerMetrics.identRank.name)] : 'text-slate-400',
+          sub: rankScore,
+          color: rankLabel !== 'N/A' ? RANK_COLORS[RANK_NAMES.indexOf(rankLabel.toLowerCase())] : 'text-slate-400',
           imgUrl: rankImg
         }
       ]
 
-      // ── 4. Evaluate strengths and weaknesses ──
+      // ── 6. Evaluate strengths and weaknesses ──
       this.strengths = []
       this.weaknesses = []
 
@@ -251,23 +350,22 @@ document.addEventListener('alpine:init', () => {
         const playerVal = this.playerMetrics[metricKey]
         if (playerVal == null) continue
 
-        // Calculate team average
-        const validTeamValues = this.teamMetrics
-          .map(r => r[metricKey])
-          .filter(v => v != null && isFinite(v))
-        
-        if (validTeamValues.length === 0) continue
+        // Get benchmarks
+        let benchmarks = null
+        if (this.lens === 'geral') {
+          // For Geral, use fallback lens config if available
+          const fallbackLens = GERAL_BENCHMARK_SOURCE[metricKey]
+          const cfg = fallbackLens ? _rankConfig[fallbackLens] : null
+          benchmarks = cfg?.rawBenchmarks?.[metricKey] ?? null
+        } else {
+          // For specific lenses, use that lens's config
+          const cfg = _rankConfig[this.lens]
+          benchmarks = cfg?.rawBenchmarks?.[metricKey] ?? null
+        }
 
-        const teamAvg = validTeamValues.reduce((a, b) => a + b, 0) / validTeamValues.length
-
-        // Get benchmarks from rank config if available
-        const cfg = _rankConfig[this.lens]
-        const metric = cfg?.metrics?.find(m => m.key === metricKey)
-        const benchmarks = cfg?.rawBenchmarks?.[metricKey] ?? null
-
-        // Evaluate
-        const eval = evaluateMetric(playerVal, teamAvg, metricKey, benchmarks)
-        if (!eval) continue
+        // Evaluate against team and benchmarks
+        const evalResult = evaluateMetric(playerVal, this.teamMetrics, metricKey, benchmarks, this.lens)
+        if (!evalResult) continue
 
         const meta = COL_META[metricKey]
         if (!meta) continue
@@ -277,21 +375,37 @@ document.addEventListener('alpine:init', () => {
           label: meta.label,
           value: playerVal,
           formatted: meta.fmt(playerVal),
-          comparison: eval.comparison,
-          delta: eval.delta,
-          severity: eval.severity
+          comparison: evalResult.comparison,
+          delta: evalResult.delta,
+          severity: evalResult.severity,
+          rankIdx: evalResult.rankIdx,
+          rankLabel: evalResult.rankLabel,
+          rankImgUrl: evalResult.rankImgUrl,
+          teamRank: evalResult.teamRank,
+          teamSize: evalResult.teamSize
         }
 
-        if (eval.isStrength) {
+        if (evalResult.isStrength) {
           this.strengths.push(point)
-        } else if (eval.isWeakness) {
+        } else if (evalResult.isWeakness) {
           this.weaknesses.push(point)
         }
       }
 
-      // Sort by delta (magnitude)
-      this.strengths.sort((a, b) => (b.delta ?? 0) - (a.delta ?? 0))
-      this.weaknesses.sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0))
+      // Sort by rankIdx (descending for strengths, ascending for weaknesses)
+      this.strengths.sort((a, b) => {
+        // Primary: rankIdx desc (higher rank = better)
+        if (b.rankIdx !== a.rankIdx) return b.rankIdx - a.rankIdx
+        // Secondary: delta desc (more above team average)
+        return (b.delta ?? 0) - (a.delta ?? 0)
+      })
+      
+      this.weaknesses.sort((a, b) => {
+        // Primary: rankIdx asc (lower rank = worse)
+        if (a.rankIdx !== b.rankIdx) return a.rankIdx - b.rankIdx
+        // Secondary: delta asc (more below team average)
+        return (a.delta ?? 0) - (b.delta ?? 0)
+      })
     }
   }))
 })

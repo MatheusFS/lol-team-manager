@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Coach – Clash Manager</title>
+  <title>Coach – LoL Team Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
   <script src="/scripts/rank-derivation.js"></script>
@@ -72,7 +72,7 @@
           <template x-for="card in overviewCards" :key="card.label">
             <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
               <div class="text-xs text-slate-500 mb-2" x-text="card.label"></div>
-              <div class="flex items-baseline gap-3 mb-1">
+              <div class="flex items-center gap-3 mb-1">
                 <div :class="`text-2xl font-bold ${card.color}`" x-text="card.value"></div>
                 <template x-if="card.imgUrl">
                   <img :src="card.imgUrl" class="w-8 h-8" :alt="card.label">
@@ -96,9 +96,9 @@
         <template x-if="playerMetrics && playerMetrics.n >= 1">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-            <!-- Pontos Fortes -->
+            <!-- Continue assim -->
             <div>
-              <h2 class="text-lg font-bold text-green-400 mb-4">✨ Pontos Fortes</h2>
+              <h2 class="text-lg font-bold text-green-400 mb-4">✅ Continue assim</h2>
               <template x-if="strengths.length === 0">
                 <div class="text-slate-500 text-sm italic">Nenhum destaque identificado nesta identidade.</div>
               </template>
@@ -108,8 +108,18 @@
                     <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
                       <div class="flex items-start justify-between mb-2">
                         <div>
-                          <h3 class="text-sm font-bold text-green-400" x-text="point.label"></h3>
+                          <div class="flex items-center gap-2 mb-1">
+                            <h3 class="text-sm font-bold text-green-400" x-text="point.label"></h3>
+                            <template x-if="point.rankImgUrl">
+                              <img :src="point.rankImgUrl" class="w-5 h-5" :title="point.rankLabel">
+                            </template>
+                          </div>
                           <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
+                          <div class="flex items-center gap-1 mt-2 text-xs text-slate-500">
+                            <span>No time:</span>
+                            <span x-text="point.teamRank === 1 ? '🥇' : point.teamRank === 2 ? '🥈' : point.teamRank === 3 ? '🥉' : point.teamRank + 'º'"></span>
+                            <span x-text="`de ${point.teamSize}`"></span>
+                          </div>
                         </div>
                         <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-green-400' : 'text-green-300'}`"
                              x-text="point.formatted"></div>
@@ -125,9 +135,9 @@
               </template>
             </div>
 
-            <!-- Pontos Fracos -->
+            <!-- Precisa melhorar -->
             <div>
-              <h2 class="text-lg font-bold text-red-400 mb-4">⚠️ Pontos Fracos</h2>
+              <h2 class="text-lg font-bold text-red-400 mb-4">⚠️ Precisa melhorar</h2>
               <template x-if="weaknesses.length === 0">
                 <div class="text-slate-500 text-sm italic">Desempenho balanceado — sem áreas críticas de melhoria.</div>
               </template>
@@ -137,8 +147,18 @@
                     <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                       <div class="flex items-start justify-between mb-2">
                         <div>
-                          <h3 class="text-sm font-bold text-red-400" x-text="point.label"></h3>
+                          <div class="flex items-center gap-2 mb-1">
+                            <h3 class="text-sm font-bold text-red-400" x-text="point.label"></h3>
+                            <template x-if="point.rankImgUrl">
+                              <img :src="point.rankImgUrl" class="w-5 h-5" :title="point.rankLabel">
+                            </template>
+                          </div>
                           <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
+                          <div class="flex items-center gap-1 mt-2 text-xs text-slate-500">
+                            <span>No time:</span>
+                            <span x-text="point.teamRank === 1 ? '🥇' : point.teamRank === 2 ? '🥈' : point.teamRank === 3 ? '🥉' : point.teamRank + 'º'"></span>
+                            <span x-text="`de ${point.teamSize}`"></span>
+                          </div>
                         </div>
                         <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-red-400' : 'text-red-300'}`"
                              x-text="point.formatted"></div>
