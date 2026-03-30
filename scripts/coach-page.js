@@ -270,7 +270,8 @@ document.addEventListener('alpine:init', () => {
       // ── 2. Handle best identity for Geral lens ──
       this.bestIdentity = null
       if (this.lens === 'geral') {
-        // Compute identity rank for all 5 identities, pick the best score
+        // Compute identity rank for all 5 identities, pick the one with highest rank tier (rankIdx)
+        let bestRankIdx = -1
         let bestScore = -Infinity
         for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
           const lensFilter = LENS_DEFS[identLens].filter
@@ -278,12 +279,18 @@ document.addEventListener('alpine:init', () => {
           computeIdentityRanks(rows, identLens)
           const playerRow = rows.find(r => r.name === playerName)
           
-          if (playerRow?.identRank?.score > bestScore) {
-            bestScore = playerRow.identRank.score
-            this.bestIdentity = {
-              key: identLens,
-              label: this.lenses.find(l => l.key === identLens)?.label,
-              identRank: playerRow.identRank
+          if (playerRow?.identRank) {
+            // Primary: higher rankIdx (0=Iron, 9=Challenger) is better
+            // Tiebreaker: higher score
+            if (playerRow.identRank.rankIdx > bestRankIdx || 
+                (playerRow.identRank.rankIdx === bestRankIdx && playerRow.identRank.score > bestScore)) {
+              bestRankIdx = playerRow.identRank.rankIdx
+              bestScore = playerRow.identRank.score
+              this.bestIdentity = {
+                key: identLens,
+                label: this.lenses.find(l => l.key === identLens)?.label,
+                identRank: playerRow.identRank
+              }
             }
           }
         }
@@ -306,16 +313,42 @@ document.addEventListener('alpine:init', () => {
       // ── 5. Build overview cards ──
       let rankLabel = 'N/A'
       let rankImg = ''
-      let rankScore = 'N/A'
       
-      if (this.lens === 'geral' && this.bestIdentity?.identRank) {
-        rankLabel = this.bestIdentity.identRank.label
-        rankImg = this.bestIdentity.identRank.imgUrl
-        rankScore = `${this.bestIdentity.identRank.score.toFixed(1)} pts`
+      if (this.lens === 'geral') {
+        // For Geral: average the 5 identity scores and map to rank tier
+        let totalScore = 0
+        let identCount = 0
+        for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
+          const lensFilter = LENS_DEFS[identLens].filter
+          const rows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
+          computeIdentityRanks(rows, identLens)
+          const playerRow = rows.find(r => r.name === playerName)
+          if (playerRow?.identRank?.score != null) {
+            totalScore += playerRow.identRank.score
+            identCount++
+          }
+        }
+        
+        if (identCount > 0) {
+          const avgScore = totalScore / identCount
+          // Map average score to rank tier using thresholds from any lens config
+          const cfg = _rankConfig['carry']  // Use any lens config; thresholds are the same across all
+          let rankIdx = 0
+          if (cfg?.thresholds) {
+            for (let i = cfg.thresholds.length - 1; i >= 0; i--) {
+              if (avgScore >= cfg.thresholds[i]) {
+                rankIdx = i
+                break
+              }
+            }
+          }
+          rankLabel = RANK_LABELS[rankIdx]
+          rankImg = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
+        }
       } else if (this.playerMetrics.identRank) {
+        // For specific lenses: use that lens's rank
         rankLabel = this.playerMetrics.identRank.label
         rankImg = this.playerMetrics.identRank.imgUrl
-        rankScore = `${this.playerMetrics.identRank.score.toFixed(1)} pts`
       }
 
       this.overviewCards = [
@@ -332,9 +365,9 @@ document.addEventListener('alpine:init', () => {
           color: this.playerMetrics.kda >= 2.5 ? 'text-green-400' : 'text-slate-300'
         },
         {
-          label: this.lens === 'geral' ? 'Rank (Melhor)' : 'Rank (Identidade)',
+          label: this.lens === 'geral' ? 'Rank (Geral)' : 'Rank (Identidade)',
           value: rankLabel,
-          sub: rankScore,
+          sub: '',
           color: rankLabel !== 'N/A' ? RANK_COLORS[RANK_NAMES.indexOf(rankLabel.toLowerCase())] : 'text-slate-400',
           imgUrl: rankImg
         }

@@ -91,16 +91,9 @@
           <template x-if="lens === 'geral' && bestIdentity">
             <div class="bg-slate-900 border border-purple-700/50 rounded-lg p-4">
               <div class="text-xs text-slate-500 mb-2">Identidade Dominante</div>
-              <div class="flex items-center gap-3 mb-1">
+              <div class="flex items-center gap-2">
                 <div class="text-2xl font-bold text-purple-400" x-text="bestIdentity.label"></div>
-              </div>
-              <div class="space-y-2">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs text-slate-400">Rank:</span>
-                  <img :src="bestIdentity.identRank.imgUrl" class="w-5 h-5" :title="bestIdentity.identRank.label">
-                  <span class="text-sm font-bold text-purple-300" x-text="bestIdentity.identRank.label"></span>
-                </div>
-                <div class="text-xs text-slate-500" x-text="`${bestIdentity.identRank.score.toFixed(1)} pts`"></div>
+                <img :src="bestIdentity.identRank.imgUrl" class="w-6 h-6" :title="bestIdentity.identRank.label">
               </div>
             </div>
           </template>
