@@ -185,10 +185,11 @@ function computeIdentityRanks(rows, lens) {
     }
 
     r.identRank = {
-      score:  rawScore,
-      label:  RANK_LABELS[rankIdx],
-      name:   RANK_NAMES[rankIdx],
-      imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`,
+      score:   rawScore,
+      rankIdx: rankIdx,
+      label:   RANK_LABELS[rankIdx],
+      name:    RANK_NAMES[rankIdx],
+      imgUrl:  `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`,
     }
   })
 }

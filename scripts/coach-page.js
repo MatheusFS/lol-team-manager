@@ -280,22 +280,36 @@ document.addEventListener('alpine:init', () => {
         nTotal: 0, nCarry: 0, nAssassino: 0, nBruiser: 0, nTank: 0, nSuporte: 0
       }
 
-      // ── 2. Handle best identity for Geral lens ──
+      // ── 2. Handle best identity for Geral lens + compute Rank (Geral) ──
+      // Pre-compute all identity metrics once for efficiency
       this.bestIdentity = null
-      if (this.lens === 'geral') {
-        // Compute identity rank for all 5 identities, pick the one with highest rank tier (rankIdx)
-        // Only consider identities with n >= 5
+      const identityMetrics = {}  // { carry: playerRow, assassino: playerRow, ... }
+      let totalRankIdx = 0
+      let validIdentityCount = 0
+      
+      for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
+        const lensFilter = LENS_DEFS[identLens].filter
+        const rows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
+        computeIdentityRanks(rows, identLens)
+        const playerRow = rows.find(r => r.name === playerName)
+        
+        if (playerRow?.n >= 1) {  // Store all metrics (even < 5 for Geral lens use)
+          identityMetrics[identLens] = playerRow
+          
+          if (playerRow.n >= 5 && playerRow?.identRank) {
+            totalRankIdx += playerRow.identRank.rankIdx
+            validIdentityCount++
+          }
+        }
+      }
+      
+      // Pick bestIdentity: highest rank tier (rankIdx) among identities with n >= 5
+      if (this.lens === 'geral' && validIdentityCount > 0) {
         let bestRankIdx = -1
         let bestScore = -Infinity
         for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
-          const lensFilter = LENS_DEFS[identLens].filter
-          const rows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
-          computeIdentityRanks(rows, identLens)
-          const playerRow = rows.find(r => r.name === playerName)
-          
-          if (playerRow?.identRank && playerRow.n >= 5) {
-            // Primary: higher rankIdx (0=Iron, 9=Challenger) is better
-            // Tiebreaker: higher score
+          const playerRow = identityMetrics[identLens]
+          if (playerRow?.n >= 5 && playerRow?.identRank) {
             if (playerRow.identRank.rankIdx > bestRankIdx || 
                 (playerRow.identRank.rankIdx === bestRankIdx && playerRow.identRank.score > bestScore)) {
               bestRankIdx = playerRow.identRank.rankIdx
@@ -329,35 +343,11 @@ document.addEventListener('alpine:init', () => {
       let rankImg = ''
       
       if (this.lens === 'geral') {
-        // For Geral: average the 5 identity scores (n >= 5 only) and map to rank tier
-        let totalScore = 0
-        let identCount = 0
-        for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
-          const lensFilter = LENS_DEFS[identLens].filter
-          const rows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
-          computeIdentityRanks(rows, identLens)
-          const playerRow = rows.find(r => r.name === playerName)
-          if (playerRow?.identRank?.score != null && playerRow.n >= 5) {
-            totalScore += playerRow.identRank.score
-            identCount++
-          }
-        }
-        
-        if (identCount > 0) {
-          const avgScore = totalScore / identCount
-          // Map average score to rank tier using thresholds from any lens config
-          const cfg = _rankConfig['carry']  // Use any lens config; thresholds are the same across all
-          let rankIdx = 0
-          if (cfg?.thresholds) {
-            for (let i = cfg.thresholds.length - 1; i >= 0; i--) {
-              if (avgScore >= cfg.thresholds[i]) {
-                rankIdx = i
-                break
-              }
-            }
-          }
-          rankLabel = RANK_LABELS[rankIdx]
-          rankImg = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
+        // For Geral: average the rankIdx of all valid identities (n >= 5) and map to final rank tier
+        if (validIdentityCount > 0) {
+          const avgRankIdx = Math.round(totalRankIdx / validIdentityCount)
+          rankLabel = RANK_LABELS[avgRankIdx]
+          rankImg = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[avgRankIdx]}.png`
         }
       } else if (this.playerMetrics.identRank) {
         // For specific lenses: use that lens's rank
