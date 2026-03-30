@@ -284,6 +284,7 @@ document.addEventListener('alpine:init', () => {
       this.bestIdentity = null
       if (this.lens === 'geral') {
         // Compute identity rank for all 5 identities, pick the one with highest rank tier (rankIdx)
+        // Only consider identities with n >= 5
         let bestRankIdx = -1
         let bestScore = -Infinity
         for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
@@ -292,7 +293,7 @@ document.addEventListener('alpine:init', () => {
           computeIdentityRanks(rows, identLens)
           const playerRow = rows.find(r => r.name === playerName)
           
-          if (playerRow?.identRank) {
+          if (playerRow?.identRank && playerRow.n >= 5) {
             // Primary: higher rankIdx (0=Iron, 9=Challenger) is better
             // Tiebreaker: higher score
             if (playerRow.identRank.rankIdx > bestRankIdx || 
@@ -328,7 +329,7 @@ document.addEventListener('alpine:init', () => {
       let rankImg = ''
       
       if (this.lens === 'geral') {
-        // For Geral: average the 5 identity scores and map to rank tier
+        // For Geral: average the 5 identity scores (n >= 5 only) and map to rank tier
         let totalScore = 0
         let identCount = 0
         for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
@@ -336,7 +337,7 @@ document.addEventListener('alpine:init', () => {
           const rows = aggregateRows(riotMatches, this.allChampions, lensFilter, mapAll)
           computeIdentityRanks(rows, identLens)
           const playerRow = rows.find(r => r.name === playerName)
-          if (playerRow?.identRank?.score != null) {
+          if (playerRow?.identRank?.score != null && playerRow.n >= 5) {
             totalScore += playerRow.identRank.score
             identCount++
           }
