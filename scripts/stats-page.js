@@ -96,270 +96,9 @@ let _showAnecdotal = {
 // ── Player Performance Lens Definitions ───────────────────────────────────
 let _playerLens = 'geral'
 
-// ── Rank config (loaded from DB; derived at runtime from benchmarks + lens params) ──
-const RANK_NAMES  = ['iron','bronze','silver','gold','platinum','emerald','diamond','master','grandmaster','challenger']
-const RANK_LABELS = ['Iron','Bronze','Silver','Gold','Platinum','Emerald','Diamond','Master','Grandmaster','Challenger']
-// Tailwind text-color classes aligned to LoL rank palette
-// Iron=zinc, Bronze=amber-dark, Silver=slate-light, Gold=yellow, Platinum=teal,
-// Emerald=emerald, Diamond=cyan, Master=purple, Grandmaster=red, Challenger=vivid-orange
-const RANK_COLORS = [
-  'text-zinc-500',    // 0 Iron
-  'text-amber-700',   // 1 Bronze
-  'text-slate-300',   // 2 Silver
-  'text-yellow-400',  // 3 Gold
-  'text-teal-400',    // 4 Platinum
-  'text-emerald-400', // 5 Emerald
-  'text-cyan-300',    // 6 Diamond
-  'text-purple-400',  // 7 Master
-  'text-red-500',     // 8 Grandmaster
-  'text-orange-400',  // 9 Challenger
-]
-
-// In-memory cache populated by loadRankConfig(). Keyed by lens name.
-// Each entry: { thresholds: number[10], coefficients: { [metricKey]: number } }
-let _rankConfig = {}
-
-// Load rank_config records from PocketBase and derive per-lens thresholds + coefficients.
-// Falls back to empty config (no-op) on error — ranks simply won't render.
-async function loadRankConfig() {
-  try {
-    const data = await api.col('rank_config').list({ perPage: 20 })
-    const records = data.items
-    const globalRec = records.find(r => r.name === 'global')
-    if (!globalRec) return
-    const G = globalRec.config.benchmarks  // { damage_per_game, gold_per_game, kda, cs_per_min, game_time_min }
-
-    for (const rec of records) {
-      if (rec.name === 'global') continue
-      _rankConfig[rec.name] = deriveScoreConfig(G, rec.config)
-    }
-  } catch (err) {
-    console.error('[rank_config] Failed to load rank config from DB:', err)
-  }
-}
-
-// Derive thresholds and coefficients for a single lens from global benchmarks + lens config.
-//
-// Rank order in all arrays (index 0–9):
-//   [Iron, Bronze, Silver, Gold, Platinum, Emerald, Diamond, Master, Grandmaster, Challenger]
-//
-// Global benchmark fields stored in PocketBase (empirical, editable):
-//   kills_per_game, deaths_per_game, kda, kill_participation,
-//   game_time_min, damage_per_game,
-//   gold_per_game, cs_per_game, vision_score_per_game,
-//   damage_taken_per_game, damage_mitigated_per_game, cc_per_game,
-//   control_wards_placed, wards_and_wk_per_game
-//
-// Runtime-computed fields (derived, NOT stored in PocketBase):
-//   per_min = per_game / game_time_min  (gold, cs, vision_score, damage_taken, damage_mitigated, cc, kills, assists, wards_and_wk)
-//   assists_per_game = kda × deaths_per_game − kills_per_game
-//   kill_secured     = kills_per_game / (kills_per_game + assists_per_game)
-//
-// Metric sources (m.source string → formula):
-//   'damage_per_game/deaths'                       → damage_per_game / deaths_per_game
-//   'gold_per_game/deaths'                         → gold_per_game / deaths_per_game
-//   'kills_per_game/deaths'                       → kills_per_game / deaths_per_game
-//   'assists_per_game/deaths'                     → assists_per_game / deaths_per_game
-//   'cs_per_game/deaths'                           → cs_per_game / deaths_per_game
-//   'vision_score_per_game/deaths'                 → vision_score_per_game / deaths_per_game
-//   'damage_mitigated_per_game/deaths'             → damage_mitigated_per_game / deaths_per_game
-//   'damage_taken_per_game/deaths'                 → damage_taken_per_game / deaths_per_game
-//   'control_wards/deaths'                        → control_wards_placed / deaths_per_game
-//   'wards_and_wk/deaths'                         → wards_and_wk_per_game / deaths_per_game
-//   'damage_per_min/damage_taken_per_min'         → damage_per_game / damage_taken_per_game
-//   'damage_mitigated_per_min/damage_taken_per_min' → damage_mitigated_per_game / damage_taken_per_game
-//   'gold_per_min'             → gold_per_game / game_time_min
-//   'cs_per_min'               → cs_per_game / game_time_min
-//   'vision_score_per_min'     → vision_score_per_game / game_time_min
-//   'damage_mitigated_per_min' → damage_mitigated_per_game / game_time_min
-//   'damage_taken_per_min'     → damage_taken_per_game / game_time_min
-//   'cc_per_min'               → cc_per_game / game_time_min
-//   'kills_per_min'            → kills_per_game / game_time_min
-//   'assists_per_min'          → assists_per_game / game_time_min
-//   'wards_and_wk_per_min'     → wards_and_wk_per_game / game_time_min
-//   'kill_participation'       → G.kill_participation[ri]
-//   'kill_secured'             → kills_per_game / (kills_per_game + assists_per_game)
-//   'kda'                      → G.kda[ri]
-//   'control_wards_per_game'   → G.control_wards_placed[ri]
-//
-// Coefficient anchor: Platinum (index 4).
-// coefficient = weight_points / Platinum_value  (so that Platinum score = sum of weight_points)
-//
-// 10 rank thresholds computed directly — no interpolation step.
-function deriveScoreConfig(G, lensCfg) {
-  const { assumptions = {}, metrics } = lensCfg
-  const R = 10
-  const ANCHOR = 4 // Platinum
-
-  // ── Runtime-derived fields (not stored in PocketBase) ─────────────────────
-  // assists_per_game = kda × deaths − kills
-  const assists_per_game = G.kda.map((k, i) => k * G.deaths_per_game[i] - G.kills_per_game[i])
-  // kill_secured = kills / (kills + assists)
-  const kill_secured = G.kills_per_game.map((k, i) => {
-    const denom = k + assists_per_game[i]
-    return denom > 0 ? k / denom : 0
-  })
-  // per_min = per_game / game_time_min
-  const damage_per_min           = G.damage_per_game.map((v, i)           => v / G.game_time_min[i])
-  const gold_per_min             = G.gold_per_game.map((v, i)             => v / G.game_time_min[i])
-  const cs_per_min               = G.cs_per_game.map((v, i)               => v / G.game_time_min[i])
-  const vision_score_per_min     = G.vision_score_per_game.map((v, i)     => v / G.game_time_min[i])
-  const damage_taken_per_min     = G.damage_taken_per_game.map((v, i)     => v / G.game_time_min[i])
-  const damage_mitigated_per_min = G.damage_mitigated_per_game.map((v, i) => v / G.game_time_min[i])
-  const cc_per_min               = G.cc_per_game.map((v, i)               => v / G.game_time_min[i])
-  const kills_per_min            = G.kills_per_game.map((v, i)            => v / G.game_time_min[i])
-  const assists_per_min          = assists_per_game.map((v, i)            => v / G.game_time_min[i])
-  const wards_and_wk_per_min     = G.wards_and_wk_per_game.map((v, i)     => v / G.game_time_min[i])
-
-  // Get raw (uncapped) benchmark value for a metric at rank index ri
-  function rawBenchmark(m, ri) {
-    switch (m.source) {
-      // ── Per-death: X_per_game / deaths_per_game ────────────────────────
-      case 'damage_per_game/deaths':           return G.damage_per_game[ri]           / G.deaths_per_game[ri]
-      case 'kills_per_game/deaths':           return G.kills_per_game[ri]            / G.deaths_per_game[ri]
-      case 'assists_per_game/deaths':         return assists_per_game[ri]            / G.deaths_per_game[ri]
-      case 'gold_per_game/deaths':             return G.gold_per_game[ri]             / G.deaths_per_game[ri]
-      case 'cs_per_game/deaths':               return G.cs_per_game[ri]               / G.deaths_per_game[ri]
-      case 'vision_score_per_game/deaths':     return G.vision_score_per_game[ri]     / G.deaths_per_game[ri]
-      case 'damage_mitigated_per_game/deaths': return G.damage_mitigated_per_game[ri] / G.deaths_per_game[ri]
-      case 'damage_taken_per_game/deaths':     return G.damage_taken_per_game[ri]     / G.deaths_per_game[ri]
-      case 'control_wards/deaths':            return G.control_wards_placed[ri]      / G.deaths_per_game[ri]
-      case 'wards_and_wk/deaths':             return G.wards_and_wk_per_game[ri]     / G.deaths_per_game[ri]
-      // ── Ratio: per_game / per_game ──────────────────────────────────────
-      case 'damage_per_min/damage_taken_per_min':           return G.damage_per_game[ri]           / G.damage_taken_per_game[ri]
-      case 'damage_mitigated_per_min/damage_taken_per_min': return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
-      case 'damage_mitigated/damage_taken':                 return G.damage_mitigated_per_game[ri] / G.damage_taken_per_game[ri]
-       // ── Direct per_min (runtime-computed) ──────────────────────────────
-       case 'damage_per_min':           return damage_per_min[ri]
-       case 'gold_per_min':             return gold_per_min[ri]
-       case 'cs_per_min':               return cs_per_min[ri]
-       case 'vision_score_per_min':     return vision_score_per_min[ri]
-       case 'damage_mitigated_per_min': return damage_mitigated_per_min[ri]
-       case 'damage_taken_per_min':     return damage_taken_per_min[ri]
-       case 'cc_per_min':               return cc_per_min[ri]
-       case 'kills_per_min':            return kills_per_min[ri]
-       case 'assists_per_min':          return assists_per_min[ri]
-       case 'wards_and_wk_per_min':     return wards_and_wk_per_min[ri]
-      // ── Direct empirical ────────────────────────────────────────────────
-      case 'kill_participation':     return G.kill_participation[ri]
-      case 'kill_secured':           return kill_secured[ri]
-      case 'kda':                    return G.kda[ri]
-      case 'control_wards_per_game': return G.control_wards_placed[ri]
-      default:
-        console.warn(`[deriveScoreConfig] Unknown source: ${m.source} (key: ${m.key})`)
-        return 0
-    }
-  }
-
-  // Cap a value (null cap = no cap)
-  const applyCap = (v, cap) => (cap != null ? Math.min(v, cap) : v)
-
-  // Compute coefficient anchored at Platinum (index 4)
-  const coefficients = {}
-  for (const m of metrics) {
-    const anchorVal = applyCap(rawBenchmark(m, ANCHOR), m.cap)
-    coefficients[m.key] = anchorVal > 0 ? m.weight_points / anchorVal : 0
-  }
-
-  // Compute 10 rank thresholds directly — no interpolation
-  const thresholds = Array.from({ length: R }, (_, ri) =>
-    metrics.reduce((sum, m) => sum + applyCap(rawBenchmark(m, ri), m.cap) * coefficients[m.key], 0)
-  )
-
-  // KDA penalty: if player's KDA < Iron benchmark, apply a smooth multiplier
-  // multiplier = (playerKDA / ironKDA) ^ exponent
-  // exponent = sqrt(kda_weight / total_weight) — self-adjusts if weights change
-  let kdaPenalty = null
-  const kdaMetric = metrics.find(m => m.source === 'kda')
-  if (kdaMetric) {
-    const totalWeight = metrics.reduce((sum, m) => sum + m.weight_points, 0)
-    const ironKdaValue = rawBenchmark(kdaMetric, 0)  // rank 0 = Iron
-    const exponent = Math.sqrt(kdaMetric.weight_points / totalWeight)
-    kdaPenalty = { ironValue: ironKdaValue, exponent }
-  }
-
-  return { thresholds, coefficients, metrics, kdaPenalty }
-}
-
-// High-damage classifications for identity filtering
-const HIGH_DMG = new Set(['AD_high','AP_high','Mixed_high'])
-
-// Identity filter helpers
-function isCarry(champEntry) {
-  if (!champEntry) return false
-  if (champEntry.class === 'Marksman') return true
-  if (champEntry.class === 'Mage'    && HIGH_DMG.has(champEntry.damage_type)) return true
-  if (champEntry.class === 'Fighter' && HIGH_DMG.has(champEntry.damage_type)) return true
-  return false
-}
-
-function isBruiser(champEntry) {
-  if (!champEntry) return false
-  return champEntry.class === 'Fighter' && !HIGH_DMG.has(champEntry.damage_type)
-}
-
-function hasNoLens(champEntry) {
-  if (!champEntry) return true  // unclassified = no entry in DB
-  return !isCarry(champEntry) && !isBruiser(champEntry)
-    && champEntry.class !== 'Assassin' && champEntry.class !== 'Tank' && champEntry.class !== 'Support'
-}
-
-const LENS_DEFS = {
-  geral:     { defaultSort: 'wr',        filter: () => true,                   cols: ['deathMin','killParticipation','controlWardsAvg','nCarry','nAssassino','nBruiser','nTank','nSuporte'] },
-  carry:     { defaultSort: 'identRank', filter: isCarry,                      cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','csPerMin','csPerDeath','killParticipation','identRank'] },
-  assassino: { defaultSort: 'identRank', filter: c => c?.class === 'Assassin', cols: ['damPerMin','damPerDeath','goldPerMin','goldPerDeath','identRank'] },
-  bruiser:   { defaultSort: 'identRank', filter: isBruiser,                    cols: ['damPerDmgRec','damPerDeath','goldPerDeath','identRank'] },
-   tank:      { defaultSort: 'identRank', filter: c => c?.class === 'Tank',     cols: ['mitPerDmgRec','mitPerMin','mitPerDeath','dtPerDeath','ccMin','identRank'] },
-  suporte:   { defaultSort: 'identRank', filter: c => c?.class === 'Support',  cols: ['assistsMin','assistsPerDeath','visionMin','visionPerDeath','controlWardsAvg','wardsMin','wardsAndWKPerDeath','identRank'] },
-}
-
-const COL_META = {
-  damPerMin:    { label: 'Dano/min',     fmt: v => v.toFixed(0)                         },
-  goldPerMin:   { label: 'Ouro/min',     fmt: v => v.toFixed(0)                         },
-   deathMin:   { label: 'Mortes/min',   fmt: v => v.toFixed(3)                         },
-   csPerMin:     { label: 'CS/min',       fmt: v => v.toFixed(1)                         },
-   fbKills:    { label: 'FB Kills',     fmt: v => v                                    },
-   killsAvg:   { label: 'Kills',        fmt: v => v.toFixed(1)                         },
-   dtMin:      { label: 'DmgRec/min',   fmt: v => v.toFixed(0)                         },
-   mitMin:     { label: 'Mitigado/min', fmt: v => v.toFixed(0)                         },
-   mitPerMin:  { label: 'Mit/min',      fmt: v => v.toFixed(0)                         },
-   turrets:    { label: 'Turrets',      fmt: v => v.toFixed(1)                         },
-   ccMin:      { label: 'CC/min',       fmt: v => v.toFixed(2)                         },
-  killParticipation: { label: 'Kill Part%',   fmt: v => v != null ? `${Math.round(v*100)}%` : '—' },
-  assistsAvg: { label: 'Assists',      fmt: v => v.toFixed(1)                         },
-  visionMin:  { label: 'Visão/min',    fmt: v => v.toFixed(2)                         },
-  wardsMin:   { label: 'Wards/min',    fmt: v => v.toFixed(2)                         },
-  wkAvg:      { label: 'WardKills',    fmt: v => v.toFixed(1)                         },
-  // Per-death metrics
-  damPerDeath: { label: 'Dano/Morte',  fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
-  goldPerDeath: { label: 'Ouro/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(0) },
-  killShare:  { label: 'Kill Part.',    fmt: v => `${(v * 100).toFixed(1)}%`           },
-  killSecured:{ label: 'Kill Secured',  fmt: v => `${(v * 100).toFixed(1)}%`           },
-  killsPerDeath: { label: 'Kills/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
-  assistsPerDeath: { label: 'Assists/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
-  visionPerDeath: { label: 'Visão/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
-  controlWardsPerDeath: { label: 'CW/Morte', fmt: v => v === Infinity ? '∞' : v.toFixed(2) },
-  controlWardsAvg: { label: 'Control Wards', fmt: v => v.toFixed(2)                  },
-  wardsAndWKPerDeath:   { label: 'Wards/Morte',     fmt: v => v === Infinity ? '∞' : v.toFixed(2)  },
-  // New per-min columns
-  killsMin:   { label: 'Kills/min',    fmt: v => v.toFixed(2) },
-  assistsMin: { label: 'Assist/min',   fmt: v => v.toFixed(2) },
-  // New per-death columns
-  csPerDeath:  { label: 'CS/Morte',          fmt: v => v === Infinity ? '∞' : v.toFixed(1)  },
-  mitPerDeath: { label: 'Mitigado/Morte',    fmt: v => v === Infinity ? '∞' : v.toFixed(0)  },
-  dtPerDeath:  { label: 'DmgRec/Morte',      fmt: v => v === Infinity ? '∞' : v.toFixed(0)  },
-  // New ratio columns
-  damPerDmgRec: { label: 'Dano/DmgRec', fmt: v => v.toFixed(3) },
-  mitPerDmgRec: { label: 'Mit/DmgRec',  fmt: v => v.toFixed(3) },
-  // Identity counts (Geral lens)
-  nCarry:     { label: 'Carry',        fmt: v => v                                    },
-  nAssassino: { label: 'Assassino',    fmt: v => v                                    },
-  nBruiser:   { label: 'Bruiser',      fmt: v => v                                    },
-  nTank:      { label: 'Tank',         fmt: v => v                                    },
-  nSuporte:   { label: 'Suporte',      fmt: v => v                                    },
-  // Identity rank (special rendering)
-  identRank:  { label: 'Rank',      fmt: v => v ? `${v.label}` : '—' },
-}
+// Note: RANK_NAMES, RANK_LABELS, RANK_COLORS, RANK_ABBR, LENS_DEFS, COL_META,
+// IDENTITY_COL_TO_LENS, HIGH_DMG, isCarry, isBruiser, deriveRole, hasNoLens,
+// loadRankConfig, _rankConfig are now defined in player-metrics.js
 
 
 function winRateChart(canvasId, stats, isH = true, chartKey = null, extraOpts = {}) {
@@ -706,57 +445,9 @@ let _identityRanks = {}  // { playerName → { carry, assassino, bruiser, tank, 
                          // Each value: identRank object { score, label, name, imgUrl } | null
 
 // Map identity count columns to their lens names
-const IDENTITY_COL_TO_LENS = {
-  nCarry: 'carry',
-  nAssassino: 'assassino',
-  nBruiser: 'bruiser',
-  nTank: 'tank',
-  nSuporte: 'suporte'
-}
+// IDENTITY_COL_TO_LENS is now defined in player-metrics.js
 
-// Compute identity rank for each player based on lens-specific score.
-// Uses DB-driven coefficients and thresholds derived from loadRankConfig().
-// If config is not loaded yet (or failed), rows get identRank = null.
-// 
-// KDA Penalty: If player's KDA < Iron benchmark, apply smooth multiplier:
-//   multiplier = (playerKDA / ironKDA) ^ sqrt(kdaWeight / totalWeight)
-// This prevents players with very low KDA from being carried to high ranks by other metrics.
-function computeIdentityRanks(rows, lens) {
-  const cfg = _rankConfig[lens]
-  if (!cfg) return  // config not loaded or invalid lens
-
-  const { thresholds, coefficients, metrics, kdaPenalty } = cfg
-
-  rows.forEach((r) => {
-    // Compute weighted score: Σ( cap(row[metric]) × coefficient )
-    let rawScore = metrics.reduce((sum, m) => {
-      let val = r[m.key]
-      // Replace Infinity (zero-death players) with a large number, then cap
-      if (val === Infinity) val = 1e9
-      if (m.cap != null) val = Math.min(val, m.cap)
-      return sum + val * (coefficients[m.key] ?? 0)
-    }, 0)
-
-    // Apply KDA penalty if player's KDA is below Iron benchmark
-    if (kdaPenalty && r.kda < kdaPenalty.ironValue) {
-      const multiplier = Math.pow(r.kda / kdaPenalty.ironValue, kdaPenalty.exponent)
-      rawScore *= multiplier
-    }
-
-    // Find rank: highest threshold that rawScore meets or exceeds
-    let rankIdx = 0
-    for (let i = thresholds.length - 1; i >= 0; i--) {
-      if (rawScore >= thresholds[i]) { rankIdx = i; break }
-    }
-
-    r.identRank = {
-      score:  rawScore,
-      label:  RANK_LABELS[rankIdx],
-      name:   RANK_NAMES[rankIdx],
-      imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`,
-    }
-  })
-}
+// computeIdentityRanks() is now defined in player-metrics.js
 
 function sortPlayerTable(col) {
   _playerSort.dir = _playerSort.col === col ? _playerSort.dir * -1 : -1
@@ -797,11 +488,72 @@ function renderPlayerTable() {
    const validRows = sorted.filter(r => r.n >= 10)
    const anecdotalRows = sorted.filter(r => r.n < 10)
 
+    // Calculate color scale for each column (considering only validRows)
+    // Colors anchored to best value: Purple (100% of best) → Red (60% of best)
+    const bestValues = {}
+    
+    const QUALITY_COLORS = [
+      'text-red-400',      // Worst (< 60% of best)
+      'text-orange-400',   // Poor (60-70% of best)
+      'text-yellow-400',   // Medium (70-85% of best)
+      'text-green-400',    // Good (85%+ of best)
+      'text-purple-400',   // Best (100% of best)
+    ]
+    
+    const rankColorForValue = (colKey, val, isInfinity = false) => {
+      if (isInfinity) return QUALITY_COLORS[4]  // Infinity → best (purple)
+      const best = bestValues[colKey]
+      if (!best) return 'text-slate-300'  // fallback to default
+      
+      let ratio
+      if (colKey === 'deathMin') {
+        // Lower is better: ratio = best/val (1.0 when val=best, decreases when val > best)
+        ratio = best / val
+      } else {
+        // Higher is better: ratio = val/best (1.0 when val=best, decreases when val < best)
+        ratio = val / best
+      }
+      
+      // Map ratio to color using thresholds
+      if (ratio >= 1.00) return QUALITY_COLORS[4]  // Purple: at or above best
+      if (ratio >= 0.85) return QUALITY_COLORS[3]  // Green
+      if (ratio >= 0.70) return QUALITY_COLORS[2]  // Yellow
+      if (ratio >= 0.60) return QUALITY_COLORS[1]  // Orange
+      return QUALITY_COLORS[0]  // Red: below 60% of best
+    }
+    
+    // Pre-calculate best value for fixed columns
+    if (validRows.length > 0) {
+      const wrValues = validRows.map(r => r.wr).filter(v => !isNaN(v) && isFinite(v))
+      const kdaValues = validRows.map(r => r.kda).filter(v => !isNaN(v) && isFinite(v))
+      
+      if (wrValues.length > 0) {
+        bestValues['wr'] = Math.max(...wrValues)
+      }
+      if (kdaValues.length > 0) {
+        bestValues['kda'] = Math.max(...kdaValues)
+      }
+    }
+    
+    // Pre-calculate best value for dynamic columns (excluding identRank and identity columns)
+    for (const colKey of dynamicCols) {
+      if (colKey === 'identRank' || IDENTITY_COL_TO_LENS[colKey]) continue  // Skip rank cols
+      
+      const values = validRows.map(r => r[colKey]).filter(v => !isNaN(v) && isFinite(v))
+      if (values.length > 0) {
+        if (colKey === 'deathMin') {
+          bestValues[colKey] = Math.min(...values)  // Lower is better
+        } else {
+          bestValues[colKey] = Math.max(...values)  // Higher is better
+        }
+      }
+    }
+
    // Build headers: fixed columns + [unmatched if applicable] + dynamic columns
    let headerHTML = `<th class="text-left py-2 cursor-pointer select-none hover:text-slate-300" onclick="sortPlayerTable('name')">Jogador${arrow('name')}</th>
-         ${th('n',   'N')}
-         ${th('wr',  'Win%')}
-         ${th('kda', 'KDA')}`
+          ${th('n',   'N')}
+          ${th('wr',  'Win%')}
+          ${th('kda', 'KDA')}`
    
    if (showUnmatched) {
      headerHTML += th('unmatched', 'Sem classe')
@@ -826,10 +578,13 @@ function renderPlayerTable() {
      const cellCls = isAnecdotal ? 'text-slate-600' : ''
      const nameCls = isAnecdotal ? 'text-slate-500' : ''
      
-     let cellHTML = `<td class="py-2 font-medium ${nameCls}">${r.name}</td>
-             <td class="text-right ${isAnecdotal ? 'text-slate-600' : 'text-slate-500'}">${r.n}</td>
-             <td class="text-right ${wrCls}">${utils.pct(r.wr)}%</td>
-             <td class="text-right ${cellCls}">${r.kda.toFixed(2)}</td>`
+     // Calculate color for KDA based on relative position
+     const kdaColor = isAnecdotal ? 'text-slate-600' : rankColorForValue('kda', r.kda)
+     
+      let cellHTML = `<td class="py-2 font-medium ${nameCls}">${r.name}</td>
+              <td class="text-right ${isAnecdotal ? 'text-slate-600' : 'text-slate-500'}">${r.n}</td>
+              <td class="text-right ${wrCls}">${utils.pct(r.wr)}%</td>
+              <td class="text-right ${kdaColor}">${r.kda.toFixed(2)}</td>`
      
      if (showUnmatched) {
        cellHTML += `<td class="text-right text-xs ${cellCls} text-slate-500">${r.unmatched}</td>`
@@ -846,34 +601,56 @@ function renderPlayerTable() {
             if (isIdentRankCol && val) {
               const rankIdx = RANK_NAMES.indexOf(val.name)
               const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-               const formatted = `<div class="flex items-center justify-center gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
+              const formatted = `<div class="flex items-center justify-center gap-2"><img src="${val.imgUrl}" class="w-7 h-7" title="Score: ${val.score.toFixed(2)}"><span class="text-xs font-bold uppercase ${colorCls}">${val.label}</span></div>`
               cellHTML += `<td class="${cellCls}">${formatted}</td>`
             } else if (isIdentityCol) {
               // Special rendering for identity count columns
               const lensKey = IDENTITY_COL_TO_LENS[colKey]
-               if (val < 5) {
-                 // Show travessão when N < 5
+               if (val < 1) {
+                 // Show travessão when N < 1
                  cellHTML += `<td class="${centerClass}">—</td>`
-              } else {
-                // Show rank badge with score and N info when N >= 5
-                const identRank = _identityRanks[r.name]?.[lensKey]
-                if (identRank) {
-                  const rankIdx = RANK_NAMES.indexOf(identRank.name)
-                  const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
-                  const title = `Score: ${identRank.score.toFixed(2)} | N: ${val}`
-                  const justifyClass = _playerLens === 'geral' ? 'justify-center' : 'justify-end'
-                  const formatted = `<div class="flex items-center ${justifyClass} gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="${title}"><span class="text-xs font-bold uppercase ${colorCls}">${identRank.label}</span></div>`
-                  cellHTML += `<td class="${centerClass}">${formatted}</td>`
-                } else {
-                  // No rank data available, show raw count
-                  const formatted = meta.fmt(val)
-                  cellHTML += `<td class="${centerClass}">${formatted}</td>`
-                }
-              }
-            } else {
-              const formatted = meta.fmt(val)
-              cellHTML += `<td class="${centerClass}">${formatted}</td>`
-            }
+               } else if (val < 10) {
+                  // Show faded rank badge when 1 <= N < 10
+                  const identRank = _identityRanks[r.name]?.[lensKey]
+                  if (identRank) {
+                    const rankIdx = RANK_NAMES.indexOf(identRank.name)
+                    const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+                    const title = `Score: ${identRank.score.toFixed(2)} | N: ${val}`
+                    const justifyClass = _playerLens === 'geral' ? 'justify-center' : 'justify-end'
+                    const abbr = RANK_ABBR[rankIdx] ?? '??'
+                    const labelText = _playerLens === 'geral' ? `${abbr} · ${identRank.score.toFixed(1)} (${val})` : identRank.label
+                    const formatted = `<div class="flex items-center ${justifyClass} gap-2 opacity-50 grayscale"><img src="${identRank.imgUrl}" class="w-7 h-7" title="${title}"><span class="text-xs font-bold uppercase text-slate-500">${labelText}</span></div>`
+                    cellHTML += `<td class="${centerClass}">${formatted}</td>`
+                  } else {
+                    // No rank data available, show raw count
+                    const formatted = meta.fmt(val)
+                    cellHTML += `<td class="${centerClass}">${formatted}</td>`
+                  }
+               } else {
+                 // Show rank badge normally when N >= 10
+                 const identRank = _identityRanks[r.name]?.[lensKey]
+                 if (identRank) {
+                   const rankIdx = RANK_NAMES.indexOf(identRank.name)
+                   const colorCls = rankIdx >= 0 ? RANK_COLORS[rankIdx] : ''
+                   const title = `Score: ${identRank.score.toFixed(2)} | N: ${val}`
+                   const justifyClass = _playerLens === 'geral' ? 'justify-center' : 'justify-end'
+                   const abbr = RANK_ABBR[rankIdx] ?? '??'
+                   const labelText = _playerLens === 'geral' ? `${abbr} · ${identRank.score.toFixed(1)} (${val})` : identRank.label
+                   const formatted = `<div class="flex items-center ${justifyClass} gap-2"><img src="${identRank.imgUrl}" class="w-7 h-7" title="${title}"><span class="text-xs font-bold uppercase ${colorCls}">${labelText}</span></div>`
+                   cellHTML += `<td class="${centerClass}">${formatted}</td>`
+                 } else {
+                   // No rank data available, show raw count
+                   const formatted = meta.fmt(val)
+                   cellHTML += `<td class="${centerClass}">${formatted}</td>`
+                 }
+               }
+             } else {
+               // Regular numeric columns - apply color scale
+               const isInfinity = val === Infinity
+               const color = isAnecdotal ? 'text-slate-600' : rankColorForValue(colKey, val, isInfinity)
+               const formatted = meta.fmt(val)
+               cellHTML += `<td class="${centerClass} ${color}">${formatted}</td>`
+             }
         }
      
      return cellHTML
@@ -902,103 +679,7 @@ function renderPlayerTable() {
    document.getElementById('player-perf-table').innerHTML = tableHTML
 }
 
-// Helper: aggregate stats for a given lens filter
-// Returns array of row objects with fully computed metrics
-function aggregateRows(riotM, champByKey, lensFilter, mapAll) {
-  // Second pass: aggregate stats for matches that pass lens filter
-  const map = {}
-  for (const m of riotM) {
-    for (const ps of m.player_stats) {
-      if (!ps.name) continue
-      
-      // Resolve champion and check lens filter
-      const champKey = normChampKey(ps.champion)
-      const champEntry = champByKey[champKey] ?? null
-      if (!lensFilter(champEntry)) continue
-
-      const p = map[ps.name] ??= { 
-        n: 0, wins: 0, kdaSum: 0, damSum: 0, goldSum: 0, csSum: 0, 
-        durSum: 0, deathsSum: 0, fbKills: 0, killsSum: 0, assistsSum: 0,
-        dtSum: 0, mitSum: 0, ccSum: 0, bldSum: 0, wkSum: 0, cwSum: 0,
-        kpSum: 0, kpN: 0, visionSum: 0, wardsSum: 0, teamKillsSum: 0
-      }
-      p.n++
-      if (m.win) p.wins++
-      p.kdaSum      += ps.kda               ?? 0
-      p.damSum      += ps.damage            ?? 0
-      p.goldSum     += ps.gold              ?? 0
-      p.csSum       += ps.cs                ?? 0
-      p.deathsSum   += ps.deaths            ?? 0
-      p.durSum      += m.duration           ?? 0
-      p.teamKillsSum += m.team_kills        ?? 0
-      p.killsSum    += ps.kills             ?? 0
-      p.assistsSum += ps.assists           ?? 0
-      p.dtSum      += ps.damageTaken       ?? 0
-      p.mitSum     += ps.damageSelfMitigated ?? 0
-      p.ccSum      += ps.timeCCingOthers   ?? 0
-      p.bldSum     += ps.damageToBuildings ?? 0
-      p.wkSum      += ps.wardsKilled       ?? 0
-      p.cwSum      += ps.controlWardsPlaced ?? 0
-      p.visionSum  += ps.visionScore       ?? 0
-      p.wardsSum   += ps.wardsPlaced       ?? 0
-      if (ps.killParticipation != null) { p.kpSum += ps.killParticipation; p.kpN++ }
-      if (ps.firstBlood) p.fbKills++
-    }
-  }
-
-  return Object.entries(map)
-    .map(([name, p]) => ({
-      name,
-      n:         p.n,
-      nTotal:    mapAll[name]?.nTotal ?? p.n,
-      unmatched: mapAll[name]?.nUnclassified ?? 0,
-      wr:        p.wins / p.n,
-      kda:       p.kdaSum / p.n,
-      damPerMin: p.durSum ? p.damSum / p.durSum : 0,
-      goldPerMin: p.durSum ? p.goldSum / p.durSum : 0,
-      deathMin:  p.durSum ? p.deathsSum / p.durSum : 0,
-      csPerMin:  p.durSum ? p.csSum / p.durSum : 0,
-       fbKills:   p.fbKills,
-       killsAvg:  p.n ? p.killsSum / p.n : 0,
-       assistsAvg: p.n ? p.assistsSum / p.n : 0,
-       dtMin:     p.durSum ? p.dtSum / p.durSum : 0,
-       mitMin:    p.durSum ? p.mitSum / p.durSum : 0,
-       mitPerMin: p.durSum ? p.mitSum / p.durSum : 0,
-       ccMin:     p.durSum ? p.ccSum / p.durSum : 0,
-       turrets:   p.n ? p.bldSum / p.n : 0,
-       visionMin: p.durSum ? p.visionSum / p.durSum : 0,
-       wardsMin:  p.durSum ? p.wardsSum / p.durSum : 0,
-       wkAvg:     p.n ? p.wkSum / p.n : 0,
-         killParticipation: p.kpN ? p.kpSum / p.kpN : 0,
-        // Per-death metrics: sum / deathsSum (total / total deaths)
-        damPerDeath:   p.deathsSum ? p.damSum   / p.deathsSum : Infinity,
-        goldPerDeath:  p.deathsSum ? p.goldSum  / p.deathsSum : Infinity,
-        killShare:     p.teamKillsSum ? p.killsSum / p.teamKillsSum : 0,
-        killSecured:   (p.killsSum + p.assistsSum) > 0 ? p.killsSum / (p.killsSum + p.assistsSum) : 0,
-        killsPerDeath:        p.deathsSum ? p.killsSum / p.deathsSum : Infinity,
-        assistsPerDeath:      p.deathsSum ? p.assistsSum / p.deathsSum : Infinity,
-        visionPerDeath:       p.deathsSum ? p.visionSum / p.deathsSum : Infinity,
-        controlWardsPerDeath: p.deathsSum ? p.cwSum / p.deathsSum : Infinity,
-        controlWardsAvg:      p.n ? p.cwSum / p.n : 0,
-        wardsAndWKPerDeath:   p.deathsSum ? (p.wardsSum + p.wkSum * 10) / p.deathsSum : Infinity,
-        // New per-min metrics
-        killsMin:   p.durSum ? p.killsSum   / p.durSum : 0,
-        assistsMin: p.durSum ? p.assistsSum / p.durSum : 0,
-        // New per-death metrics (sum/deathsSum pattern)
-        csPerDeath:   p.deathsSum ? p.csSum  / p.deathsSum : Infinity,
-        mitPerDeath:  p.deathsSum ? p.mitSum / p.deathsSum : Infinity,
-        dtPerDeath:   p.deathsSum ? p.dtSum  / p.deathsSum : Infinity,
-        // New ratio metrics (dealt / taken — same time units cancel)
-       damPerDmgRec: p.dtSum ? p.damSum / p.dtSum : 0,
-       mitPerDmgRec: p.dtSum ? p.mitSum / p.dtSum : 0,
-       // Identity counts (from Geral lens full data)
-      nCarry:    mapAll[name]?.nCarry ?? 0,
-      nAssassino: mapAll[name]?.nAssassino ?? 0,
-      nBruiser:  mapAll[name]?.nBruiser ?? 0,
-      nTank:     mapAll[name]?.nTank ?? 0,
-      nSuporte:  mapAll[name]?.nSuporte ?? 0,
-    }))
-}
+// aggregateRows() is now defined in player-metrics.js
 
 // Compute identity ranks for all 5 identity lenses (Carry, Assassino, Bruiser, Tank, Suporte)
 // Stores results in _identityRanks object: { playerName → { carry, assassino, bruiser, tank, suporte } }
@@ -1082,12 +763,13 @@ function buildPlayerTable(M) {
       p.nTotal++
       
       // Count identity distribution
-      if (isCarry(champEntry)) p.nCarry++
-      else if (champEntry?.class === 'Assassin') p.nAssassino++
-      else if (isBruiser(champEntry)) p.nBruiser++
-      else if (champEntry?.class === 'Tank') p.nTank++
-      else if (champEntry?.class === 'Support') p.nSuporte++
-      else p.nUnclassified++
+      const role = deriveRole(ps, champEntry)
+      if      (role === 'Carry')     p.nCarry++
+      else if (role === 'Assassino') p.nAssassino++
+      else if (role === 'Bruiser')   p.nBruiser++
+      else if (role === 'Tank')      p.nTank++
+      else if (role === 'Suporte')   p.nSuporte++
+      else                            p.nUnclassified++
     }
   }
 
@@ -1183,7 +865,7 @@ function buildChampionTable(M) {
       kda: c.kdaSum / c.n,
       cs:  c.csSum  / c.n,
       dam: c.damSum  / c.n,
-      key: champStore.list.find(x => x.name === name)?.key ?? null,
+      key: champStore.list.find(x => normChampKey(x.key) === normChampKey(name))?.key ?? null,
     }))
 
   if (!_champRows.length) {

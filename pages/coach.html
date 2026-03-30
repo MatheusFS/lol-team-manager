@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coach – Clash Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/scripts/shared.js"></script>
+  <script src="/scripts/rank-derivation.js"></script>
+  <script src="/scripts/player-metrics.js"></script>
+  <script src="/scripts/coach-page.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+</head>
+<body x-data="coachPage" class="bg-slate-950 text-slate-100 min-h-screen">
+<script src="/scripts/layout.js"></script>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+
+    <!-- Loading state -->
+    <div x-show="loading" class="flex items-center justify-center py-12">
+      <div class="text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500 mb-3"></div>
+        <p class="text-slate-400">Carregando dados...</p>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div x-show="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-5">
+      <p class="text-red-400" x-text="error"></p>
+    </div>
+
+    <!-- Main content -->
+    <template x-if="!loading && !error && players.length > 0">
+      <div>
+        <!-- Header -->
+        <div class="mb-6">
+          <h1 class="text-3xl font-bold mb-4">🎓 Coach — Relatório Individual</h1>
+          <p class="text-slate-400 text-sm mb-4">
+            Análise automática de pontos fortes e fracos baseada em dados de todas as partidas com Riot API.
+          </p>
+
+          <!-- Seletor de Jogador -->
+          <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <div class="flex-1">
+              <label class="text-xs text-slate-400 block mb-2">Jogador:</label>
+              <select x-model="selectedPlayerId"
+                      class="w-full bg-slate-800 border border-slate-700 rounded px-4 py-2 text-sm focus:outline-none focus:border-yellow-500 cursor-pointer">
+                <template x-for="p in players" :key="p.id">
+                  <option :value="p.id" x-text="p.name"></option>
+                </template>
+              </select>
+            </div>
+
+            <!-- Seletor de Identidade -->
+            <div class="flex-1">
+              <label class="text-xs text-slate-400 block mb-2">Identidade:</label>
+              <div class="flex gap-1 flex-wrap">
+                <template x-for="l in lenses" :key="l.key">
+                  <button
+                    @click="lens = l.key"
+                    :class="`px-3 py-2 text-xs rounded border transition ${lens === l.key ? 'bg-yellow-500 text-slate-900 border-yellow-500 font-medium' : 'border-slate-700 text-slate-400 hover:text-slate-300'}`"
+                    x-text="l.label">
+                  </button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overview Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <template x-for="card in overviewCards" :key="card.label">
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+              <div class="text-xs text-slate-500 mb-2" x-text="card.label"></div>
+              <div class="flex items-baseline gap-3 mb-1">
+                <div :class="`text-2xl font-bold ${card.color}`" x-text="card.value"></div>
+                <template x-if="card.imgUrl">
+                  <img :src="card.imgUrl" class="w-8 h-8" :alt="card.label">
+                </template>
+              </div>
+              <div class="text-xs text-slate-500" x-text="card.sub"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- No data message -->
+        <template x-if="playerMetrics && playerMetrics.n < 1">
+          <div class="bg-slate-800 border border-slate-700 rounded-lg p-6 text-center">
+            <p class="text-slate-400">
+              Nenhuma partida com dados da Riot API para este jogador ainda.
+            </p>
+          </div>
+        </template>
+
+        <!-- Strengths & Weaknesses Grid -->
+        <template x-if="playerMetrics && playerMetrics.n >= 1">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+            <!-- Pontos Fortes -->
+            <div>
+              <h2 class="text-lg font-bold text-green-400 mb-4">✨ Pontos Fortes</h2>
+              <template x-if="strengths.length === 0">
+                <div class="text-slate-500 text-sm italic">Nenhum destaque identificado nesta identidade.</div>
+              </template>
+              <template x-if="strengths.length > 0">
+                <div class="space-y-3">
+                  <template x-for="point in strengths" :key="point.metric">
+                    <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                      <div class="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 class="text-sm font-bold text-green-400" x-text="point.label"></h3>
+                          <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
+                        </div>
+                        <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-green-400' : 'text-green-300'}`"
+                             x-text="point.formatted"></div>
+                      </div>
+                      <template x-if="point.delta">
+                        <div class="text-xs text-green-300">
+                          <span x-text="`+${Math.round(point.delta)}% vs time`"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- Pontos Fracos -->
+            <div>
+              <h2 class="text-lg font-bold text-red-400 mb-4">⚠️ Pontos Fracos</h2>
+              <template x-if="weaknesses.length === 0">
+                <div class="text-slate-500 text-sm italic">Desempenho balanceado — sem áreas críticas de melhoria.</div>
+              </template>
+              <template x-if="weaknesses.length > 0">
+                <div class="space-y-3">
+                  <template x-for="point in weaknesses" :key="point.metric">
+                    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                      <div class="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 class="text-sm font-bold text-red-400" x-text="point.label"></h3>
+                          <p class="text-xs text-slate-400 mt-1" x-text="point.comparison"></p>
+                        </div>
+                        <div :class="`text-sm font-bold ${point.severity === 'high' ? 'text-red-400' : 'text-red-300'}`"
+                             x-text="point.formatted"></div>
+                      </div>
+                      <template x-if="point.delta">
+                        <div class="text-xs text-red-300">
+                          <span x-text="`${Math.round(point.delta)}% vs time`"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+          </div>
+        </template>
+
+      </div>
+    </template>
+
+    <!-- Empty state -->
+    <template x-if="!loading && players.length === 0">
+      <div class="text-center py-12">
+        <p class="text-slate-400 mb-4">Nenhum jogador com dados de Riot API encontrado.</p>
+        <a href="/pages/import.html" class="text-yellow-400 hover:text-yellow-300 text-sm">Importar partidas →</a>
+      </div>
+    </template>
+
+  </main>
+</body>
+</html>

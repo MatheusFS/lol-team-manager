@@ -6,7 +6,8 @@
   const PAGE_ITEMS = [
     { href: '/index.html',       label: '📋 Histórico' },
     { href: '/pages/stats.html', label: '📊 Estatísticas' },
-    { href: '/pages/draft.html', label: '🗡️ Assistente de Draft' },
+    { href: '/pages/coach.html', label: '🎓 Coach' },
+    { href: '/pages/draft.html', label: '🗡️ Draft' },
   ]
 
   const CONFIG_ITEMS = [
