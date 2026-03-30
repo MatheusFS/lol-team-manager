@@ -172,6 +172,7 @@ document.addEventListener('alpine:init', () => {
     strengths: [],
     weaknesses: [],
     bestIdentity: null,
+    identityGameCounts: {},  // { carry: n, assassino: n, bruiser: n, tank: n, suporte: n }
     
     loading: true,
     error: null,
@@ -184,6 +185,13 @@ document.addEventListener('alpine:init', () => {
       { key: 'tank', label: 'Tank' },
       { key: 'suporte', label: 'Suporte' },
     ],
+
+    // Helper: get game count for a specific identity lens
+    getIdentityGameCount(lensKey) {
+      if (lensKey === 'geral') return this.identityGameCounts.nTotal || 0
+      const key = `n${lensKey.charAt(0).toUpperCase()}${lensKey.slice(1)}`
+      return this.identityGameCounts[key] || 0
+    },
 
     async init() {
       try {
@@ -265,6 +273,11 @@ document.addEventListener('alpine:init', () => {
           else if (champEntry?.class === 'Tank') p.nTank++
           else if (champEntry?.class === 'Support') p.nSuporte++
         }
+      }
+
+      // Store identity game counts for this player (used to disable unavailable identity buttons)
+      this.identityGameCounts = mapAll[playerName] || {
+        nTotal: 0, nCarry: 0, nAssassino: 0, nBruiser: 0, nTank: 0, nSuporte: 0
       }
 
       // ── 2. Handle best identity for Geral lens ──

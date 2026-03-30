@@ -62,8 +62,8 @@
                 <template x-for="l in lenses" :key="l.key">
                   <button
                     @click="lens = l.key"
-                    :disabled="playerMetrics.n < 1"
-                    :class="`px-3 py-2 text-xs rounded border transition ${lens === l.key ? 'bg-yellow-500 text-slate-900 border-yellow-500 font-medium' : 'border-slate-700 text-slate-400 hover:text-slate-300'} ${playerMetrics.n < 1 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`"
+                    :disabled="getIdentityGameCount(l.key) < 1"
+                    :class="`px-3 py-2 text-xs rounded border transition ${lens === l.key ? 'bg-yellow-500 text-slate-900 border-yellow-500 font-medium' : 'border-slate-700 text-slate-400 hover:text-slate-300'} ${getIdentityGameCount(l.key) < 1 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`"
                     x-text="l.label">
                   </button>
                 </template>
