@@ -122,9 +122,9 @@ function evaluateMetric(playerValue, teamRows, metricKey, benchmarks, lens) {
     rankLabel = RANK_LABELS[rankIdx]
     rankImgUrl = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
     
-    // Strength = Gold+ (rankIdx >= 3), Weakness = Bronze or below (rankIdx <= 1)
-    isStrength = rankIdx >= 3
-    isWeakness = rankIdx <= 1
+    // Strength = Emerald+ (rankIdx >= 5), Weakness = Silver- (rankIdx <= 2)
+    isStrength = rankIdx >= 5
+    isWeakness = rankIdx <= 2
   } else {
     // Fallback: team-relative threshold (deathMin, wr)
     const threshold = 15
