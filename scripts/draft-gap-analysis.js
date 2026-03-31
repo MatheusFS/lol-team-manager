@@ -54,7 +54,7 @@ function gapFilter(gap, analysis) {
 
     case 'ofensividade':
       return c =>
-        c.class === 'Marksman' ||
+        (c.class === 'Marksman' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high')) ||
         (c.class === 'Assassin' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high')) ||
         (c.class === 'Mage'     && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'))
 
@@ -81,12 +81,8 @@ function gapFilter(gap, analysis) {
 
     case 'coherence': {
       const ct = analysis.compType
-      if (ct === 'Siege')   return c => c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'
-      if (ct === 'Split')   return c => c.class === 'Fighter' && (c.damage_type === 'AD_high' || c.damage_type === 'AD_low')
-      if (ct === 'Protect') return c => c.class === 'Marksman' || c.class === 'Support'
-      if (ct === 'Engage')  return c => c.class === 'Tank'
-      if (ct === 'Pick')    return c => c.class === 'Assassin'
-      return () => false
+      if (!ct) return () => false
+      return c => c.comp_type === ct || c.comp_type_2 === ct
     }
 
     default:
@@ -144,7 +140,7 @@ function gapShortLabel(gap, analysis) {
     }
 
     case 'coherence':
-      return `Comp incoerente (${analysis.compType ?? '?'})`
+      return 'Comp incoerente'
 
     default:
       return gap
@@ -171,12 +167,8 @@ function gapClasses(gap, analysis) {
 
     case 'coherence': {
       const ct = analysis.compType
-      if (ct === 'Siege')   return ['Mage', 'Marksman']
-      if (ct === 'Split')   return ['Fighter']
-      if (ct === 'Protect') return ['Marksman', 'Support']
-      if (ct === 'Engage')  return ['Tank']
-      if (ct === 'Pick')    return ['Assassin']
-      return []
+      if (!ct) return []
+      return [`comp: ${ct}`]
     }
 
     default:

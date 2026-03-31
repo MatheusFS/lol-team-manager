@@ -169,7 +169,25 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // Priority 2: GAP+GAP (solve two critical gaps)
+  // Priority 2: PIVOT (pure counter-pick)
+  if (shouldPivot && counterTypes.length > 0) {
+    const filters = [c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2)]
+    const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+    if (candidates.length > 0) {
+      columns.push({
+        priority: 2,
+        tag: 'pivot',
+        prefix: '↩️ PIVOT',
+        gapNames: counterTypes.join(' / '),
+        classTags: ['Counter'],
+        colorClasses: { header: 'text-orange-400 bg-orange-900/20 border-orange-700/30', button: 'group-hover:border-orange-500' },
+        candidates,
+        filters
+      })
+    }
+  }
+
+  // Priority 3: GAP+GAP (solve two critical gaps)
   if (gaps.length >= 2) {
     for (let i = 0; i < gaps.length - 1; i++) {
       for (let j = i + 1; j < gaps.length; j++) {
@@ -179,15 +197,15 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
           columns.push({
-            priority: 2,
+            priority: 3,
             tag: 'combo',
-            prefix: '⚠️ GAP+GAP',
+            prefix: '🥇 GAP+GAP',
             gapNames: `${gapShortLabel(gaps[i], analysis)} + ${gapShortLabel(gaps[j], analysis)}`,
             classTags: _crossProductTags([
               _gapClassesShort(gaps[i], analysis),
               _gapClassesShort(gaps[j], analysis)
             ]),
-            colorClasses: { header: 'text-red-400 bg-red-900/20 border-red-700/30', button: 'group-hover:border-red-500' },
+            colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
             candidates,
             filters
           })
@@ -206,15 +224,15 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
           columns.push({
-            priority: 3,
+            priority: 4,
             tag: 'combo',
-            prefix: '⭐ GAP+REFORÇO',
+            prefix: '🥈 GAP+REFORÇO',
             gapNames: `${gapShortLabel(critGap, analysis)} + ${gapShortLabel(yellowGap, analysis)}`,
             classTags: _crossProductTags([
               _gapClassesShort(critGap, analysis),
               _gapClassesShort(yellowGap, analysis)
             ]),
-            colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
+            colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-600' },
             candidates,
             filters
           })
@@ -223,7 +241,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // Priority 4: REFORÇO+REFORÇO (solve two yellow gaps)
+  // Priority 6: REFORÇO+REFORÇO (solve two yellow gaps)
   if (yellowGaps.length >= 2) {
     for (let i = 0; i < yellowGaps.length - 1; i++) {
       for (let j = i + 1; j < yellowGaps.length; j++) {
@@ -233,15 +251,15 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
           columns.push({
-            priority: 4,
+            priority: 6,
             tag: 'combo',
-            prefix: '🧱 REFORÇO+REFORÇO',
+            prefix: '🥉 REFORÇO+REFORÇO',
             gapNames: `${gapShortLabel(yellowGaps[i], analysis)} + ${gapShortLabel(yellowGaps[j], analysis)}`,
             classTags: _crossProductTags([
               _gapClassesShort(yellowGaps[i], analysis),
               _gapClassesShort(yellowGaps[j], analysis)
             ]),
-            colorClasses: { header: 'text-blue-400 bg-blue-900/20 border-blue-700/30', button: 'group-hover:border-blue-500' },
+            colorClasses: { header: 'text-amber-700 bg-amber-950 border-amber-800', button: 'group-hover:border-amber-600' },
             candidates,
             filters
           })
@@ -250,34 +268,16 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // ── Single-target priorities (5-8) ────────────────────────────────────────
+   // ── Single-target priorities (5-8) ────────────────────────────────────────
 
-  // Priority 5: PIVOT (pure counter-pick)
-  if (shouldPivot && counterTypes.length > 0) {
-    const filters = [c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2)]
-    const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
-    if (candidates.length > 0) {
-      columns.push({
-        priority: 5,
-        tag: 'pivot',
-        prefix: '↩️ PIVOT',
-        gapNames: counterTypes.join(' / '),
-        classTags: ['Counter'],
-        colorClasses: { header: 'text-orange-400 bg-orange-900/20 border-orange-700/30', button: 'group-hover:border-orange-500' },
-        candidates,
-        filters
-      })
-    }
-  }
-
-  // Priority 6: GAP (solve single critical gap)
+  // Priority 5: GAP (solve single critical gap)
   for (const gap of gaps) {
     const gf = gapFilter(gap, analysis)
     const filters = [gf]
     const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
     if (candidates.length > 0) {
       columns.push({
-        priority: 6,
+        priority: 5,
         tag: 'gap',
         prefix: '⚠️ GAP',
         gapNames: gapShortLabel(gap, analysis),
@@ -308,13 +308,13 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // Priority 8: BESTFIT (fallback, no filter)
+  // Priority 8: FITTEST (fallback, no filter)
   const bestfitCandidates = _getCandidatesForFilters(role, [() => true], cf, ctx)
   if (bestfitCandidates.length > 0) {
     columns.push({
       priority: 8,
       tag: 'bestfit',
-      prefix: '🏆 MELHOR PICK',
+      prefix: '🏆 FITTEST',
       gapNames: 'Melhor opção',
       classTags: [],  // No gap-specific classes
       colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-500' },
