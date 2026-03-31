@@ -109,18 +109,13 @@ document.addEventListener('alpine:init', () => {
         this.$watch('pickRoles',   () => this._saveToStorage())
         // When formation/pool data finishes loading, force Alpine to re-evaluate
         // ourRecs (and other getters that depend on champPool/playerChampStats).
-        this.$watch('formationLoaded', () => {
-          console.log('[draft] formationLoaded changed, forcing re-render')
-          this.bluePicks = [...this.bluePicks]
-          this.redPicks  = [...this.redPicks]
-        })
-        // When formation changes, reload formation data
-        this.$watch('formation', () => {
-          console.log('[draft] formation changed, reloading formation data')
-          this._loadFormationData()
-        }, { immediate: false })
-      })
-    },
+         this.$watch('formationLoaded', () => {
+           console.log('[draft] formationLoaded changed, forcing re-render')
+           this.bluePicks = [...this.bluePicks]
+           this.redPicks  = [...this.redPicks]
+         })
+       })
+     },
 
     reset() {
       this.bluePicks   = Array(5).fill(null)
