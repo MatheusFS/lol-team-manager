@@ -380,6 +380,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
    // 0=PIVOT+GAP+GAP(9) 1=PIVOT+GAP+REFORÇO(8) 2=PIVOT+GAP(7)
    // 3=GAP+GAP+GAP(6) 4=PIVOT(5)/GAP+GAP+REFORÇO(5)
    // 5=GAP+REFORÇO+REFORÇO(4)/GAP+GAP(4) 6=GAP+REFORÇO(3)
+   // 6.0=REFORÇO+PHASE(2.5) 6.1=REFORÇO+REFORÇO+REFORÇO(2) 6.2=REFORÇO+REFORÇO(2)
    // 7=GAP(2) 8=REFORÇO(1) 9=SIGNATURE
 
   // ── Priority 0: PIVOT+GAP+GAP (score 9) ⭐ ─────────────────────────────────
@@ -600,9 +601,34 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         filters
       }))
     }
-  }
+   }
 
-  // ── Priority 6.1: REFORÇO+REFORÇO+REFORÇO (score 2+2+2) 🥈 ────────────────────
+   // ── Priority 6.0: REFORÇO+REFORÇO with phase gaps 🥈 ────────────────────────
+   // Combine heuristic yellow gaps with phase gaps (early/mid/late) to capture strategic needs
+   const phaseGaps = eligibleGaps.filter(g => ['early', 'mid', 'late'].includes(g))
+   if (viableYellowGaps.length > 0 && phaseGaps.length > 0) {
+     // Pair each yellow gap with each viable phase gap
+     for (const yellowGap of viableYellowGaps) {
+       for (const phaseGap of phaseGaps) {
+         const filters = [gapFilter(yellowGap, analysis), gapFilter(phaseGap, analysis)]
+         const candidates = getCandidatesCombo(filters)
+         if (candidates.length > 0) {
+           columns.push(_enrichColumn({
+             priority: 6.0,
+             tag: 'combo',
+             prefix: '🥈 REFORÇO DUPLO',
+             gapNames: `${gapNameWithEmoji(yellowGap, analysis)} + ${gapNameWithEmoji(phaseGap, analysis)}`,
+             classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([yellowGap, phaseGap], analysis)),
+             colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
+             candidates,
+             filters
+           }))
+         }
+       }
+     }
+   }
+
+   // ── Priority 6.1: REFORÇO+REFORÇO+REFORÇO (score 2+2+2) 🥈 ────────────────────
   if (viableYellowGaps.length >= 3) {
     for (let i = 0; i < viableYellowGaps.length - 2; i++) {
       for (let j = i + 1; j < viableYellowGaps.length - 1; j++) {
