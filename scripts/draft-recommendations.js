@@ -223,6 +223,86 @@ function _findCounterTypes(enemyType) {
     .map(([type]) => type)
 }
 
+// Abbreviation tables for responsive column headers
+const PREFIX_ABBREVIATIONS = {
+  '🥇 PIVOT c/ RECUPERAÇÃO': { med: '🥇 PC + 1RC', min: '🥇 PC1RC' },
+  '🥇 RECUPERAÇÃO TRIPLA': { med: '🥇 3RC', min: '🥇 3RC' },
+  '↩️ PIVOT': { med: '↩️ PIV', min: '↩️ PIV' },
+  '🥇 RECUPERAÇÃO DUPLA c/ REFORÇO': { med: '🥇 2RC + RF', min: '🥇 2RCRF' },
+  '🥈 RECUPERAÇÃO c/ REFORÇO DUPLO': { med: '🥈 RC + 2RF', min: '🥈 RC2RF' },
+  '🥈 RECUPERAÇÃO DUPLA': { med: '🥈 2RC', min: '🥈 2RC' },
+  '🥉 RECUPERAÇÃO c/ REFORÇO': { med: '🥉 RC + RF', min: '🥉 RCRF' },
+  '⚠️ RECUPERAÇÃO': { med: '⚠️ REC', min: '⚠️ RC' },
+  '🥈 REFORÇO TRIPLO': { med: '🥈 3RF', min: '🥈 3RF' },
+  '🥈 REFORÇO DUPLO': { med: '🥈 2RF', min: '🥈 2RF' },
+  '🧱 REFORÇO': { med: '🧱 RF', min: '🧱 RF' },
+  '🏆 FITTEST': { med: '🏆 FIT', min: '🏆 FIT' },
+}
+
+const GAP_ABBREVIATIONS = {
+  'Proteção': 'Pr.',
+  'Frontline': 'Fl.',
+  'Tema': 'Tm.',
+  'Dano': 'Dn.',
+  'Início': 'In.',
+  'Mid': 'Md.',
+  'Final': 'Fn.',
+  'Peeling': 'Pl.',
+  'Engajamento': 'Eg.',
+  'Ofensividade': 'Of.',
+  'Perfil de Dano': 'PD.',
+  'Coerência': 'Co.',
+  'Early': 'Ey.',
+}
+
+// Abbreviate prefix to medium form (e.g., "🥈 RC + 2RF")
+function _abbreviatePrefix(prefix) {
+  return PREFIX_ABBREVIATIONS[prefix]?.med ?? prefix
+}
+
+// Abbreviate prefix to minimum form (e.g., "🥈 RC2RF")
+function _abbreviatePrefixMin(prefix) {
+  return PREFIX_ABBREVIATIONS[prefix]?.min ?? prefix
+}
+
+// Replace full gap names with abbreviations in gapNames string
+// Input: "⚠️ Proteção + 🧱 Frontline + 🧱 Tema"
+// Output: "⚠️ Pr. + 🧱 Fl. + 🧱 Tm."
+function _abbreviateGapNames(gapNames) {
+  if (!gapNames) return gapNames
+  let result = gapNames
+  for (const [full, abbrev] of Object.entries(GAP_ABBREVIATIONS)) {
+    // Replace after emoji+space to preserve emoji structure
+    result = result.replace(new RegExp(`(⚠️|🧱) ${full}`, 'g'), `$1 ${abbrev}`)
+  }
+  return result
+}
+
+// Extract emoji-only version of gap names, removing all text
+// Input: "⚠️ Proteção + 🧱 Frontline + 🧱 Tema"
+// Output: "⚠️🧱🧱"
+function _minifyGapNames(gapNames) {
+  if (!gapNames) return gapNames
+  const emojis = gapNames.match(/[⚠️🧱]/g) ?? []
+  return emojis.join('')
+}
+
+// Compute all responsive variants for a column object
+function _enrichColumn(col) {
+  const units = col.candidates.length
+  return {
+    ...col,
+    units,
+    prefix: col.prefix,
+    prefixMed: _abbreviatePrefix(col.prefix),
+    prefixMin: _abbreviatePrefixMin(col.prefix),
+    gapNames: col.gapNames,
+    gapNamesMed: _abbreviateGapNames(col.gapNames),
+    gapNamesMin: _minifyGapNames(col.gapNames),
+    classTagsCompact: col.classTags && (Array.isArray(col.classTags) ? col.classTags : null) ? (Array.isArray(col.classTags) ? `[${col.classTags.length}]` : `[${col.classTags.tooltip?.split(',').length ?? 1}]`) : col.classTags,
+  }
+}
+
 // Role-specific class filter (incompatibility map)
 // - adc: exclude Tank, Support, Assassin
 // - mid: exclude Support
@@ -309,7 +389,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [pivotFilter, gapFilter(viableGaps[i], analysis), gapFilter(viableGaps[j], analysis)]
         const candidates = getCandidatesCombo(filters)
         if (candidates.length > 0) {
-          columns.push({
+          columns.push(_enrichColumn({
             priority: 0,
             tag: 'combo',
             prefix: '⭐ PIVOT c/ RECUPERAÇÃO DUPLA',
@@ -318,7 +398,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
             colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
             candidates,
             filters
-          })
+          }))
         }
       }
     }
@@ -332,7 +412,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [pivotFilter, gapFilter(critGap, analysis), gapFilter(yellowGap, analysis)]
         const candidates = getCandidatesCombo(filters)
         if (candidates.length > 0) {
-          columns.push({
+          columns.push(_enrichColumn({
             priority: 1,
             tag: 'combo',
             prefix: '⭐ PIVOT c/ RECUPERAÇÃO + REFORÇO',
@@ -341,7 +421,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
             colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
             candidates,
             filters
-          })
+          }))
         }
       }
     }
@@ -353,7 +433,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
       const filters = [pivotFilter, gapFilter(gap, analysis)]
       const candidates = getCandidatesCombo(filters)
         if (candidates.length > 0) {
-        columns.push({
+        columns.push(_enrichColumn({
           priority: 2,
           tag: 'combo',
           prefix: '🥇 PIVOT c/ RECUPERAÇÃO',
@@ -362,7 +442,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
             colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
             candidates,
             filters
-          })
+          }))
         }
     }
   }
@@ -374,18 +454,18 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         for (let k = j + 1; k < viableGaps.length; k++) {
           const filters = [gapFilter(viableGaps[i], analysis), gapFilter(viableGaps[j], analysis), gapFilter(viableGaps[k], analysis)]
           const candidates = getCandidatesCombo(filters)
-            if (candidates.length > 0) {
-              columns.push({
-                priority: 3,
-                tag: 'combo',
-                prefix: '🥇 RECUPERAÇÃO TRIPLA',
-                gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)} + ${gapNameWithEmoji(viableGaps[k], analysis)}`,
-                classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableGaps[i], viableGaps[j], viableGaps[k]], analysis)),
-                colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
-                candidates,
-                filters
-              })
-            }
+             if (candidates.length > 0) {
+               columns.push(_enrichColumn({
+                 priority: 3,
+                 tag: 'combo',
+                 prefix: '🥇 RECUPERAÇÃO TRIPLA',
+                 gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)} + ${gapNameWithEmoji(viableGaps[k], analysis)}`,
+                 classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableGaps[i], viableGaps[j], viableGaps[k]], analysis)),
+                 colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
+                 candidates,
+                 filters
+               }))
+             }
         }
       }
     }
@@ -396,7 +476,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     const filters = [pivotFilter]
     const candidates = getCandidates(filters)
     if (candidates.length > 0) {
-      columns.push({
+      columns.push(_enrichColumn({
         priority: 4,
         tag: 'pivot',
         prefix: '↩️ PIVOT',
@@ -405,7 +485,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         colorClasses: { header: 'text-orange-400 bg-orange-900/20 border-orange-700/30', button: 'group-hover:border-orange-500' },
         candidates,
         filters
-      })
+      }))
     }
   }
 
@@ -417,18 +497,18 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
           if (yellowGap === viableGaps[i] || yellowGap === viableGaps[j]) continue
           const filters = [gapFilter(viableGaps[i], analysis), gapFilter(viableGaps[j], analysis), gapFilter(yellowGap, analysis)]
           const candidates = getCandidatesCombo(filters)
-            if (candidates.length > 0) {
-              columns.push({
-                priority: 4,
-                tag: 'combo',
-                prefix: '🥇 RECUPERAÇÃO DUPLA c/ REFORÇO',
-                gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)} + ${gapNameWithEmoji(yellowGap, analysis)}`,
-                classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableGaps[i], viableGaps[j], yellowGap], analysis)),
-                colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
-                candidates,
-                filters
-              })
-            }
+             if (candidates.length > 0) {
+               columns.push(_enrichColumn({
+                 priority: 4,
+                 tag: 'combo',
+                 prefix: '🥇 RECUPERAÇÃO DUPLA c/ REFORÇO',
+                 gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)} + ${gapNameWithEmoji(yellowGap, analysis)}`,
+                 classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableGaps[i], viableGaps[j], yellowGap], analysis)),
+                 colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
+                 candidates,
+                 filters
+               }))
+             }
         }
       }
     }
@@ -442,18 +522,18 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
           if (viableYellowGaps[i] === critGap || viableYellowGaps[j] === critGap) continue
           const filters = [gapFilter(critGap, analysis), gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis)]
           const candidates = getCandidatesCombo(filters)
-            if (candidates.length > 0) {
-              columns.push({
-                priority: 5,
-                tag: 'combo',
-                prefix: '🥈 RECUPERAÇÃO c/ REFORÇO DUPLO',
-                gapNames: `${gapNameWithEmoji(critGap, analysis)} + ${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)}`,
-                classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([critGap, viableYellowGaps[i], viableYellowGaps[j]], analysis)),
-                colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
-                candidates,
-                filters
-              })
-            }
+             if (candidates.length > 0) {
+               columns.push(_enrichColumn({
+                 priority: 5,
+                 tag: 'combo',
+                 prefix: '🥈 RECUPERAÇÃO c/ REFORÇO DUPLO',
+                 gapNames: `${gapNameWithEmoji(critGap, analysis)} + ${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)}`,
+                 classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([critGap, viableYellowGaps[i], viableYellowGaps[j]], analysis)),
+                 colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
+                 candidates,
+                 filters
+               }))
+             }
         }
       }
     }
@@ -466,7 +546,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [gapFilter(viableGaps[i], analysis), gapFilter(viableGaps[j], analysis)]
         const candidates = getCandidatesCombo(filters)
           if (candidates.length > 0) {
-            columns.push({
+            columns.push(_enrichColumn({
               priority: 5,
               tag: 'combo',
                prefix: '🥈 RECUPERAÇÃO DUPLA',
@@ -475,7 +555,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
                colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
               candidates,
               filters
-            })
+            }))
           }
       }
     }
@@ -489,7 +569,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [gapFilter(critGap, analysis), gapFilter(yellowGap, analysis)]
         const candidates = getCandidatesCombo(filters)
           if (candidates.length > 0) {
-            columns.push({
+            columns.push(_enrichColumn({
               priority: 6,
               tag: 'combo',
                prefix: '🥉 RECUPERAÇÃO c/ REFORÇO',
@@ -498,7 +578,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
                colorClasses: { header: 'text-amber-400 bg-amber-900/30 border-amber-600/50', button: 'group-hover:border-amber-400' },
               candidates,
               filters
-            })
+            }))
           }
       }
     }
@@ -509,7 +589,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     const filters = [gapFilter(gap, analysis)]
     const candidates = getCandidates(filters)
     if (candidates.length > 0) {
-      columns.push({
+      columns.push(_enrichColumn({
         priority: 7,
          tag: 'gap',
          prefix: '⚠️ RECUPERAÇÃO',
@@ -518,7 +598,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         colorClasses: { header: 'text-red-400 bg-red-900/20 border-red-700/30', button: 'group-hover:border-red-500' },
         candidates,
         filters
-      })
+      }))
     }
   }
 
@@ -529,18 +609,18 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         for (let k = j + 1; k < viableYellowGaps.length; k++) {
           const filters = [gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis), gapFilter(viableYellowGaps[k], analysis)]
           const candidates = getCandidatesCombo(filters)
-            if (candidates.length > 0) {
-              columns.push({
-                priority: 6.1,
-                tag: 'combo',
-                 prefix: '🥈 REFORÇO TRIPLO',
-                 gapNames: `${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)} + ${gapNameWithEmoji(viableYellowGaps[k], analysis)}`,
-                 classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableYellowGaps[i], viableYellowGaps[j], viableYellowGaps[k]], analysis)),
-                 colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
-                candidates,
-                filters
-              })
-            }
+             if (candidates.length > 0) {
+               columns.push(_enrichColumn({
+                 priority: 6.1,
+                 tag: 'combo',
+                  prefix: '🥈 REFORÇO TRIPLO',
+                  gapNames: `${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)} + ${gapNameWithEmoji(viableYellowGaps[k], analysis)}`,
+                  classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableYellowGaps[i], viableYellowGaps[j], viableYellowGaps[k]], analysis)),
+                  colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
+                 candidates,
+                 filters
+               }))
+             }
         }
       }
     }
@@ -553,7 +633,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis)]
         const candidates = getCandidatesCombo(filters)
           if (candidates.length > 0) {
-            columns.push({
+            columns.push(_enrichColumn({
               priority: 6.2,
               tag: 'combo',
                prefix: '🥈 REFORÇO DUPLO',
@@ -562,7 +642,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
                colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
               candidates,
               filters
-            })
+            }))
           }
       }
     }
@@ -573,7 +653,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     const filters = [gapFilter(gap, analysis)]
     const candidates = getCandidates(filters)
     if (candidates.length > 0) {
-      columns.push({
+      columns.push(_enrichColumn({
         priority: 8,
          tag: 'reinforce',
          prefix: '🧱 REFORÇO',
@@ -582,14 +662,14 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         colorClasses: { header: 'text-blue-400 bg-blue-900/20 border-blue-700/30', button: 'group-hover:border-blue-500' },
         candidates,
         filters
-      })
+      }))
     }
   }
 
   // ── Priority 9: FITTEST (fallback) 🏆 ──────────────────────────────────────
   const bestfitCandidates = getCandidates([() => true])
   if (bestfitCandidates.length > 0) {
-    columns.push({
+    columns.push(_enrichColumn({
       priority: 9,
       tag: 'bestfit',
       prefix: '🏆 FITTEST',
@@ -598,7 +678,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
       colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-500' },
       candidates: bestfitCandidates,
       filters: [() => true]
-    })
+    }))
   }
 
   // Sort by priority (layout logic for column slicing moved to page layer)

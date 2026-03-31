@@ -487,36 +487,52 @@
                  <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
                  <template x-for="(col, ci) in rec.columns" :key="ci">
                    <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0;`">
-                    <!-- Column header: 2-part structure -->
-                    <div class="flex flex-col gap-1 px-2 py-1 rounded border" :class="col.colorClasses.header">
-                      <!-- Row 1: prefix (emoji+type) + gap names -->
-                      <div class="flex flex-wrap items-center gap-1">
-                        <span class="text-[11px] font-bold" x-text="col.prefix"></span>
-                        <span class="text-[10px] text-slate-300" x-text="col.gapNames"></span>
-                      </div>
-                       <!-- Row 2: class tags (cross-product badges) - only if not empty -->
-                       <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
-                         <div class="flex flex-wrap gap-1">
+                     <!-- Column header: 2-part structure with responsive sizing -->
+                     <div class="flex flex-col gap-1 px-2 py-1 rounded border" :class="col.colorClasses.header">
+                       <!-- Row 1: prefix (emoji+type) - adaptive text size based on col.units -->
+                       <div class="flex items-center">
+                         <template x-if="col.units === 1">
+                           <span class="text-[9px] font-bold" x-text="col.prefixMin"></span>
+                         </template>
+                         <template x-if="col.units === 2">
+                           <span class="text-[10px] font-bold" x-text="col.prefixMed"></span>
+                         </template>
+                         <template x-if="col.units >= 3">
+                           <span class="text-[11px] font-bold" x-text="col.prefix"></span>
+                         </template>
+                       </div>
+                       <!-- Row 2: gap names + class tags inline - adaptive sizing -->
+                       <div class="flex items-center gap-1 flex-wrap">
+                         <!-- Gap names - responsive variants -->
+                         <template x-if="col.units === 1">
+                           <span class="text-[9px] text-slate-300" x-text="col.gapNamesMin"></span>
+                         </template>
+                         <template x-if="col.units === 2">
+                           <span class="text-[10px] text-slate-300" x-text="col.gapNamesMed"></span>
+                         </template>
+                         <template x-if="col.units >= 3">
+                           <span class="text-[10px] text-slate-300" x-text="col.gapNames"></span>
+                         </template>
+                         <!-- Class tags - compact format [N] -->
+                         <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
                            <template x-if="Array.isArray(col.classTags)">
-                             <template x-for="tag in col.classTags" :key="tag">
-                               <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="tag"></span>
-                             </template>
+                             <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="`[${col.classTags.length}]`"></span>
                            </template>
                            <template x-if="!Array.isArray(col.classTags) && col.classTags.display">
                              <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" 
                                    :title="col.classTags.tooltip" 
-                                   x-text="col.classTags.display"></span>
+                                   x-text="col.classTagsCompact"></span>
                            </template>
-                         </div>
-                       </template>
-                    </div>
+                         </template>
+                       </div>
+                     </div>
                      <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
                      <div class="flex flex-row w-full gap-1">
                        <template x-for="c in col.candidates" :key="c.id">
-                         <button @click="quickPick(c)"
-                                 :disabled="ourPicks.every(Boolean)"
-                                 class="relative rounded-lg border-2 px-1.5 py-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1 max-w-[25%]"
-                                 :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
+                          <button @click="quickPick(c)"
+                                  :disabled="ourPicks.every(Boolean)"
+                                  class="relative rounded-lg border-2 px-1.5 py-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
+                                  :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
                            <!-- Inner image container: inset within padding -->
                            <div class="relative w-full h-full">
                              <!-- Image with overflow clipping -->
