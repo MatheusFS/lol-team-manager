@@ -30,14 +30,17 @@ function _champLens(c) {
   return null
 }
 
-// Candidate score: weighted sum of 4 signals, normalized to midpoint=0.5 (Gold/50%/Green/B-tier)
-// Formula: f = 3×(normRank + normWR) + 2×(normPool + normMeta), negated for sort-ascending
-// - normRank  = rankIdx / 6   (Gold idx=3 → 0.5, uncapped; Iron=0, Challenger≈1.67)
-// - normWR    = wins / games  (50% → 0.5, 0–100%)
-// - normPool  = (2 - poolOrd) / 2  (star=1.0, green=0.5, yellow=0.0)
-// - normMeta  = (4 - tierOrd) / 4  (S=1.0, A=0.75, B=0.5, C=0.25, D=0.0)
-// Out-of-pool champions: normRank=0, normWR=0, normPool=0; only normMeta applies.
-// Flex champions (viable in multiple roles) receive no bonus here; they're already ranked fairly.
+// Candidate score: weighted sum of 4 signals, all normalized to [0, 1].
+// Midpoint (Gold/50%Confortável/B-tier) = 0.5 for each signal.
+// Formula: f = 4×normRank + 3×normPool + 2×normWR + 2×normMeta
+//
+// Normalization (all signals clamped to [0, 1]):
+// - normRank  = min(rankIdx / 6, 1)           (Iron=0, Gold≈0.33→actual 3/6=0.5, Challenger=1.0 capped)
+// - normPool  = (2 - poolOrd) / 2             (Situacional=0, Confortável=0.5, Signature=1.0)
+// - normWR    = clamp((wr - 0.25) / 0.5, 0, 1)   (25%=0, 50%=0.5, 75%+=1.0 capped)
+// - normMeta  = (4 - tierOrd) / 4             (D=0, B=0.5, S=1.0)
+//
+// Out-of-pool champions: normRank=0, normPool=0, normWR=0; f = 2×normMeta
 function _scoreCandidateForRole(champ, role, ctx) {
   const TIER_ORD = { S: 0, A: 1, B: 2, C: 3, D: 4 }
   
@@ -56,7 +59,7 @@ function _scoreCandidateForRole(champ, role, ctx) {
 
   // Compute pool normalization: best tier across all players for this champ+role
   const bestPoolOrd = Math.min(...entries.map(e => POOL_TIER_ORDER_REC[e.poolTier] ?? 2))
-  const normPool = (2 - bestPoolOrd) / 2  // star=1.0, green=0.5, yellow=0.0
+  const normPool = (2 - bestPoolOrd) / 2  // Situacional=0, Confortável=0.5, Signature=1.0
 
   // Compute best rank and WR across all player entries
   let bestRank = 0
@@ -78,8 +81,12 @@ function _scoreCandidateForRole(champ, role, ctx) {
     }
   }
 
-  const normRank = bestRank / 6  // Gold(idx=3) → 0.5; uncapped
-  const f = 3 * (normRank + bestWR) + 2 * (normPool + normMeta)
+  // Normalize to [0, 1]: rank and WR have hard caps, pool and meta are already bounded
+  const normRank = Math.min(bestRank / 6, 1)
+  const normWRclamped = Math.min(Math.max((bestWR - 0.25) / 0.5, 0), 1)
+  
+  // f = 4×normRank + 3×normPool + 2×normWR + 2×normMeta
+  const f = 4 * normRank + 3 * normPool + 2 * normWRclamped + 2 * normMeta
   return -f  // negate: lower return = ranked first
 }
 
@@ -116,32 +123,6 @@ function _comboClassTagsFromCandidates(candidates) {
     if (label) tags.add(label)
   }
   return [...tags]
-}
-
-// Candidate score: lower = better.  Pool tier × 10 − best win-rate for this role.
-// Flex picks (champions viable in multiple roles) receive a small bonus (−0.1)
-// when comparing candidates with equal tier and win-rate.
-function _scoreCandidateForRole(champ, role, ctx) {
-  const entries = (ctx.champPool?.[champ.id] ?? [])
-    .filter(e => role == null || e.role === role)
-  if (!entries.length) return 999
-
-  const bestTier = Math.min(...entries.map(e => POOL_TIER_ORDER_REC[e.poolTier] ?? 2))
-  const bestWR   = Math.max(...entries.map(e => {
-    const s = ctx.playerChampStats?.[`${e.playerName}:${normChampKey(champ.key)}`]
-    return (s && s.n >= 3) ? s.wins / s.n : 0
-  }))
-  
-  let score = bestTier * 10 - bestWR
-  
-  // Bonus for flex picks: champions viable in multiple roles get slightly better score
-  // This ensures flex champions rank higher when all other parameters are equal
-  const isFlexChamp = parseViableRoles(champ).length > 1
-  if (isFlexChamp) {
-    score -= 0.1  // negative = better (lower scores rank first)
-  }
-  
-  return score
 }
 
 // Coherence filter: when we already have a comp_type defined, prefer picks that
