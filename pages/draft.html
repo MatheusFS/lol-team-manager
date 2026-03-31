@@ -483,9 +483,9 @@
                <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 w-full text-center block"
                      x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
               </div>
-               <div class="flex flex-row gap-2">
-                   <!-- Leading spacer (2 units = 2/12 of row) -->
-                   <div style="flex: 0 0 calc(100% / 12 * 2);"></div>
+                <div class="flex flex-row gap-2">
+                    <!-- Leading spacer (dynamic units to center content) -->
+                    <div :style="`flex: 0 0 calc(100% / 12 * ${rec.leftSpacer});`"></div>
                   
                    <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
                    <template x-for="(col, ci) in rec.columns" :key="ci">
@@ -618,9 +618,9 @@
                     </div>
                  </div>
                </template>
-                  
-                   <!-- Trailing spacer (2 units = 2/12 of row) -->
-                   <div style="flex: 0 0 calc(100% / 12 * 2);"></div>
+                   
+                    <!-- Trailing spacer (dynamic units to center content) -->
+                    <div :style="`flex: 0 0 calc(100% / 12 * ${rec.rightSpacer});`"></div>
              </div>
          </div>
        </template>

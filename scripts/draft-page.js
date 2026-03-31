@@ -519,7 +519,7 @@ document.addEventListener('alpine:init', () => {
     // Include columns in priority order until totalCandidates > 8.
     // Spacers (2 units each) handle centering: [spacer:2][col:N][spacer:2] = 12 total.
      _buildRecLayout(columns) {
-       if (columns.length === 0) return { layout: [] }
+       if (columns.length === 0) return { layout: [], leftSpacer: 0, rightSpacer: 0 }
 
        const layout = []
        let total = 0
@@ -535,7 +535,12 @@ document.addEventListener('alpine:init', () => {
          total += n
        }
 
-       return { layout }
+       // Dynamic spacers to center content: leftSpacer + total + rightSpacer = 12
+       const spacerUnits = Math.max(0, 12 - total)
+       const leftSpacer = Math.floor(spacerUnits / 2)
+       const rightSpacer = spacerUnits - leftSpacer
+
+       return { layout, leftSpacer, rightSpacer }
      },
 
     get ourRecs() {
@@ -554,14 +559,16 @@ document.addEventListener('alpine:init', () => {
         this._recContext(),
       )
       
-      // Attach dynamic layout to each recommendation line
-      return recs.map(rec => {
-        const { layout } = this._buildRecLayout(rec.columns)
-        return {
-          ...rec,
-          columns: layout.map(item => ({ ...item.col, units: item.units }))
-        }
-      })
+       // Attach dynamic layout and spacers to each recommendation line
+       return recs.map(rec => {
+         const { layout, leftSpacer, rightSpacer } = this._buildRecLayout(rec.columns)
+         return {
+           ...rec,
+           columns: layout.map(item => ({ ...item.col, units: item.units })),
+           leftSpacer,
+           rightSpacer
+         }
+       })
     },
 
     get matchup() {
