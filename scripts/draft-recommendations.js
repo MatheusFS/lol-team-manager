@@ -344,7 +344,7 @@ function _enrichColumn(col) {
     ...(col.counterTypes ? {
       gapNames: `${_formatCounterTypesFull(col.counterTypes)} + ${col.gapNames}`,
       gapNamesMed: `${_formatCounterTypesMed(col.counterTypes)} + ${_abbreviateGapNames(col.gapNames)}`,
-      gapNamesMin: `${_formatCounterTypesMin(col.counterTypes)}`,
+      gapNamesMin: `${_formatCounterTypesMin(col.counterTypes)}${_minifyGapNames(col.gapNames)}`,
     } : {}),
     classTagsCompact: col.classTags && !Array.isArray(col.classTags) ? col.classTags.display : null,
   }
