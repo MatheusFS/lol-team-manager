@@ -263,6 +263,13 @@ const GAP_ABBREVIATIONS = {
   'Perfil de Dano': 'PD.',
   'Coerência': 'Co.',
   'Early': 'Ey.',
+  'Engage/Pick': 'En./Pk.',
+  'Late': 'Lt.',
+  'AD': 'AD',
+  'AP': 'AP',
+  'AD e AP': 'AD/AP',
+  'Dano explosivo': 'Dn. exp.',
+  'Dano sustentado': 'Dn. sus.',
 }
 
 // Abbreviate prefix to medium form (e.g., "🥈 RC + 2RF")
