@@ -237,6 +237,7 @@ const PREFIX_ABBREVIATIONS = {
   '🥇 PIVOT c/ RECUPERAÇÃO': { med: '🥇 PC + 1RC', min: '🥇 PC1RC' },
   '🥇 RECUPERAÇÃO TRIPLA': { med: '🥇 3RC', min: '🥇 3RC' },
   '↩️ PIVOT': { med: '↩️ PIV', min: '↩️ PIV' },
+  '🏆 PIVOT + RECUPERAÇÃO + REFORÇO': { med: '🏆 PIV. + REC. + REF.', min: '🏆 PV+RC+RF' },
   '🥇 RECUPERAÇÃO DUPLA c/ REFORÇO': { med: '🥇 2RC + RF', min: '🥇 2RCRF' },
   '🥈 RECUPERAÇÃO c/ REFORÇO DUPLO': { med: '🥈 RC + 2RF', min: '🥈 RC2RF' },
   '🥈 RECUPERAÇÃO DUPLA': { med: '🥈 2RC', min: '🥈 2RC' },
@@ -308,7 +309,7 @@ function _enrichColumn(col) {
     gapNames: col.gapNames,
     gapNamesMed: _abbreviateGapNames(col.gapNames),
     gapNamesMin: _minifyGapNames(col.gapNames),
-    classTagsCompact: col.classTags && (Array.isArray(col.classTags) ? col.classTags : null) ? (Array.isArray(col.classTags) ? `[${col.classTags.length}]` : `[${col.classTags.tooltip?.split(',').length ?? 1}]`) : col.classTags,
+    classTagsCompact: units >= 3 && col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags?.display) ? (Array.isArray(col.classTags) ? `[${col.classTags.length}]` : `[${col.classTags.tooltip?.split(',').length ?? 1}]`) : null,
   }
 }
 
@@ -421,11 +422,11 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [pivotFilter, gapFilter(critGap, analysis), gapFilter(yellowGap, analysis)]
         const candidates = getCandidatesCombo(filters)
         if (candidates.length > 0) {
-          columns.push(_enrichColumn({
-            priority: 1,
-            tag: 'combo',
-            prefix: '⭐ PIVOT c/ RECUPERAÇÃO + REFORÇO',
-               gapNames: `${gapNameWithEmoji(critGap, analysis)} + ${gapNameWithEmoji(yellowGap, analysis)}`,
+           columns.push(_enrichColumn({
+             priority: 1,
+             tag: 'combo',
+             prefix: '🏆 PIVOT + RECUPERAÇÃO + REFORÇO',
+                gapNames: `${gapNameWithEmoji(critGap, analysis)} + ${gapNameWithEmoji(yellowGap, analysis)}`,
             classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([critGap, yellowGap], analysis, counterTypes)),
             colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
             candidates,
