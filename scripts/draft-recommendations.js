@@ -80,35 +80,46 @@ function _champLens(c) {
 }
 
 // Candidate score: weighted sum of 4 signals, all normalized to [0, 1].
-// Midpoint (Gold/50%Confortável/B-tier) = 0.5 for each signal.
-// Formula: f = 4×normRank + 3×normPool + 2×normWR + 2×normMeta
+// Champions ordered by: Identity Rank > Win Rate > Pool Tier + Meta Tier combined.
+// Formula: f = 4×normIR + 3×normWR + 2×(normPT + normMT)
 //
 // Normalization (all signals clamped to [0, 1]):
-// - normRank  = min(rankIdx / 6, 1)           (Iron=0, Gold≈0.33→actual 3/6=0.5, Challenger=1.0 capped)
-// - normPool  = (2 - poolOrd) / 2             (Situacional=0, Confortável=0.5, Signature=1.0)
+// - normIR    = min(rankIdx / 6, 1)           (Iron=0, Gold≈0.33→actual 3/6=0.5, Challenger=1.0 capped)
 // - normWR    = clamp((wr - 0.25) / 0.5, 0, 1)   (25%=0, 50%=0.5, 75%+=1.0 capped)
-// - normMeta  = (4 - tierOrd) / 4             (D=0, B=0.5, S=1.0)
+// - normPT    = (2 - poolOrd) / 2             (Situacional=0, Confortável=0.5, Signature=1.0)
+// - normMT    = (4 - tierOrd) / 4             (D=0, B=0.5, S=1.0)
 //
-// Out-of-pool champions: normRank=0, normPool=0, normWR=0; f = 2×normMeta
+// Out-of-pool champions: normPT=0; f = 4×normIR + 3×normWR + 2×normMT (IR and WR still weighted)
 function _scoreCandidateForRole(champ, role, ctx) {
   const TIER_ORD = { S: 0, A: 1, B: 2, C: 3, D: 4 }
   
   // Meta tier: tier_by_role[role], default B (tier 2)
   const tierOrd = TIER_ORD[champ.tier_by_role?.[role]] ?? 2
-  const normMeta = (4 - tierOrd) / 4
+  const normMT = (4 - tierOrd) / 4
 
   // Find pool entries for this champion + role
   const entries = (ctx.champPool?.[champ.id] ?? [])
     .filter(e => role == null || e.role === role)
 
   if (!entries.length) {
-    // Not in pool: score by meta tier only
-    return -(2 * normMeta)  // negate: higher f → lower return
+    // Not in pool: score by IR, WR, and meta tier only (no pool tier)
+    // Start by computing IR and WR from no pool context
+    let bestRank = 0
+    let bestWR = 0
+    const champLens = _champLens(champ)
+    
+    // For out-of-pool, we can't look up player data, so both remain 0
+    const normIR = 0
+    const normWRclamped = 0
+    
+    // f = 4×normIR + 3×normWR + 2×normMT = 0 + 0 + 2×normMT = 2×normMT
+    const f = 2 * normMT
+    return -f  // negate: lower return = ranked first
   }
 
   // Compute pool normalization: best tier across all players for this champ+role
   const bestPoolOrd = Math.min(...entries.map(e => POOL_TIER_ORDER_REC[e.poolTier] ?? 2))
-  const normPool = (2 - bestPoolOrd) / 2  // Situacional=0, Confortável=0.5, Signature=1.0
+  const normPT = (2 - bestPoolOrd) / 2  // Situacional=0, Confortável=0.5, Signature=1.0
 
   // Compute best rank and WR across all player entries
   let bestRank = 0
@@ -130,12 +141,12 @@ function _scoreCandidateForRole(champ, role, ctx) {
     }
   }
 
-  // Normalize to [0, 1]: rank and WR have hard caps, pool and meta are already bounded
-  const normRank = Math.min(bestRank / 6, 1)
+  // Normalize to [0, 1]: IR and WR have hard caps, PT and MT are already bounded
+  const normIR = Math.min(bestRank / 6, 1)
   const normWRclamped = Math.min(Math.max((bestWR - 0.25) / 0.5, 0), 1)
   
-  // f = 4×normRank + 3×normPool + 2×normWR + 2×normMeta
-  const f = 4 * normRank + 3 * normPool + 2 * normWRclamped + 2 * normMeta
+  // f = 4×normIR + 3×normWR + 2×(normPT + normMT)
+  const f = 4 * normIR + 3 * normWRclamped + 2 * (normPT + normMT)
   return -f  // negate: lower return = ranked first
 }
 

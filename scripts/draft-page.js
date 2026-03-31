@@ -679,6 +679,12 @@ document.addEventListener('alpine:init', () => {
       return { star: '★', green: '●', yellow: '◐' }[tier] ?? '?'
     },
 
+    // Pool tier icon size normalization (visual 14.5833px target)
+    // Different icons render at different apparent sizes even with same font-size
+    poolTierSize(tier) {
+      return { star: 'text-[15px]', green: 'text-[10.9px]', yellow: 'text-[15.5px]' }[tier] ?? 'text-[15px]'
+    },
+
     compEmoji(type) {
       return COMP_EMOJI[type] ?? ''
     },

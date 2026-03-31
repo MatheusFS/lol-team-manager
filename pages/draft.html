@@ -512,11 +512,11 @@
                     </div>
                      <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
                      <div class="flex flex-row w-full gap-1">
-                      <template x-for="c in col.candidates" :key="c.id">
-                        <button @click="quickPick(c)"
-                                :disabled="ourPicks.every(Boolean)"
-                                class="relative aspect-square rounded-lg border-2 p-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1 max-w-[25%]"
-                                :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
+                       <template x-for="c in col.candidates" :key="c.id">
+                         <button @click="quickPick(c)"
+                                 :disabled="ourPicks.every(Boolean)"
+                                 class="relative rounded-lg border-2 px-1.5 py-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1 max-w-[25%]"
+                                 :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
                            <!-- Inner image container: inset within padding -->
                            <div class="relative w-full h-full">
                              <!-- Image with overflow clipping -->
@@ -534,81 +534,81 @@
                                    return champCardData(c, rec.player, rec.role)
                                  }
                                }" class="contents">
-                                 <!-- Top-left: RI (Identity Rank icon) -->
-                                 <template x-if="card.identity && !card.isLoading">
-                                   <div class="absolute top-0.5 left-0.5 z-10">
-                                     <img :src="card.identity.imgUrl" class="w-5 h-5">
+                                  <!-- Top-left: RI (Identity Rank icon) -->
+                                  <template x-if="card.identity && !card.isLoading">
+                                    <div class="absolute top-0 left-0 z-10">
+                                      <img :src="card.identity.imgUrl" class="w-6 h-6">
+                                    </div>
+                                  </template>
+                                  <!-- Skeleton placeholder for IR while loading -->
+                                  <template x-if="!card.identity && card.isLoading">
+                                    <div class="absolute top-0 left-0 z-10 w-6 h-6 bg-slate-600 rounded animate-pulse"></div>
+                                  </template>
+                                
+                                 <!-- Top-center: C1+C2 (comp type emojis) -->
+                                 <template x-if="c.comp_type || c.comp_type_2">
+                                   <div class="absolute top-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                     <template x-if="c.comp_type">
+                                       <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
+                                     </template>
+                                     <template x-if="c.comp_type_2">
+                                       <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type_2)"></span>
+                                     </template>
                                    </div>
-                                 </template>
-                                 <!-- Skeleton placeholder for IR while loading -->
-                                 <template x-if="!card.identity && card.isLoading">
-                                   <div class="absolute top-0.5 left-0.5 z-10 w-5 h-5 bg-slate-600 rounded animate-pulse"></div>
                                  </template>
                                 
-                                <!-- Top-center: C1+C2 (comp type emojis) -->
-                                <template x-if="c.comp_type || c.comp_type_2">
-                                  <div class="absolute top-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
-                                    <template x-if="c.comp_type">
-                                      <span class="text-[10px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
-                                    </template>
-                                    <template x-if="c.comp_type_2">
-                                      <span class="text-[10px] leading-none drop-shadow-sm opacity-50" x-text="compEmoji(c.comp_type_2)"></span>
-                                    </template>
-                                  </div>
-                                </template>
-                                
-                                  <!-- Top-right: WR (Win Rate %) -->
-                                  <template x-if="card.wr && !card.isLoading">
-                                    <div class="absolute top-0.5 right-0.5 text-[12px] font-bold leading-none z-10 drop-shadow-sm">
-                                     <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
-                                   </div>
-                                 </template>
-                                 <!-- Fallback "—" when loading failed -->
-                                 <template x-if="!card.wr && !card.isLoading">
-                                   <div class="absolute top-0.5 right-0.5 text-[12px] font-bold leading-none z-10 drop-shadow-sm">
-                                     <span class="text-slate-500">—</span>
-                                   </div>
-                                 </template>
+                                   <!-- Top-right: WR (Win Rate %) -->
+                                   <template x-if="card.wr && !card.isLoading">
+                                     <div class="absolute top-0.5 right-0.5 text-[11px] font-bold leading-none z-10 drop-shadow-sm">
+                                      <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
+                                    </div>
+                                  </template>
+                                  <!-- Fallback "—" when loading failed -->
+                                  <template x-if="!card.wr && !card.isLoading">
+                                    <div class="absolute top-0.5 right-0.5 text-[11px] font-bold leading-none z-10 drop-shadow-sm">
+                                      <span class="text-slate-500">—</span>
+                                    </div>
+                                  </template>
                                  <!-- Skeleton placeholder for WR while loading -->
                                  <template x-if="card.isLoading">
                                    <div class="absolute top-0.5 right-0.5 z-10 w-6 h-4 bg-slate-600 rounded animate-pulse"></div>
                                  </template>
                                 
-                                  <!-- Bottom-left: P (Pool tier) -->
-                                  <template x-if="card.poolTier && !card.isLoading">
-                                    <div class="absolute bottom-0.5 left-0.5 text-[18px] leading-none z-10 drop-shadow-sm">
-                                     <span :class="{
-                                       'text-yellow-300': card.poolTier === 'star',
-                                       'text-green-400':  card.poolTier === 'green',
-                                       'text-yellow-600': card.poolTier === 'yellow',
-                                     }" x-text="poolTierIcon(card.poolTier)"></span>
-                                   </div>
-                                 </template>
-                                 <!-- Fallback "—" when loading failed -->
-                                 <template x-if="!card.poolTier && !card.isLoading">
-                                   <div class="absolute bottom-0.5 left-0.5 text-[18px] leading-none z-10 drop-shadow-sm">
-                                     <span class="text-slate-500">—</span>
-                                   </div>
-                                 </template>
+                                 <!-- Bottom-left: P (Pool tier) -->
+                                   <template x-if="card.poolTier && !card.isLoading">
+                                     <div class="absolute bottom-0.5 left-0.5 leading-none z-10 drop-shadow-sm" :class="poolTierSize(card.poolTier)">
+                                      <span :class="{
+                                        'text-yellow-300': card.poolTier === 'star',
+                                        'text-green-400':  card.poolTier === 'green',
+                                        'text-yellow-600': card.poolTier === 'yellow',
+                                      }" x-text="poolTierIcon(card.poolTier)"></span>
+                                    </div>
+                                  </template>
+                                  <!-- Fallback "—" when loading failed -->
+                                  <template x-if="!card.poolTier && !card.isLoading">
+                                    <div class="absolute bottom-0.5 left-0.5 text-[15px] leading-none z-10 drop-shadow-sm">
+                                      <span class="text-slate-500">—</span>
+                                    </div>
+                                  </template>
                                  <!-- Skeleton placeholder for PT while loading -->
                                  <template x-if="card.isLoading">
                                    <div class="absolute bottom-0.5 left-0.5 z-10 w-5 h-5 bg-slate-600 rounded animate-pulse"></div>
                                  </template>
                                 
-                                <!-- Bottom-center: EML (Scaling curve) -->
-                                 <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
-                                   <template x-for="(idx, i) in card.scaling" :key="i">
-                                     <span class="w-2 h-2 inline-block"
-                                           :class="idx == null ? 'bg-slate-600' : idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
-                                   </template>
-                                 </div>
-                                
-                                 <!-- Bottom-right: M (Meta tier) -->
-                                 <template x-if="card.metaTier !== '?'">
-                                   <div class="absolute bottom-0.5 right-0.5 text-[14px] font-bold leading-none z-10 drop-shadow-sm">
-                                    <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
+                                 <!-- Bottom-center: EML (Scaling curve) -->
+                                  <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                    <template x-for="(idx, i) in card.scaling" :key="i">
+                                      <span class="w-2.5 h-2.5 inline-block"
+                                            :class="idx == null ? 'bg-slate-600' : idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
+                                    </template>
                                   </div>
-                                </template>
+                                
+                                  <!-- Bottom-right: M (Meta tier) -->
+                                  <template x-if="card.metaTier !== '?'">
+                                    <div class="absolute bottom-1 right-1 text-[15px] font-bold leading-none z-10 drop-shadow-sm">
+                                     <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
+                                   </div>
+                                 </template>
                               </div>
                          </button>
                        </template>
