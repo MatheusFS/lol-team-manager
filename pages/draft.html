@@ -514,15 +514,27 @@
                            </div>
                            
                             <!-- Cache card data to avoid repeated function calls -->
-                            <template x-data="{ card: champCardData(c, rec.player, rec.role) }">
-                              <!-- Top-left: RI (Identity Rank icon) -->
-                              <template x-if="card.identity">
-                                <div class="absolute top-0.5 left-0.5 z-10">
-                                  <img :src="card.identity.imgUrl" class="w-3.5 h-3.5">
-                                </div>
-                              </template>
-                              
-                              <!-- Top-right: WR (Win Rate %) -->
+                             <div x-data="{ card: champCardData(c, rec.player, rec.role) }" class="contents">
+                               <!-- Top-left: RI (Identity Rank icon) -->
+                               <template x-if="card.identity">
+                                 <div class="absolute top-0.5 left-0.5 z-10">
+                                   <img :src="card.identity.imgUrl" class="w-3.5 h-3.5">
+                                 </div>
+                               </template>
+                               
+                               <!-- Top-center: C1+C2 (comp type emojis) -->
+                               <template x-if="c.comp_type || c.comp_type_2">
+                                 <div class="absolute top-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                   <template x-if="c.comp_type">
+                                     <span class="text-[10px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
+                                   </template>
+                                   <template x-if="c.comp_type_2">
+                                     <span class="text-[10px] leading-none drop-shadow-sm opacity-60" x-text="compEmoji(c.comp_type_2)"></span>
+                                   </template>
+                                 </div>
+                               </template>
+                               
+                               <!-- Top-right: WR (Win Rate %) -->
                               <template x-if="card.wr">
                                 <div class="absolute top-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
                                   <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
@@ -548,13 +560,13 @@
                                 </template>
                               </div>
                               
-                              <!-- Bottom-right: M (Meta tier) -->
-                              <template x-if="card.metaTier !== '?'">
-                                <div class="absolute bottom-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
-                                  <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
-                                </div>
-                              </template>
-                            </template>
+                               <!-- Bottom-right: M (Meta tier) -->
+                               <template x-if="card.metaTier !== '?'">
+                                 <div class="absolute bottom-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
+                                   <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
+                                 </div>
+                               </template>
+                             </div>
                          </button>
                        </template>
                     </div>

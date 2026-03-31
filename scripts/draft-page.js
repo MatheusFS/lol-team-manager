@@ -576,6 +576,10 @@ document.addEventListener('alpine:init', () => {
       return { star: '★', green: '●', yellow: '◐' }[tier] ?? '?'
     },
 
+    compEmoji(type) {
+      return COMP_EMOJI[type] ?? ''
+    },
+
     roleLabel(role) {
       return { top: 'TOP', jng: 'JNG', mid: 'MID', adc: 'ADC', sup: 'SUP' }[role]
         ?? role.toUpperCase()
