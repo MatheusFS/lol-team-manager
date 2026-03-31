@@ -35,6 +35,17 @@ const FORMATION_FIELDS = {
   sup: 'support',
 }
 
+// ── Champion default identity (class → lens) ──────────────────────────────────
+function _champDefaultIdentity(c) {
+  if (!c) return null
+  if (c.class === 'Support')  return 'suporte'
+  if (c.class === 'Tank')     return 'tank'
+  if (c.class === 'Assassin') return 'assassino'
+  if (isCarry(c))             return 'carry'
+  if (isBruiser(c))           return 'bruiser'
+  return null
+}
+
 // ── Alpine component ──────────────────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
   Alpine.data('draftPage', () => ({
@@ -58,10 +69,11 @@ document.addEventListener('alpine:init', () => {
     pickRoles: {},
 
     // ── Formation / pool data ─────────────────────────────────────────────────
-    formation:        null,  // active formation (expanded player relations)
-    champPool:        {},    // champId → [{ playerName, role, poolTier }]
-    playerChampStats: {},    // "playerName:champKeyNorm" → { n, wins }
-    formationLoaded:  false,
+    formation:           null,  // active formation (expanded player relations)
+    champPool:           {},    // champId → [{ playerName, role, poolTier }]
+    playerChampStats:    {},    // "playerName:champKeyNorm" → { n, wins }
+    playerIdentityRanks: {},    // playerName → { carry|assassino|bruiser|tank|suporte → rankIdx }
+    formationLoaded:     false,
 
     // ── Modal ─────────────────────────────────────────────────────────────────
     activeSlot:   null,   // { type:'ban'|'pick', side:'blue'|'red', idx:0-4 }
@@ -269,6 +281,44 @@ document.addEventListener('alpine:init', () => {
           }
         }
         this.playerChampStats = stats
+
+        // Compute player identity ranks (carry/assassino/bruiser/tank/suporte)
+        try {
+          await loadRankConfig()
+          const champsByKey = {}
+          for (const c of Alpine.store('champions').list) champsByKey[normChampKey(c.key)] = c
+
+          const riotMatches = matchRes.items.filter(m => m.player_stats?.length)
+          const mapAll = {}
+          for (const m of riotMatches) {
+            for (const ps of m.player_stats) {
+              if (!ps.name || !ps.champion) continue
+              const ce = champsByKey[normChampKey(ps.champion)] ?? null
+              const p  = mapAll[ps.name] ??= { nTotal:0, nCarry:0, nAssassino:0, nBruiser:0, nTank:0, nSuporte:0 }
+              p.nTotal++
+              if (isCarry(ce)) p.nCarry++
+              else if (ce?.class === 'Assassin') p.nAssassino++
+              else if (isBruiser(ce)) p.nBruiser++
+              else if (ce?.class === 'Tank') p.nTank++
+              else if (ce?.class === 'Support') p.nSuporte++
+            }
+          }
+
+          const identRanks = {}
+          for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
+            const rows = aggregateRows(riotMatches, champsByKey, LENS_DEFS[identLens].filter, mapAll)
+            computeIdentityRanks(rows, identLens)
+            for (const row of rows) {
+              if (row.identRank) {
+                identRanks[row.name] ??= {}
+                identRanks[row.name][identLens] = row.identRank.rankIdx
+              }
+            }
+          }
+          this.playerIdentityRanks = identRanks
+        } catch (e) {
+          console.warn('[draft] identity ranks failed:', e)
+        }
       } catch (e) {
         console.warn('[draft] _loadFormationData failed:', e)
       } finally {
@@ -527,6 +577,19 @@ document.addEventListener('alpine:init', () => {
     roleLabel(role) {
       return { top: 'TOP', jng: 'JNG', mid: 'MID', adc: 'ADC', sup: 'SUP' }[role]
         ?? role.toUpperCase()
+    },
+
+    // Identity rank image for a player on a champion's default identity lens
+    champIdentityForPlayer(champ, playerName) {
+      if (!champ || !playerName) return null
+      const lens    = _champDefaultIdentity(champ)
+      if (!lens) return null
+      const rankIdx = this.playerIdentityRanks?.[playerName]?.[lens]
+      if (rankIdx == null) return null
+      return {
+        rankIdx,
+        imgUrl: `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
+      }
     },
 
     // Win rate for a player on a specific champion (null if < 3 games)

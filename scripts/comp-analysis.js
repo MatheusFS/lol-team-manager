@@ -149,11 +149,17 @@ function analyzeTeam(picks) {
   const counts     = buildCounts(filled)
   const heuristics = buildHeuristics(filled, comp, counts)
   const weights    = { frontline: 1.5, ofensividade: 1.5, engage: 1.2, peel: 0.8, perfilDano: 1.0, coherence: 1.0 }
+  // Tiebreaker when multiple gaps share the same score
+  const GAP_PRIORITY = ['frontline', 'ofensividade', 'engage', 'perfilDano', 'coherence', 'peel']
   const maxScore   = Object.values(weights).reduce((s, w) => s + w * 3, 0)
   const rawScore   = Object.entries(heuristics).reduce((s, [k, h]) => s + (weights[k] ?? 1) * h.score, 0)
   const gaps       = Object.entries(heuristics)
     .filter(([, h]) => h.score < 2)
-    .sort(([, a], [, b]) => a.score - b.score)
+    .sort(([ka, a], [kb, b]) =>
+      a.score !== b.score
+        ? a.score - b.score
+        : (GAP_PRIORITY.indexOf(ka) + 1 || 99) - (GAP_PRIORITY.indexOf(kb) + 1 || 99)
+    )
     .map(([k]) => k)
 
   return {

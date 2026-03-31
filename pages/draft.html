@@ -6,6 +6,8 @@
   <title>Assistente de Draft – LoL Team Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/scripts/shared.js"></script>
+  <script src="/scripts/rank-derivation.js"></script>
+  <script src="/scripts/player-metrics.js"></script>
   <script src="/scripts/champ-picker.js"></script>
   <script src="/scripts/comp-analysis.js"></script>
   <script src="/scripts/draft-role-resolver.js"></script>
@@ -504,7 +506,7 @@
                  </div>
                    <!-- Champion name -->
                    <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
-                   <!-- Pool tier + Patch tier + Win% in formation, filtered by rec.role -->
+                   <!-- Pool tier + Patch tier + Win% + Identity rank -->
                    <div class="flex items-center justify-center gap-1 text-[9px]">
                      <!-- Pool tier icon (if in pool for this role) -->
                      <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
@@ -521,6 +523,12 @@
                         <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
                           <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
                         </template>
+                      </template>
+                      <!-- Player identity rank image for the champion's default lens -->
+                      <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
+                        <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
+                             class="w-3 h-3"
+                             :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
                       </template>
                    </div>
                </button>

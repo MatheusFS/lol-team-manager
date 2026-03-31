@@ -110,7 +110,7 @@ function evaluateMetric(playerValue, teamRows, metricKey, benchmarks, lens) {
   let isWeakness = false
 
   if (benchmarks && benchmarks.length > 0) {
-    // Find rank tier from benchmarks
+    // Find rank tier from benchmarks (values below Iron stay at rankIdx = 0)
     for (let i = benchmarks.length - 1; i >= 0; i--) {
       const benchVal = benchmarks[i]
       if (lowerIsBetter ? (effectiveValue >= -benchVal) : (effectiveValue >= benchVal)) {
@@ -118,10 +118,7 @@ function evaluateMetric(playerValue, teamRows, metricKey, benchmarks, lens) {
         break
       }
     }
-    
-    rankLabel = RANK_LABELS[rankIdx]
-    rankImgUrl = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
-    
+
     // Strength = Emerald+ (rankIdx >= 5), Weakness = Silver- (rankIdx <= 2)
     isStrength = rankIdx >= 5
     isWeakness = rankIdx <= 2
@@ -132,26 +129,34 @@ function evaluateMetric(playerValue, teamRows, metricKey, benchmarks, lens) {
     isWeakness = delta < -threshold
   }
 
+  // Always resolve rank label and image (rankIdx clamped to 0 = Iron as minimum)
+  rankIdx = Math.max(0, rankIdx)
+  rankLabel = RANK_LABELS[rankIdx]
+  rankImgUrl = `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${RANK_NAMES[rankIdx]}.png`
+
   // ── Build comparison text ──────────────────────────────────────────────
   let comparison = ''
+  let comparisonHtml = ''
   const deltaAbs = Math.abs(Math.round(delta))
-  
+
   if (validTeamValues.length === 0) {
-    comparison = 'Sem dados da equipe para comparar'
+    comparison = comparisonHtml = 'Sem dados da equipe para comparar'
   } else if (deltaAbs === 0) {
-    comparison = 'Alinhado com a média do time'
+    comparison = comparisonHtml = 'Alinhado com a média do time'
   } else if (delta > 0) {
     comparison = `${deltaAbs}% acima da média do time (${teamAvg.toFixed(1)})`
+    comparisonHtml = `<span class="text-green-400">${deltaAbs}%</span> acima da média do time (${teamAvg.toFixed(1)})`
   } else {
     comparison = `${deltaAbs}% abaixo da média do time (${teamAvg.toFixed(1)})`
+    comparisonHtml = `<span class="text-red-400">${deltaAbs}%</span> abaixo da média do time (${teamAvg.toFixed(1)})`
   }
 
   const severity = Math.abs(delta) > 25 ? 'high' : 'medium'
 
-  return { 
-    isStrength, isWeakness, severity, comparison,
+  return {
+    isStrength, isWeakness, severity, comparison, comparisonHtml,
     rankIdx, rankLabel, rankImgUrl,
-    teamRank, teamSize, delta
+    teamRank, teamSize, delta, teamAvg
   }
 }
 
@@ -181,12 +186,12 @@ document.addEventListener('alpine:init', () => {
     error: null,
 
     lenses: [
-      { key: 'geral', label: 'Geral' },
-      { key: 'carry', label: 'Carry' },
-      { key: 'assassino', label: 'Assassino' },
-      { key: 'bruiser', label: 'Bruiser' },
-      { key: 'tank', label: 'Tank' },
-      { key: 'suporte', label: 'Suporte' },
+      { key: 'geral',    label: 'Geral',     unit: 'jogadores' },
+      { key: 'carry',    label: 'Carry',     unit: 'carries' },
+      { key: 'assassino',label: 'Assassino', unit: 'assassinos' },
+      { key: 'bruiser',  label: 'Bruiser',   unit: 'bruisers' },
+      { key: 'tank',     label: 'Tank',      unit: 'tanks' },
+      { key: 'suporte',  label: 'Suporte',   unit: 'suportes' },
     ],
 
     // Helper: get game count for a specific identity lens
@@ -460,13 +465,18 @@ document.addEventListener('alpine:init', () => {
         const meta = COL_META[metricKey]
         if (!meta) continue
 
+        const deltaAbs = evalResult.delta != null ? Math.abs(Math.round(evalResult.delta)) : null
         const point = {
           metric: metricKey,
           label: meta.label,
           value: playerVal,
           formatted: meta.fmt(playerVal),
           comparison: evalResult.comparison,
+          comparisonHtml: evalResult.comparisonHtml,
           delta: evalResult.delta,
+          deltaDisplay: deltaAbs != null && deltaAbs > 0 ? `${evalResult.delta > 0 ? '+' : '-'}${deltaAbs}%` : null,
+          deltaColor: evalResult.delta > 0 ? 'text-green-400' : 'text-red-400',
+          teamAvgFormatted: evalResult.teamAvg != null && evalResult.teamSize > 0 ? meta.fmt(evalResult.teamAvg) : null,
           severity: evalResult.severity,
           rankIdx: evalResult.rankIdx,
           rankLabel: evalResult.rankLabel,

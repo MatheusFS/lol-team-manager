@@ -46,9 +46,15 @@ function _scoreCandidateForRole(champ, role, ctx) {
 // Build a single recommendation line for a given role + filter.
 // Returns null if no viable candidates exist after filtering.
 function _makeRecLine(role, compFilterFn, reason, tag, classes, ctx) {
+  // ADC cannot be Support or Tank (they have no carry/damage role in that lane)
+  const roleFilter = role === 'adc'
+    ? c => c.class !== 'Support' && c.class !== 'Tank'
+    : () => true
+
   const allValid  = ctx.championsList.filter(c =>
     !ctx.usedIds.has(c.id) &&
     compFilterFn(c) &&
+    roleFilter(c) &&
     (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
   )
   const inPool    = allValid.filter(c =>  ctx.champPool?.[c.id]?.some(e => e.role === role))
@@ -56,7 +62,7 @@ function _makeRecLine(role, compFilterFn, reason, tag, classes, ctx) {
 
   inPool.sort((a, b) => _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx))
 
-  const candidates = [...inPool, ...notInPool].slice(0, 5)
+  const candidates = [...inPool, ...notInPool].slice(0, 10)
   if (!candidates.length) {
     console.debug(`[draft] _makeRecLine(${role}) tag=${tag} → no candidates (allValid=${allValid.length} pool=${ctx.championsList.length})`)
     return null
@@ -95,9 +101,9 @@ function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchu
     .sort(([, a], [, b]) => a.score - b.score)
     .map(([k]) => k)
 
-  // Coherence filter: when in advantage, prefer picks that reinforce the current comp_type.
-  // cf is null when no comp is defined yet (skips coherence filtering).
-  const cf = matchup === 'advantage' ? _coherenceFilter(analysis) : null
+  // Prefer picks that reinforce the established comp theme whenever comp_type is defined.
+  // cf is null when no comp type is defined yet (no filtering applied).
+  const cf = _coherenceFilter(analysis)
 
   // 1. Combo: pivot + gap resolved by the same pick (highest priority)
   if (shouldPivot) {
@@ -128,7 +134,28 @@ function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchu
     if (rec) return rec
   }
 
-  // 3. Critical gap — in advantage, prefer picks that also reinforce comp_type
+  // 3. Critical gap — try multi-objective (2 gaps at once) before single gap
+  // 3a: Multi-gap combo: fills two critical gaps with one champion
+  if (gaps.length >= 2) {
+    for (let i = 0; i < gaps.length - 1; i++) {
+      for (let j = i + 1; j < gaps.length; j++) {
+        const gf1 = gapFilter(gaps[i], analysis)
+        const gf2 = gapFilter(gaps[j], analysis)
+        const combinedClasses = [...new Set([...gapClasses(gaps[i], analysis), ...gapClasses(gaps[j], analysis)])]
+        const rec = _makeRecLine(
+          role,
+          c => gf1(c) && gf2(c),
+          `⚠️ ${gapLabel(gaps[i], analysis)} + ${gapLabel(gaps[j], analysis)}`,
+          'gap',
+          combinedClasses,
+          ctx,
+        )
+        if (rec) return rec
+      }
+    }
+  }
+
+  // 3b: Single gap — prefer picks that also reinforce comp_type when comp is defined
   for (const gap of gaps) {
     if (cf) {
       const rec = _makeRecLine(
@@ -165,7 +192,7 @@ function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchu
     if (rec) return rec
   }
 
-  // 5. Yellow gap (reinforce) — in advantage, prefer picks that also reinforce comp_type
+  // 5. Yellow gap (reinforce) — prefer picks that also reinforce comp_type
   for (const gap of yellowGaps) {
     if (cf) {
       const rec = _makeRecLine(
@@ -189,7 +216,7 @@ function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchu
     if (rec) return rec
   }
 
-  // 6. Best-fit fallback — in advantage, prefer picks that reinforce comp_type
+  // 6. Best-fit fallback — prefer picks that reinforce comp_type
   if (cf) {
     const rec = _makeRecLine(role, cf, `🏆 Melhor pick · 🎯 ${analysis.compType}`, 'bestfit', [], ctx)
     if (rec) return rec
