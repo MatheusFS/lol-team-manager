@@ -68,12 +68,13 @@ function buildHeuristics(picks, comp, { classCounts, damageCounts }) {
   const frontlineRaw = classCounts.Tank + Math.floor(classCounts.Fighter / 2)
   const frontline    = { score: sc(frontlineRaw, [0, 2, 3]), label: 'Frontline' }
 
-  const dpsRaw = picks.filter(c =>
-    (c.class === 'Marksman' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high')) ||
-    (c.class === 'Assassin' && (c.damage_type === 'AD_high' || c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high')) ||
-    (c.class === 'Mage'     && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'))
-  ).length
-  const ofensividade = { score: sc(dpsRaw, [0, 2, 3]), label: 'Ofensividade' }
+   const dpsRaw = picks.filter(c =>
+     (c.class === 'Marksman' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high')) ||
+     (c.class === 'Assassin' && (c.damage_type === 'AD_high' || c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high')) ||
+     (c.class === 'Mage'     && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'))
+   ).length
+   // Scoring: 0 → 0 (red), 1-2 → 2 (yellow), 3+ → 3 (green)
+   const ofensividade = { score: dpsRaw === 0 ? 0 : dpsRaw < 3 ? 2 : 3, label: 'Ofensividade' }
 
   const engageRaw = picks.filter(c =>
     c.comp_type === 'Engage' || c.comp_type_2 === 'Engage' ||
@@ -81,7 +82,13 @@ function buildHeuristics(picks, comp, { classCounts, damageCounts }) {
   ).length
   const engage = { score: sc(engageRaw, [0, 2, 3]), label: 'Engage' }
 
-  const peel = { score: sc(classCounts.Support, [0, 2, 3]), label: 'Proteção' }
+   const peelRaw = picks.reduce((s, c) => {
+     if (c.class === 'Support' || c.comp_type === 'Protect')  return s + 1.0
+     if (c.comp_type_2 === 'Protect') return s + 0.5
+     return s
+   }, 0)
+   // Scoring: <1.5 → 0 (red), 1.5-2.4 → 2 (yellow), 2.5+ → 3 (green)
+   const peel = { score: peelRaw >= 2.5 ? 3 : peelRaw >= 1.5 ? 2 : 0, label: 'Proteção' }
 
   const dc = damageCounts
   const adWeight = picks.reduce((s, c) => {
@@ -110,19 +117,24 @@ function buildHeuristics(picks, comp, { classCounts, damageCounts }) {
   const perfilAxes    = [hasAD, hasAP, hasExplosivo, hasSustentado].filter(Boolean).length
   const perfilDano    = { score: perfilAxes >= 4 ? 3 : perfilAxes >= 3 ? 2 : 0, label: 'Perfil de Dano' }
 
-  // Coherence: progressive score based on how many picks match the established comp type
-  const ct = comp.compType
-  let coherenceScore
-  if (!ct || ct === 'Mix') {
-    // No established comp yet or mix of types → no established direction to be incoherent about
-    coherenceScore = 3
-  } else {
-    // Count how many picks reinforce the comp type
-    const matchCount = picks.filter(c => c.comp_type === ct || c.comp_type_2 === ct).length
-    // Score progression: 0 matching → 0 (red), 1 → 1 (red), 2-3 → 2 (yellow), 4+ → 3 (green)
-    coherenceScore = matchCount >= 4 ? 3 : matchCount >= 2 ? 2 : matchCount === 1 ? 1 : 0
-  }
-  const coherence = { score: coherenceScore, label: 'Coerência' }
+   // Coherence: progressive score based on team composition alignment with dominant comp type
+   // Uses two signals: N (number of picks) and S (weighted theme score for the dominant comp type)
+   // Thresholds: ZERO (red) if N≤1 or S<2.5; ONE (red) if N≥2 && S≥2.5;
+   //             TWO (yellow) if N≥3 && S≥3.5; THREE (green) if N≥4 && S≥4.5
+   const ct = comp.compType
+   let coherenceScore
+   if (!ct || ct === 'Mix') {
+     // No established comp yet or mix of types → no established direction to be incoherent about
+     coherenceScore = 3
+   } else {
+     const N = picks.length
+     const S = comp.voteList.find(v => v.type === ct)?.n ?? 0
+     if      (N >= 4 && S >= 4.5) coherenceScore = 3
+     else if (N >= 3 && S >= 3.5) coherenceScore = 2
+     else if (N >= 2 && S >= 2.5) coherenceScore = 1
+     else                          coherenceScore = 0
+   }
+   const coherence = { score: coherenceScore, label: 'Coerência' }
 
   const color = s => s >= 3 ? 'green' : s >= 2 ? 'yellow' : 'red'
   const add   = h => ({ ...h, color: color(h.score) })
