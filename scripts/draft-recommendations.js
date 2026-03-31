@@ -235,9 +235,9 @@ const PREFIX_ABBREVIATIONS = {
   '⚠️ RECUPERAÇÃO': { med: '⚠️ REC', min: '⚠️ RC' },
   '🥈 REFORÇO TRIPLO': { med: '🥈 3RF', min: '🥈 3RF' },
   '🥈 REFORÇO DUPLO': { med: '🥈 2RF', min: '🥈 2RF' },
-  '🧱 REFORÇO': { med: '🧱 RF', min: '🧱 RF' },
-  '🏆 FITTEST': { med: '🏆 FIT', min: '🏆 FIT' },
-}
+   '🧱 REFORÇO': { med: '🧱 RF', min: '🧱 RF' },
+   '⭐ SIGNATURE': { med: '⭐ SIG', min: '⭐ SIG' },
+ }
 
 const GAP_ABBREVIATIONS = {
   'Proteção': 'Pr.',
@@ -376,11 +376,11 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
   const getCandidates      = filters => _getCandidatesForFilters(role, _cf(filters), cf, ctx)
   const getCandidatesCombo = filters => _getCandidatesForCombo  (role, _cf(filters), cf, ctx)
 
-  // Priority scale (lower internal number = shown first):
-  // 0=PIVOT+GAP+GAP(9) 1=PIVOT+GAP+REFORÇO(8) 2=PIVOT+GAP(7)
-  // 3=GAP+GAP+GAP(6) 4=PIVOT(5)/GAP+GAP+REFORÇO(5)
-  // 5=GAP+REFORÇO+REFORÇO(4)/GAP+GAP(4) 6=GAP+REFORÇO(3)
-  // 7=GAP(2) 8=REFORÇO(1) 9=FITTEST
+   // Priority scale (lower internal number = shown first):
+   // 0=PIVOT+GAP+GAP(9) 1=PIVOT+GAP+REFORÇO(8) 2=PIVOT+GAP(7)
+   // 3=GAP+GAP+GAP(6) 4=PIVOT(5)/GAP+GAP+REFORÇO(5)
+   // 5=GAP+REFORÇO+REFORÇO(4)/GAP+GAP(4) 6=GAP+REFORÇO(3)
+   // 7=GAP(2) 8=REFORÇO(1) 9=SIGNATURE
 
   // ── Priority 0: PIVOT+GAP+GAP (score 9) ⭐ ─────────────────────────────────
   if (shouldPivot && viableGaps.length >= 2) {
@@ -666,20 +666,20 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // ── Priority 9: FITTEST (fallback) 🏆 ──────────────────────────────────────
-  const bestfitCandidates = getCandidates([() => true])
-  if (bestfitCandidates.length > 0) {
-    columns.push(_enrichColumn({
-      priority: 9,
-      tag: 'bestfit',
-      prefix: '🏆 FITTEST',
-      gapNames: 'Melhor opção',
-      classTags: [],
-      colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-500' },
-      candidates: bestfitCandidates,
-      filters: [() => true]
-    }))
-  }
+   // ── Priority 9: SIGNATURE (fallback) ⭐ ──────────────────────────────────────
+   const bestfitCandidates = getCandidates([() => true])
+   if (bestfitCandidates.length > 0) {
+     columns.push(_enrichColumn({
+       priority: 9,
+       tag: 'bestfit',
+       prefix: '⭐ SIGNATURE',
+       gapNames: 'Maior maestria',
+       classTags: [],
+       colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-500' },
+       candidates: bestfitCandidates,
+       filters: [() => true]
+     }))
+   }
 
   // Sort by priority (layout logic for column slicing moved to page layer)
   columns.sort((a, b) => a.priority - b.priority)
