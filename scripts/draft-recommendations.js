@@ -95,23 +95,27 @@ function _playerForRole(role, ctx) {
   return ctx.formation?.expand?.[fieldName]?.name ?? null
 }
 
-// Compute cross-product of arrays, joining each combination with '+'
-// Example: [['Tank'], ['Engage', 'Pick']] → ['Tank+Engage', 'Tank+Pick']
-function _crossProductTags(arrays) {
-  if (!arrays.length) return []
-  if (arrays.length === 1) return arrays[0]  // Single array: return as-is
-  
-  let result = arrays[0]
-  for (let i = 1; i < arrays.length; i++) {
-    const next = []
-    for (const a of result) {
-      for (const b of arrays[i]) {
-        next.push(`${a}+${b}`)
-      }
-    }
-    result = next
+// Champion's short label: class + notable comp_type if applicable
+// Example: Tank (no notable comp_type) → "Tank"
+// Example: Tank with comp_type=Engage → "Tank+Engage"
+function _champShortLabel(c) {
+  const cls = c.class ?? ''
+  const ct  = c.comp_type ?? ''
+  const NOTABLE = new Set(['Engage','Pick','Protect','Poke','Siege','Split'])
+  if (NOTABLE.has(ct)) return `${cls}+${ct}`
+  return cls
+}
+
+// Generate class tags for a combo column from actual candidates.
+// Only candidates that satisfy ALL filters are included (AND logic).
+// Deduplicates and returns unique short labels.
+function _comboClassTagsFromCandidates(candidates) {
+  const tags = new Set()
+  for (const c of candidates) {
+    const label = _champShortLabel(c)
+    if (label) tags.add(label)
   }
-  return result
+  return [...tags]
 }
 
 // Candidate score: lower = better.  Pool tier × 10 − best win-rate for this role.
@@ -206,52 +210,22 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
 
   // ── Combo priorities (0-4) ────────────────────────────────────────────────
 
-  // Priority 0: PIVOT+GAP (counter-picker + solve critical gap)
-  if (shouldPivot && viableGaps.length > 0) {
-    for (const gap of viableGaps) {
-      const gf = gapFilter(gap, analysis)
-      const filters = [
-        c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
-        gf
-      ]
-      const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
-      if (candidates.length > 0) {
-        columns.push({
-          priority: 0,
-          tag: 'combo',
-          prefix: '⭐ PIVOT+GAP',
-          gapNames: gapShortLabel(gap, analysis),
-          classTags: _crossProductTags([
-            ['PIVOT'],
-            _gapClassesShort(gap, analysis)
-          ]),
-          colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
-          candidates,
-          filters
-        })
-      }
-    }
-  }
-
-  // Priority 1: PIVOT+REFORÇO (counter-picker + reinforce yellow gap)
-  if (shouldPivot && viableYellowGaps.length > 0) {
-    for (const gap of viableYellowGaps) {
-      const gf = gapFilter(gap, analysis)
-      const filters = [
-        c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
-        gf
-      ]
-      const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
-      if (candidates.length > 0) {
-        columns.push({
-          priority: 1,
-          tag: 'combo',
-          prefix: '⭐ PIVOT+REFORÇO',
-          gapNames: gapShortLabel(gap, analysis),
-          classTags: _crossProductTags([
-            ['PIVOT'],
-            _gapClassesShort(gap, analysis)
-          ]),
+   // Priority 0: PIVOT+GAP (counter-picker + solve critical gap)
+   if (shouldPivot && viableGaps.length > 0) {
+     for (const gap of viableGaps) {
+       const gf = gapFilter(gap, analysis)
+       const filters = [
+         c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
+         gf
+       ]
+       const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
+       if (candidates.length > 0) {
+         columns.push({
+           priority: 0,
+           tag: 'combo',
+           prefix: '⭐ PIVOT+GAP',
+           gapNames: gapShortLabel(gap, analysis),
+           classTags: _comboClassTagsFromCandidates(candidates),
            colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
            candidates,
            filters
@@ -275,10 +249,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
            tag: 'combo',
            prefix: '⭐ PIVOT+REFORÇO',
            gapNames: gapShortLabel(gap, analysis),
-           classTags: _crossProductTags([
-             ['PIVOT'],
-             _gapClassesShort(gap, analysis)
-           ]),
+           classTags: _comboClassTagsFromCandidates(candidates),
            colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
            candidates,
            filters
@@ -305,86 +276,77 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // Priority 3: GAP+GAP (solve two critical gaps)
-  if (viableGaps.length >= 2) {
-    for (let i = 0; i < viableGaps.length - 1; i++) {
-      for (let j = i + 1; j < viableGaps.length; j++) {
-        const gf1 = gapFilter(viableGaps[i], analysis)
-        const gf2 = gapFilter(viableGaps[j], analysis)
-        const filters = [gf1, gf2]
-        const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
-        if (candidates.length > 0) {
-          columns.push({
-            priority: 3,
-            tag: 'combo',
-            prefix: '🥇 GAP+GAP',
-            gapNames: `${gapShortLabel(viableGaps[i], analysis)} + ${gapShortLabel(viableGaps[j], analysis)}`,
-            classTags: _crossProductTags([
-              _gapClassesShort(viableGaps[i], analysis),
-              _gapClassesShort(viableGaps[j], analysis)
-            ]),
-            colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
-            candidates,
-            filters
-          })
-        }
-      }
-    }
-  }
+   // Priority 3: GAP+GAP (solve two critical gaps)
+   if (viableGaps.length >= 2) {
+     for (let i = 0; i < viableGaps.length - 1; i++) {
+       for (let j = i + 1; j < viableGaps.length; j++) {
+         const gf1 = gapFilter(viableGaps[i], analysis)
+         const gf2 = gapFilter(viableGaps[j], analysis)
+         const filters = [gf1, gf2]
+         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
+         if (candidates.length > 0) {
+           columns.push({
+             priority: 3,
+             tag: 'combo',
+             prefix: '🥇 GAP+GAP',
+             gapNames: `${gapShortLabel(viableGaps[i], analysis)} + ${gapShortLabel(viableGaps[j], analysis)}`,
+             classTags: _comboClassTagsFromCandidates(candidates),
+             colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
+             candidates,
+             filters
+           })
+         }
+       }
+     }
+   }
 
-   // Priority 4: GAP+REFORÇO (solve one critical + one yellow gap)
-  if (viableGaps.length > 0 && viableYellowGaps.length > 0) {
-    for (const critGap of viableGaps) {
-      for (const yellowGap of viableYellowGaps) {
-        const gf1 = gapFilter(critGap, analysis)
-        const gf2 = gapFilter(yellowGap, analysis)
-        const filters = [gf1, gf2]
-        const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
-        if (candidates.length > 0) {
-          columns.push({
-            priority: 4,
-            tag: 'combo',
-            prefix: '🥈 GAP+REFORÇO',
-            gapNames: `${gapShortLabel(critGap, analysis)} + ${gapShortLabel(yellowGap, analysis)}`,
-            classTags: _crossProductTags([
-              _gapClassesShort(critGap, analysis),
-              _gapClassesShort(yellowGap, analysis)
-            ]),
-            colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-600' },
-            candidates,
-            filters
-          })
-        }
-      }
-    }
-  }
+    // Priority 4: GAP+REFORÇO (solve one critical + one yellow gap)
+   if (viableGaps.length > 0 && viableYellowGaps.length > 0) {
+     for (const critGap of viableGaps) {
+       for (const yellowGap of viableYellowGaps) {
+         const gf1 = gapFilter(critGap, analysis)
+         const gf2 = gapFilter(yellowGap, analysis)
+         const filters = [gf1, gf2]
+         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
+         if (candidates.length > 0) {
+           columns.push({
+             priority: 4,
+             tag: 'combo',
+             prefix: '🥈 GAP+REFORÇO',
+             gapNames: `${gapShortLabel(critGap, analysis)} + ${gapShortLabel(yellowGap, analysis)}`,
+             classTags: _comboClassTagsFromCandidates(candidates),
+             colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-600' },
+             candidates,
+             filters
+           })
+         }
+       }
+     }
+   }
 
-  // Priority 6: REFORÇO+REFORÇO (solve two yellow gaps)
-  if (viableYellowGaps.length >= 2) {
-    for (let i = 0; i < viableYellowGaps.length - 1; i++) {
-      for (let j = i + 1; j < viableYellowGaps.length; j++) {
-        const gf1 = gapFilter(viableYellowGaps[i], analysis)
-        const gf2 = gapFilter(viableYellowGaps[j], analysis)
-        const filters = [gf1, gf2]
-        const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
-        if (candidates.length > 0) {
-          columns.push({
-            priority: 6,
-            tag: 'combo',
-            prefix: '🥉 REFORÇO+REFORÇO',
-            gapNames: `${gapShortLabel(viableYellowGaps[i], analysis)} + ${gapShortLabel(viableYellowGaps[j], analysis)}`,
-            classTags: _crossProductTags([
-              _gapClassesShort(viableYellowGaps[i], analysis),
-              _gapClassesShort(viableYellowGaps[j], analysis)
-            ]),
-            colorClasses: { header: 'text-amber-700 bg-amber-950 border-amber-800', button: 'group-hover:border-amber-600' },
-            candidates,
-            filters
-          })
-        }
-      }
-    }
-  }
+   // Priority 6: REFORÇO+REFORÇO (solve two yellow gaps)
+   if (viableYellowGaps.length >= 2) {
+     for (let i = 0; i < viableYellowGaps.length - 1; i++) {
+       for (let j = i + 1; j < viableYellowGaps.length; j++) {
+         const gf1 = gapFilter(viableYellowGaps[i], analysis)
+         const gf2 = gapFilter(viableYellowGaps[j], analysis)
+         const filters = [gf1, gf2]
+         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
+         if (candidates.length > 0) {
+           columns.push({
+             priority: 6,
+             tag: 'combo',
+             prefix: '🥉 REFORÇO+REFORÇO',
+             gapNames: `${gapShortLabel(viableYellowGaps[i], analysis)} + ${gapShortLabel(viableYellowGaps[j], analysis)}`,
+             classTags: _comboClassTagsFromCandidates(candidates),
+             colorClasses: { header: 'text-amber-700 bg-amber-950 border-amber-800', button: 'group-hover:border-amber-600' },
+             candidates,
+             filters
+           })
+         }
+       }
+     }
+   }
 
    // ── Single-target priorities (5-8) ────────────────────────────────────────
 
@@ -463,34 +425,28 @@ function _getCandidatesForFilters(role, filters, coherenceFilter, ctx) {
   return [...inPool, ...notInPool].slice(0, 5)
 }
 
-// Helper: apply filters with OR logic (for combo columns) — champions satisfying ANY filter
-// Sorted by: (1) number of filters satisfied (combo-first), (2) pool tier + win-rate
+// Helper: apply filters with AND logic (for combo columns) — champions satisfying ALL filters
+// Only champions that resolve all gaps simultaneously are included.
+// If no champions satisfy all filters, the column will not be created (empty candidates).
+// Sorted by: pool tier + win-rate
 function _getCandidatesForCombo(role, filters, coherenceFilter, ctx) {
   const roleFilter = _roleClassFilter(role)
 
-  // Valid champions: satisfy at least one filter (OR logic)
+  // Valid champions: satisfy ALL filters (AND logic)
   const valid = ctx.championsList.filter(c =>
     !ctx.usedIds.has(c.id) &&
-    filters.some(f => f(c)) &&  // ANY filter must pass (OR logic)
+    filters.every(f => f(c)) &&  // ALL filters must pass (AND logic)
     roleFilter(c) &&
     (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
   )
 
-  // Count how many filters this champion satisfies (more = better for combo ranking)
-  const comboScore = c => {
-    const count = filters.filter(f => f(c)).length
-    return -count  // negate: higher count = lower value (sorts first)
-  }
-
   const inPool = valid.filter(c => ctx.champPool?.[c.id]?.some(e => e.role === role))
   const notInPool = valid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
 
-  // Sort pool champs: combo-first (more filters), then by pool score
-  inPool.sort((a, b) => {
-    const scoreA = comboScore(a), scoreB = comboScore(b)
-    if (scoreA !== scoreB) return scoreA - scoreB
-    return _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx)
-  })
+  // Sort pool champs by pool score + win-rate
+  inPool.sort((a, b) =>
+    _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx)
+  )
 
   return [...inPool, ...notInPool].slice(0, 5)
 }
