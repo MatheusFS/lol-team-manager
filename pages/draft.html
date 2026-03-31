@@ -514,59 +514,59 @@
                            </div>
                            
                             <!-- Cache card data to avoid repeated function calls -->
-                             <div x-data="{ card: champCardData(c, rec.player, rec.role) }" class="contents">
-                               <!-- Top-left: RI (Identity Rank icon) -->
-                               <template x-if="card.identity">
+                              <div x-data="{ card: champCardData(c, rec.player, rec.role) }" class="contents">
+                                <!-- Top-left: RI (Identity Rank icon) -->
+                                <template x-if="card.identity">
                                   <div class="absolute top-0.5 left-0.5 z-10">
                                     <img :src="card.identity.imgUrl" class="w-5 h-5">
-                                 </div>
-                               </template>
-                               
-                               <!-- Top-center: C1+C2 (comp type emojis) -->
-                               <template x-if="c.comp_type || c.comp_type_2">
-                                 <div class="absolute top-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
-                                   <template x-if="c.comp_type">
-                                     <span class="text-[10px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
-                                   </template>
-                                   <template x-if="c.comp_type_2">
+                                  </div>
+                                </template>
+                                
+                                <!-- Top-center: C1+C2 (comp type emojis) -->
+                                <template x-if="c.comp_type || c.comp_type_2">
+                                  <div class="absolute top-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                    <template x-if="c.comp_type">
+                                      <span class="text-[10px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
+                                    </template>
+                                    <template x-if="c.comp_type_2">
                                       <span class="text-[10px] leading-none drop-shadow-sm opacity-50" x-text="compEmoji(c.comp_type_2)"></span>
-                                   </template>
-                                 </div>
-                               </template>
-                               
-                               <!-- Top-right: WR (Win Rate %) -->
-                              <template x-if="card.wr">
-                                <div class="absolute top-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
-                                  <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
+                                    </template>
+                                  </div>
+                                </template>
+                                
+                                <!-- Top-right: WR (Win Rate %) -->
+                                <template x-if="card.wr">
+                                  <div class="absolute top-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
+                                    <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
+                                  </div>
+                                </template>
+                                
+                                <!-- Bottom-left: P (Pool tier) -->
+                                <template x-if="card.poolTier">
+                                  <div class="absolute bottom-0.5 left-0.5 text-[10px] leading-none z-10 drop-shadow-sm">
+                                    <span :class="{
+                                      'text-yellow-300': card.poolTier === 'star',
+                                      'text-green-400':  card.poolTier === 'green',
+                                      'text-yellow-600': card.poolTier === 'yellow',
+                                    }" x-text="poolTierIcon(card.poolTier)"></span>
+                                  </div>
+                                </template>
+                                
+                                <!-- Bottom-center: EML (Scaling curve) -->
+                                <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                  <template x-for="(idx, i) in card.scaling" :key="i">
+                                    <span class="w-1.5 h-1.5 rounded-sm inline-block"
+                                          :class="idx == null ? 'bg-slate-600' : idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
+                                  </template>
                                 </div>
-                              </template>
-                              
-                              <!-- Bottom-left: P (Pool tier) -->
-                              <template x-if="card.poolTier">
-                                <div class="absolute bottom-0.5 left-0.5 text-[10px] leading-none z-10 drop-shadow-sm">
-                                  <span :class="{
-                                    'text-yellow-300': card.poolTier === 'star',
-                                    'text-green-400':  card.poolTier === 'green',
-                                    'text-yellow-600': card.poolTier === 'yellow',
-                                  }" x-text="poolTierIcon(card.poolTier)"></span>
-                                </div>
-                              </template>
-                              
-                               <!-- Bottom-center: EML (Scaling curve) -->
-                               <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
-                                 <template x-for="(idx, i) in card.scaling" :key="i">
-                                   <span class="w-1.5 h-1.5 rounded-sm inline-block"
-                                         :class="idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
-                                 </template>
+                                
+                                <!-- Bottom-right: M (Meta tier) -->
+                                <template x-if="card.metaTier !== '?'">
+                                  <div class="absolute bottom-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
+                                    <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
+                                  </div>
+                                </template>
                               </div>
-                              
-                               <!-- Bottom-right: M (Meta tier) -->
-                               <template x-if="card.metaTier !== '?'">
-                                 <div class="absolute bottom-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
-                                   <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
-                                 </div>
-                               </template>
-                             </div>
                          </button>
                        </template>
                     </div>
