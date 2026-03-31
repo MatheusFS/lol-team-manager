@@ -807,12 +807,13 @@ function buildRecommendations(analysis, enemyAnalysis, picks, overrides, ctx) {
   // missingRoles are roles with NO coverage at all (not even from flex picks).
   const missingRoles = initialMissingRoles.filter(r => !possibleRoles.includes(r))
 
-  const picksLeft    = picks.filter(p => p == null).length
-  const enemyType    = enemyAnalysis?.compType ?? null
-  const counterTypes = _findCounterTypes(enemyType)
-  const matchup      = _matchupResult(analysis.compType, enemyType)
-  const shouldPivot  = counterTypes.length > 0 &&
-    (matchup === 'disadvantage' || matchup === 'neutral')
+   const picksLeft    = picks.filter(p => p == null).length
+   const enemyType    = enemyAnalysis?.compType ?? null
+   const counterTypes = _findCounterTypes(enemyType)
+   const matchup      = _matchupResult(analysis.compType, enemyType)
+   // Allow pivoting when: (1) counter types exist AND (2) either no comp defined yet OR matchup is disadvantageous
+   const shouldPivot  = counterTypes.length > 0 &&
+     (analysis.compType === null || matchup === 'disadvantage' || matchup === 'neutral')
 
   // Sort champion pool by tier for consistent ranking
   const tierOrder = Object.fromEntries(TIERS.map((t, i) => [t, i]))
