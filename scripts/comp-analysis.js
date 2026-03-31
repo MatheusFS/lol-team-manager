@@ -110,13 +110,18 @@ function buildHeuristics(picks, comp, { classCounts, damageCounts }) {
   const perfilAxes    = [hasAD, hasAP, hasExplosivo, hasSustentado].filter(Boolean).length
   const perfilDano    = { score: perfilAxes >= 4 ? 3 : perfilAxes >= 3 ? 2 : 0, label: 'Perfil de Dano' }
 
-  let coherenceScore = 3
+  // Coherence: progressive score based on how many picks match the established comp type
   const ct = comp.compType
-  if      (ct === 'Siege')   coherenceScore = (dc.AP_high >= 1 || dc.Mixed_high >= 1 || classCounts.Mage + classCounts.Marksman >= 2) ? 3 : 1
-  else if (ct === 'Split')   coherenceScore = (classCounts.Fighter >= 1 && (dc.AD_high >= 1 || dc.AD_low >= 1)) ? 3 : 1
-  else if (ct === 'Protect') coherenceScore = (classCounts.Marksman >= 1 && classCounts.Support >= 1) ? 3 : 1
-  else if (ct === 'Engage')  coherenceScore = classCounts.Tank >= 1 ? 3 : 1
-  else if (ct === 'Pick')    coherenceScore = (classCounts.Assassin >= 1 || picks.some(c => c.comp_type === 'Pick')) ? 3 : 1
+  let coherenceScore
+  if (!ct || ct === 'Mix') {
+    // No established comp yet or mix of types → no established direction to be incoherent about
+    coherenceScore = 3
+  } else {
+    // Count how many picks reinforce the comp type
+    const matchCount = picks.filter(c => c.comp_type === ct || c.comp_type_2 === ct).length
+    // Score progression: 0 matching → 0 (red), 1 → 1 (red), 2-3 → 2 (yellow), 4+ → 3 (green)
+    coherenceScore = matchCount >= 4 ? 3 : matchCount >= 2 ? 2 : matchCount === 1 ? 1 : 0
+  }
   const coherence = { score: coherenceScore, label: 'Coerência' }
 
   const color = s => s >= 3 ? 'green' : s >= 2 ? 'yellow' : 'red'
@@ -151,6 +156,20 @@ function analyzeTeam(picks) {
   const weights    = { frontline: 1.5, ofensividade: 1.5, engage: 1.2, peel: 0.8, perfilDano: 1.0, coherence: 1.0 }
   // Tiebreaker when multiple gaps share the same score
   const GAP_PRIORITY = ['frontline', 'ofensividade', 'engage', 'perfilDano', 'coherence', 'peel']
+  
+  // Derive phase-specific gaps from scaling curve (early/mid/late)
+  const phaseGaps = []
+  if (comp.scaling && comp.scaling.length === 3) {
+    const phases = ['early', 'mid', 'late']
+    for (let i = 0; i < 3; i++) {
+      const avg = comp.scaling[i]
+      // Weak: avg < 0.6; Neutral: 0.6 ≤ avg < 1.4; Strong: avg ≥ 1.4
+      if (avg != null && avg < 3/5) {
+        phaseGaps.push(phases[i])  // weak phase → add as gap
+      }
+    }
+  }
+  
   const maxScore   = Object.values(weights).reduce((s, w) => s + w * 3, 0)
   const rawScore   = Object.entries(heuristics).reduce((s, [k, h]) => s + (weights[k] ?? 1) * h.score, 0)
   const gaps       = Object.entries(heuristics)
@@ -161,6 +180,7 @@ function analyzeTeam(picks) {
         : (GAP_PRIORITY.indexOf(ka) + 1 || 99) - (GAP_PRIORITY.indexOf(kb) + 1 || 99)
     )
     .map(([k]) => k)
+    .concat(phaseGaps)  // Add phase gaps after heuristic gaps
 
   return {
     picks:        filled,

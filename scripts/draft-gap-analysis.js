@@ -85,6 +85,15 @@ function gapFilter(gap, analysis) {
       return c => c.comp_type === ct || c.comp_type_2 === ct
     }
 
+    case 'early':
+      return c => c.early === 2  // Champion strong in early
+
+    case 'mid':
+      return c => c.mid === 2    // Champion strong in mid
+
+    case 'late':
+      return c => c.late === 2   // Champion strong in late
+
     default:
       return () => false
   }
@@ -112,6 +121,15 @@ function gapLabel(gap, analysis) {
 
     case 'coherence':
       return `Comp incoerente para ${analysis.compType ?? 'tipo escolhido'}`
+
+    case 'early':
+      return 'Falta força no early game'
+
+    case 'mid':
+      return 'Falta força no mid game'
+
+    case 'late':
+      return 'Falta força no late game'
 
     default:
       return gap
@@ -142,6 +160,15 @@ function gapShortLabel(gap, analysis) {
     case 'coherence':
       return 'Comp incoerente'
 
+    case 'early':
+      return 'Falta early'
+
+    case 'mid':
+      return 'Falta mid'
+
+    case 'late':
+      return 'Falta late'
+
     default:
       return gap
   }
@@ -170,6 +197,15 @@ function gapClasses(gap, analysis) {
       if (!ct) return []
       return [`comp: ${ct}`]
     }
+
+    case 'early':
+      return ['Early']
+
+    case 'mid':
+      return ['Mid']
+
+    case 'late':
+      return ['Late']
 
     default:
       return []

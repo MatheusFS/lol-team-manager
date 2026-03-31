@@ -214,7 +214,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // Priority 3: GAP+REFORÇO (solve one critical + one yellow gap)
+   // Priority 4: GAP+REFORÇO (solve one critical + one yellow gap)
   if (gaps.length > 0 && yellowGaps.length > 0) {
     for (const critGap of gaps) {
       for (const yellowGap of yellowGaps) {

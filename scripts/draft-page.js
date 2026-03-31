@@ -309,7 +309,8 @@ document.addEventListener('alpine:init', () => {
             const rows = aggregateRows(riotMatches, champsByKey, LENS_DEFS[identLens].filter, mapAll)
             computeIdentityRanks(rows, identLens)
             for (const row of rows) {
-              if (row.identRank) {
+              // Only store identity rank if player has 3+ games in this lens
+              if (row.identRank && row.n >= 3) {
                 identRanks[row.name] ??= {}
                 identRanks[row.name][identLens] = row.identRank.rankIdx
               }
