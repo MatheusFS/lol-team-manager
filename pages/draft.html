@@ -500,10 +500,10 @@
                           <div class="flex items-center gap-1 flex-wrap text-slate-300">
                             <!-- Gap names: col.units=1 uses Min, col.units=2 uses Med, col.units>=3 uses full names -->
                             <span x-text="col.units === 1 ? col.gapNamesMin : (col.units === 2 ? col.gapNamesMed : col.gapNames)"></span>
-                          <!-- Class tags - compact format [N] -->
-                          <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
+                          <!-- Class tags - compact format [🔍 N] - only show when width >= 3 units -->
+                          <template x-if="col.units >= 3 && col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
                             <template x-if="Array.isArray(col.classTags)">
-                              <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="`[${col.classTags.length}]`"></span>
+                              <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="`[🔍 ${col.classTags.length}]`"></span>
                             </template>
                             <template x-if="!Array.isArray(col.classTags) && col.classTags.display">
                               <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" 
