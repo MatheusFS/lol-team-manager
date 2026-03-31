@@ -515,37 +515,22 @@ document.addEventListener('alpine:init', () => {
 
     // ── Dynamic layout for recommendation columns ──────────────────────────────
     // Assigns flex units to recommendation columns based on candidate count.
-    // Total grid = 12 units. Each column gets units = candidates.length.
-    // If used < 12, pull extra columns and distribute free space.
+    // Layout rule: include columns in priority order until totalCandidates > 12.
+    // Each column uses units = candidates.length (1–4), no redistribution.
     _buildRecLayout(columns) {
-      if (columns.length === 0) return { layout: [], totalUnits: 12 }
+      if (columns.length === 0) return { layout: [] }
 
       const layout = []
-      let usedUnits = 0
+      let totalCandidates = 0
 
-      // Assign units to first N columns until used >= 12 (or run out)
       for (const col of columns) {
-        const units = Math.min(col.candidates.length, 4)
-        if (usedUnits >= 12) break
-        layout.push({ col, units })
-        usedUnits += units
+        const n = col.candidates.length
+        if (totalCandidates + n > 12) break
+        layout.push({ col, units: n })
+        totalCandidates += n
       }
 
-      // If we have free space, pull extra columns and distribute evenly
-      const freeUnits = 12 - usedUnits
-      if (freeUnits > 0 && layout.length < columns.length) {
-        const extraCount = Math.min(3, columns.length - layout.length)  // Pull up to 3 extra columns
-        const unitsPerExtra = Math.floor(freeUnits / extraCount)
-        
-        for (let i = 0; i < extraCount; i++) {
-          const idx = layout.length + i
-          if (idx < columns.length) {
-            layout.push({ col: columns[idx], units: unitsPerExtra })
-          }
-        }
-      }
-
-      return { layout, totalUnits: 12 }
+      return { layout }
     },
 
     get ourRecs() {

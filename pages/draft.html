@@ -486,9 +486,9 @@
               <div class="flex flex-row flex-wrap gap-4">
                  <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
                  <template x-for="(col, ci) in rec.columns" :key="ci">
-                   <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0;`">
+                    <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0; max-width: calc(100% / 3);`">
                      <!-- Column header: 2-part structure with responsive sizing -->
-                     <div class="flex flex-col gap-1 px-2 py-1 rounded border" :class="col.colorClasses.header">
+                      <div class="flex flex-col gap-1 px-2 py-1 rounded border min-h-[2.5rem]" :class="col.colorClasses.header">
                        <!-- Row 1: prefix (emoji+type) - adaptive text size based on col.units -->
                        <div class="flex items-center">
                          <template x-if="col.units === 1">
