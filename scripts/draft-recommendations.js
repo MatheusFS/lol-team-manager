@@ -55,40 +55,6 @@ function _scoreCandidateForRole(champ, role, ctx) {
   return score
 }
 
-// Build a single recommendation line for a given role + filter.
-// Returns null if no viable candidates exist after filtering.
-function _makeRecLine(role, compFilterFn, reason, tag, classes, ctx) {
-  // ADC cannot be Support or Tank (they have no carry/damage role in that lane)
-  const roleFilter = role === 'adc'
-    ? c => c.class !== 'Support' && c.class !== 'Tank'
-    : () => true
-
-  const allValid  = ctx.championsList.filter(c =>
-    !ctx.usedIds.has(c.id) &&
-    compFilterFn(c) &&
-    roleFilter(c) &&
-    (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
-  )
-  const inPool    = allValid.filter(c =>  ctx.champPool?.[c.id]?.some(e => e.role === role))
-  const notInPool = allValid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
-
-  inPool.sort((a, b) => _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx))
-
-  const candidates = [...inPool, ...notInPool].slice(0, 10)
-  if (!candidates.length) {
-    console.debug(`[draft] _makeRecLine(${role}) tag=${tag} → no candidates (allValid=${allValid.length} pool=${ctx.championsList.length})`)
-    return null
-  }
-  return {
-    reason,
-    tag,
-    classes,
-    candidates,
-    role,
-    player: _playerForRole(role, ctx),
-  }
-}
-
 // Coherence filter: when we already have a comp_type defined, prefer picks that
 // reinforce it. Returns null if no comp is defined yet (no filtering).
 function _coherenceFilter(analysis) {
@@ -105,242 +71,222 @@ function _findCounterTypes(enemyType) {
     .map(([type]) => type)
 }
 
-// Build the best recommendation line for a single role, in priority order.
-function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, ctx) {
-  const gaps       = analysis.gaps
-  const yellowGaps = Object.entries(analysis.heuristics)
-    .filter(([, h]) => h.score === 2)
-    .sort(([, a], [, b]) => a.score - b.score)
-    .map(([k]) => k)
 
-  // Prefer picks that reinforce the established comp theme whenever comp_type is defined.
-  // cf is null when no comp type is defined yet (no filtering applied).
+
+// ── Strategic Columns Builder ─────────────────────────────────────────────────
+// Generates all strategic columns (independently filtered candidate lists) for a role.
+// Priority order: COMBO (0-4) > PIVOT (5) > GAP (6) > REFORÇO (7) > BESTFIT (8)
+//
+// Returns: [ { priority, label, tag, colorClasses, candidates, filters: [...] }, ... ]
+// (sorted by priority, filtered to non-empty only)
+function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, ctx) {
+  const columns = []
+  const gaps = analysis.gaps ?? []
+  const yellowGaps = Object.entries(analysis.heuristics ?? {})
+    .filter(([, h]) => h.score === 2)
+    .map(([k]) => k)
+  
   const cf = _coherenceFilter(analysis)
 
-  // 1. Combo: pivot + gap resolved by the same pick (highest priority)
-  if (shouldPivot) {
+  // ── Combo priorities (0-4) ────────────────────────────────────────────────
+  
+  // Priority 0: PIVOT+GAP (counter-pick + solve critical gap)
+  if (shouldPivot && gaps.length > 0) {
     for (const gap of gaps) {
-      const gf  = gapFilter(gap, analysis)
-      const rec = _makeRecLine(
-        role,
-        c => (counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2)) && gf(c),
-        `↩️ ${counterTypes.join('/')} · ⚠️ ${analysis.heuristics[gap]?.label ?? gap}`,
-        'combo',
-        [...counterTypes, ...gapClasses(gap, analysis)],
-        ctx,
-      )
-      if (rec) return rec
+      const gf = gapFilter(gap, analysis)
+      const filters = [
+        c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
+        gf
+      ]
+      const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+      if (candidates.length > 0) {
+        columns.push({
+          priority: 0,
+          tag: 'combo',
+          label: `⭐ PIVOT+GAP ${gapLabel(gap, analysis)}`,
+          colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
+          candidates,
+          filters
+        })
+      }
     }
   }
 
-  // 2. Pivot first (when >= 2 picks remaining)
-  if (picksLeft >= 2 && shouldPivot) {
-    const rec = _makeRecLine(
-      role,
-      c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
-      `↩️ ${counterTypes.join('/')}`,
-      'pivot',
-      counterTypes,
-      ctx,
-    )
-    if (rec) return rec
+  // Priority 1: PIVOT+REFORÇO (counter-pick + reinforce yellow gap)
+  if (shouldPivot && yellowGaps.length > 0) {
+    for (const gap of yellowGaps) {
+      const gf = gapFilter(gap, analysis)
+      const filters = [
+        c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
+        gf
+      ]
+      const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+      if (candidates.length > 0) {
+        columns.push({
+          priority: 1,
+          tag: 'combo',
+          label: `⭐ PIVOT+REFORÇO ${gapLabel(gap, analysis)}`,
+          colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
+          candidates,
+          filters
+        })
+      }
+    }
   }
 
-  // 3. Critical gap — try multi-objective (2 gaps at once) before single gap
-  // 3a: Multi-gap combo: fills two critical gaps with one champion
+  // Priority 2: GAP+GAP (solve two critical gaps)
   if (gaps.length >= 2) {
     for (let i = 0; i < gaps.length - 1; i++) {
       for (let j = i + 1; j < gaps.length; j++) {
         const gf1 = gapFilter(gaps[i], analysis)
         const gf2 = gapFilter(gaps[j], analysis)
-        const combinedClasses = [...new Set([...gapClasses(gaps[i], analysis), ...gapClasses(gaps[j], analysis)])]
-        const rec = _makeRecLine(
-          role,
-          c => gf1(c) && gf2(c),
-          `⚠️ ${gapLabel(gaps[i], analysis)} + ${gapLabel(gaps[j], analysis)}`,
-          'gap',
-          combinedClasses,
-          ctx,
-        )
-        if (rec) return rec
+        const filters = [gf1, gf2]
+        const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+        if (candidates.length > 0) {
+          columns.push({
+            priority: 2,
+            tag: 'combo',
+            label: `⚠️ GAP+GAP ${gapLabel(gaps[i], analysis)} + ${gapLabel(gaps[j], analysis)}`,
+            colorClasses: { header: 'text-red-400 bg-red-900/20 border-red-700/30', button: 'group-hover:border-red-500' },
+            candidates,
+            filters
+          })
+        }
       }
     }
   }
 
-  // 3b: Single gap — prefer picks that also reinforce comp_type when comp is defined
+  // Priority 3: GAP+REFORÇO (solve one critical + one yellow gap)
+  if (gaps.length > 0 && yellowGaps.length > 0) {
+    for (const critGap of gaps) {
+      for (const yellowGap of yellowGaps) {
+        const gf1 = gapFilter(critGap, analysis)
+        const gf2 = gapFilter(yellowGap, analysis)
+        const filters = [gf1, gf2]
+        const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+        if (candidates.length > 0) {
+          columns.push({
+            priority: 3,
+            tag: 'combo',
+            label: `⭐ GAP+REFORÇO ${gapLabel(critGap, analysis)} + ${gapLabel(yellowGap, analysis)}`,
+            colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
+            candidates,
+            filters
+          })
+        }
+      }
+    }
+  }
+
+  // Priority 4: REFORÇO+REFORÇO (solve two yellow gaps)
+  if (yellowGaps.length >= 2) {
+    for (let i = 0; i < yellowGaps.length - 1; i++) {
+      for (let j = i + 1; j < yellowGaps.length; j++) {
+        const gf1 = gapFilter(yellowGaps[i], analysis)
+        const gf2 = gapFilter(yellowGaps[j], analysis)
+        const filters = [gf1, gf2]
+        const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+        if (candidates.length > 0) {
+          columns.push({
+            priority: 4,
+            tag: 'combo',
+            label: `🧱 REFORÇO+REFORÇO ${gapLabel(yellowGaps[i], analysis)} + ${gapLabel(yellowGaps[j], analysis)}`,
+            colorClasses: { header: 'text-blue-400 bg-blue-900/20 border-blue-700/30', button: 'group-hover:border-blue-500' },
+            candidates,
+            filters
+          })
+        }
+      }
+    }
+  }
+
+  // ── Single-target priorities (5-8) ────────────────────────────────────────
+
+  // Priority 5: PIVOT (pure counter-pick)
+  if (shouldPivot && counterTypes.length > 0) {
+    const filters = [c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2)]
+    const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+    if (candidates.length > 0) {
+      columns.push({
+        priority: 5,
+        tag: 'pivot',
+        label: `↩️ PIVOT ${counterTypes.join('/')}`,
+        colorClasses: { header: 'text-orange-400 bg-orange-900/20 border-orange-700/30', button: 'group-hover:border-orange-500' },
+        candidates,
+        filters
+      })
+    }
+  }
+
+  // Priority 6: GAP (solve single critical gap)
   for (const gap of gaps) {
-    if (cf) {
-      const rec = _makeRecLine(
-        role,
-        c => gapFilter(gap, analysis)(c) && cf(c),
-        `⚠️ ${gapLabel(gap, analysis)} · 🎯 ${analysis.compType}`,
-        'gap',
-        gapClasses(gap, analysis),
-        ctx,
-      )
-      if (rec) return rec
+    const gf = gapFilter(gap, analysis)
+    const filters = [gf]
+    const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+    if (candidates.length > 0) {
+      columns.push({
+        priority: 6,
+        tag: 'gap',
+        label: `⚠️ GAP ${gapLabel(gap, analysis)}`,
+        colorClasses: { header: 'text-red-400 bg-red-900/20 border-red-700/30', button: 'group-hover:border-red-500' },
+        candidates,
+        filters
+      })
     }
-    const rec = _makeRecLine(
-      role,
-      gapFilter(gap, analysis),
-      `⚠️ ${gapLabel(gap, analysis)}`,
-      'gap',
-      gapClasses(gap, analysis),
-      ctx,
-    )
-    if (rec) return rec
   }
 
-  // 4. Pivot after gap (when < 2 picks remaining)
-  if (picksLeft < 2 && shouldPivot) {
-    const rec = _makeRecLine(
-      role,
-      c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
-      `↩️ ${counterTypes.join('/')}`,
-      'pivot',
-      counterTypes,
-      ctx,
-    )
-    if (rec) return rec
-  }
-
-  // 5. Yellow gap (reinforce) — prefer picks that also reinforce comp_type
+  // Priority 7: REFORÇO (reinforce single yellow gap)
   for (const gap of yellowGaps) {
-    if (cf) {
-      const rec = _makeRecLine(
-        role,
-        c => gapFilter(gap, analysis)(c) && cf(c),
-        `🧱 ${analysis.heuristics[gap].label} · 🎯 ${analysis.compType}`,
-        'reinforce',
-        gapClasses(gap, analysis),
-        ctx,
-      )
-      if (rec) return rec
+    const gf = gapFilter(gap, analysis)
+    const filters = [gf]
+    const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+    if (candidates.length > 0) {
+      columns.push({
+        priority: 7,
+        tag: 'reinforce',
+        label: `🧱 REFORÇO ${gapLabel(gap, analysis)}`,
+        colorClasses: { header: 'text-blue-400 bg-blue-900/20 border-blue-700/30', button: 'group-hover:border-blue-500' },
+        candidates,
+        filters
+      })
     }
-    const rec = _makeRecLine(
-      role,
-      gapFilter(gap, analysis),
-      `🧱 ${analysis.heuristics[gap].label}`,
-      'reinforce',
-      gapClasses(gap, analysis),
-      ctx,
-    )
-    if (rec) return rec
   }
 
-  // 6. Best-fit fallback — prefer picks that reinforce comp_type
-  if (cf) {
-    const rec = _makeRecLine(role, cf, `🏆 Melhor pick · 🎯 ${analysis.compType}`, 'bestfit', [], ctx)
-    if (rec) return rec
+  // Priority 8: BESTFIT (fallback, no filter)
+  const bestfitCandidates = _getCandidatesForFilters(role, [() => true], cf, ctx)
+  if (bestfitCandidates.length > 0) {
+    columns.push({
+      priority: 8,
+      tag: 'bestfit',
+      label: `🏆 MELHOR PICK`,
+      colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-500' },
+      candidates: bestfitCandidates,
+      filters: [() => true]
+    })
   }
-  return _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], ctx)
+
+  // Sort by priority and limit to top 3 non-empty columns
+  columns.sort((a, b) => a.priority - b.priority)
+  return columns.slice(0, 3)
 }
 
-// ── Strategic Grouping ────────────────────────────────────────────────────────
-// Groups recommendation candidates into strategic buckets based on rec tag
-// and candidate ability to solve gaps/reinforce.
-//
-// For 'gap' or 'reinforce' tags: sub-classifies into combo/gap/reinforce by checking
-// if the candidate solves critical gaps vs secondary gaps.
-// 
-// Returns an object with:
-//   combo: [c1, c2, ...],    // solve BOTH critical + secondary gaps
-//   pivot: [c3, c4, ...],    // (only when tag === 'pivot')
-//   gap: [c5, c6, ...],      // solve ONLY critical gaps
-//   reinforce: [c7, ...],    // solve ONLY secondary gaps
-//   bestfit: [c9, ...],      // solve neither
-//   labels: { ... }          // human-readable labels for each bucket
-function _groupCandidatesByStrategicPriority(recTag, candidates, analysis) {
-  const groups = {
-    combo: [],
-    pivot: [],
-    gap: [],
-    reinforce: [],
-    bestfit: [],
-  }
-  
-  // For combo/pivot/bestfit tags: put all candidates in the corresponding bucket
-  if (recTag === 'combo' || recTag === 'pivot' || recTag === 'bestfit') {
-    if (groups.hasOwnProperty(recTag)) {
-      groups[recTag] = candidates
-    } else {
-      groups.bestfit = candidates
-    }
-    // Return with minimal labels for non-gap-based tags
-    return {
-      ...groups,
-      labels: {
-        combo: '⭐ COMBO',
-        pivot: '↩️ PIVOT',
-        gap: '⚠️ GAP',
-        reinforce: '🧱 REFORÇO',
-        bestfit: '🏆 FITTEST',
-      }
-    }
-  }
-  
-  // For 'gap' or 'reinforce' tags: sub-classify by what each candidate solves
-  if (recTag === 'gap' || recTag === 'reinforce') {
-    // Extract critical gaps (red/error score)
-    const criticalGaps = analysis.gaps ?? []
-    
-    // Extract secondary gaps (yellow/warning score = 2)
-    const secondaryGaps = Object.entries(analysis.heuristics ?? {})
-      .filter(([, h]) => h.score === 2)
-      .map(([k]) => k)
-    
-    // Build human-readable gap labels for dynamic column headers
-    const criticalLabels = criticalGaps.map(gap => gapLabel(gap, analysis))
-    const secondaryLabels = secondaryGaps.map(gap => gapLabel(gap, analysis))
-    
-    // Classify each candidate
-    for (const c of candidates) {
-      const solvesCritical   = criticalGaps.length > 0 && criticalGaps.some(gap => gapFilter(gap, analysis)(c))
-      const solvesSecondary  = secondaryGaps.length > 0 && secondaryGaps.some(gap => gapFilter(gap, analysis)(c))
-      
-      if (solvesCritical && solvesSecondary) {
-        groups.combo.push(c)
-      } else if (solvesCritical) {
-        groups.gap.push(c)
-      } else if (solvesSecondary) {
-        groups.reinforce.push(c)
-      } else {
-        groups.bestfit.push(c)
-      }
-    }
-    
-    // Build dynamic labels combining gap names
-    const criticalGapStr = criticalLabels.length > 0 
-      ? criticalLabels.join(' + ') 
-      : 'Gap'
-    const secondaryGapStr = secondaryLabels.length > 0 
-      ? secondaryLabels.join(' + ') 
-      : 'Reforço'
-    
-    return {
-      ...groups,
-      labels: {
-        combo: `🎯 GAP+REFORÇO ${criticalGapStr} + ${secondaryGapStr}`,
-        pivot: '↩️ PIVOT',
-        gap: `⚠️ GAP ${criticalGapStr}`,
-        reinforce: `🧱 REFORÇO ${secondaryGapStr}`,
-        bestfit: '🏆 FITTEST',
-      }
-    }
-  }
-  
-  // Fallback: unknown tag
-  return {
-    ...groups,
-    bestfit: candidates,
-    labels: {
-      combo: '⭐ COMBO',
-      pivot: '↩️ PIVOT',
-      gap: '⚠️ GAP',
-      reinforce: '🧱 REFORÇO',
-      bestfit: '🏆 FITTEST',
-    }
-  }
+// Helper: apply all filters (AND logic) and return sorted/sliced candidates
+function _getCandidatesForFilters(role, filters, coherenceFilter, ctx) {
+  const roleFilter = role === 'adc'
+    ? c => c.class !== 'Support' && c.class !== 'Tank'
+    : () => true
+
+  const allValid = ctx.championsList.filter(c =>
+    !ctx.usedIds.has(c.id) &&
+    filters.every(f => f(c)) &&  // ALL filters must pass (AND logic)
+    roleFilter(c) &&
+    (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
+  )
+  const inPool = allValid.filter(c => ctx.champPool?.[c.id]?.some(e => e.role === role))
+  const notInPool = allValid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
+
+  inPool.sort((a, b) => _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx))
+  return [...inPool, ...notInPool].slice(0, 10)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -385,35 +331,49 @@ function buildRecommendations(analysis, enemyAnalysis, picks, overrides, ctx) {
       .sort((a, b) => getBestTier(a) - getBestTier(b)),
   }
 
-  // Tag priority order (changes based on how many picks are left)
-  const TAG_ORDER = picksLeft >= 2
-    ? { combo: 0, pivot: 1, gap: 2, reinforce: 3, bestfit: 4 }
-    : { combo: 0, gap: 1, pivot: 2, reinforce: 3, bestfit: 4 }
-
   const recs = []
 
-   // Confirmed-missing roles → full priority rec lines
-    for (const role of missingRoles) {
-      const rec = _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, sortedCtx)
-      if (rec) {
-        // Add strategic grouping to each rec (pass analysis for dynamic sub-classification)
-        rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates, analysis)
-        recs.push(rec)
-      }
+  // Confirmed-missing roles → generate all strategic columns
+  for (const role of missingRoles) {
+    const columns = _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, sortedCtx)
+    if (columns.length > 0) {
+      // Create a rec object with columns instead of a single rec line
+      const topPriorityColumn = columns[0]
+      recs.push({
+        role,
+        player: _playerForRole(role, sortedCtx),
+        tag: topPriorityColumn.tag,           // tag from the highest-priority column
+        reason: topPriorityColumn.label,      // label for the role badge
+        classes: [],                          // not used anymore (classes are in each column)
+        candidates: [],                       // not used anymore (candidates are in each column)
+        columns,                              // all strategic columns (up to 3)
+      })
     }
-  
-    // Possibly-missing (wobbly flex) roles → bestfit lines only, no duplicates
-    for (const role of possibleRoles) {
-      if (missingRoles.includes(role)) continue  // already covered above
-      const rec = _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], sortedCtx)
-      if (rec) {
-        // Add strategic grouping to each rec (pass analysis for dynamic sub-classification)
-        rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates, analysis)
-        recs.push(rec)
-      }
-    }
+  }
 
-  recs.sort((a, b) => (TAG_ORDER[a.tag] ?? 9) - (TAG_ORDER[b.tag] ?? 9))
+  // Possibly-missing (wobbly flex) roles → bestfit columns only
+  for (const role of possibleRoles) {
+    if (missingRoles.includes(role)) continue  // already covered above
+    const bestfitCandidates = _getCandidatesForFilters(role, [() => true], null, sortedCtx)
+    if (bestfitCandidates.length > 0) {
+      recs.push({
+        role,
+        player: _playerForRole(role, sortedCtx),
+        tag: 'bestfit',
+        reason: `🏆 Melhor pick`,
+        classes: [],
+        candidates: [],
+        columns: [{
+          priority: 8,
+          tag: 'bestfit',
+          label: `🏆 MELHOR PICK`,
+          colorClasses: { header: 'text-slate-400 bg-slate-800 border-slate-700', button: 'group-hover:border-slate-500' },
+          candidates: bestfitCandidates,
+          filters: [() => true]
+        }]
+      })
+    }
+  }
 
   const result = recs.filter(Boolean)
   console.debug('[draft] buildRecommendations', {
@@ -422,7 +382,7 @@ function buildRecommendations(analysis, enemyAnalysis, picks, overrides, ctx) {
     picksLeft,
     poolSize:      sortedCtx.championsList.length,
     champPoolSize: Object.keys(ctx.champPool ?? {}).length,
-    recLines:      result.map(r => `${r.role}(${r.tag}):${r.candidates.length}`),
+    recLines:      result.map(r => `${r.role}(${r.tag}):${r.columns.length}cols`),
   })
   return result
 }
