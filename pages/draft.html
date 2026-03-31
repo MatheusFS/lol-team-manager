@@ -501,10 +501,9 @@
               <!-- Strategic Column: COMBO (Prioridade 0) -->
               <template x-if="rec.strategicGroups?.combo?.length > 0">
                 <div class="flex flex-col gap-2">
-                  <h4 class="text-[11px] font-bold text-purple-400 px-2 py-1 bg-purple-900/20 rounded border border-purple-700/30">
-                    ⭐ COMBO
-                  </h4>
-                  <div class="flex flex-col gap-3">
+                  <h4 class="text-[11px] font-bold text-purple-400 px-2 py-1 bg-purple-900/20 rounded border border-purple-700/30"
+                      x-text="rec.strategicGroups.labels?.combo ?? '⭐ COMBO'"></h4>
+                  <div class="flex flex-row flex-wrap gap-3">
                     <template x-for="c in rec.strategicGroups.combo" :key="c.id">
                       <button @click="quickPick(c)"
                               :disabled="ourPicks.every(Boolean)"
@@ -549,10 +548,9 @@
               <!-- Strategic Column: PIVOT (Prioridade 1) -->
               <template x-if="rec.strategicGroups?.pivot?.length > 0">
                 <div class="flex flex-col gap-2">
-                  <h4 class="text-[11px] font-bold text-orange-400 px-2 py-1 bg-orange-900/20 rounded border border-orange-700/30">
-                    ↩️ PIVOT
-                  </h4>
-                  <div class="flex flex-col gap-3">
+                  <h4 class="text-[11px] font-bold text-orange-400 px-2 py-1 bg-orange-900/20 rounded border border-orange-700/30"
+                      x-text="rec.strategicGroups.labels?.pivot ?? '↩️ PIVOT'"></h4>
+                  <div class="flex flex-row flex-wrap gap-3">
                     <template x-for="c in rec.strategicGroups.pivot" :key="c.id">
                       <button @click="quickPick(c)"
                               :disabled="ourPicks.every(Boolean)"
@@ -590,10 +588,9 @@
               <!-- Strategic Column: GAP (Prioridade 2) -->
               <template x-if="rec.strategicGroups?.gap?.length > 0">
                 <div class="flex flex-col gap-2">
-                  <h4 class="text-[11px] font-bold text-red-400 px-2 py-1 bg-red-900/20 rounded border border-red-700/30">
-                    ⚠️ GAP
-                  </h4>
-                  <div class="flex flex-col gap-3">
+                  <h4 class="text-[11px] font-bold text-red-400 px-2 py-1 bg-red-900/20 rounded border border-red-700/30"
+                      x-text="rec.strategicGroups.labels?.gap ?? '⚠️ GAP'"></h4>
+                  <div class="flex flex-row flex-wrap gap-3">
                     <template x-for="c in rec.strategicGroups.gap" :key="c.id">
                       <button @click="quickPick(c)"
                               :disabled="ourPicks.every(Boolean)"
@@ -631,10 +628,9 @@
               <!-- Strategic Column: REFORÇO (Prioridade 3) -->
               <template x-if="rec.strategicGroups?.reinforce?.length > 0">
                 <div class="flex flex-col gap-2">
-                  <h4 class="text-[11px] font-bold text-blue-400 px-2 py-1 bg-blue-900/20 rounded border border-blue-700/30">
-                    🧱 REFORÇO
-                  </h4>
-                  <div class="flex flex-col gap-3">
+                  <h4 class="text-[11px] font-bold text-blue-400 px-2 py-1 bg-blue-900/20 rounded border border-blue-700/30"
+                      x-text="rec.strategicGroups.labels?.reinforce ?? '🧱 REFORÇO'"></h4>
+                  <div class="flex flex-row flex-wrap gap-3">
                     <template x-for="c in rec.strategicGroups.reinforce" :key="c.id">
                       <button @click="quickPick(c)"
                               :disabled="ourPicks.every(Boolean)"
@@ -672,10 +668,9 @@
               <!-- Fallback: BESTFIT (only if nothing else) -->
               <template x-if="rec.strategicGroups?.bestfit?.length > 0">
                 <div class="flex flex-col gap-2">
-                  <h4 class="text-[11px] font-bold text-slate-400 px-2 py-1 bg-slate-800 rounded border border-slate-700">
-                    🏆 FITTEST
-                  </h4>
-                  <div class="flex flex-col gap-3">
+                  <h4 class="text-[11px] font-bold text-slate-400 px-2 py-1 bg-slate-800 rounded border border-slate-700"
+                      x-text="rec.strategicGroups.labels?.bestfit ?? '🏆 FITTEST'"></h4>
+                  <div class="flex flex-row flex-wrap gap-3">
                     <template x-for="c in rec.strategicGroups.bestfit" :key="c.id">
                       <button @click="quickPick(c)"
                               :disabled="ourPicks.every(Boolean)"

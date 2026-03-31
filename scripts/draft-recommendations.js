@@ -237,10 +237,20 @@ function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchu
 }
 
 // ── Strategic Grouping ────────────────────────────────────────────────────────
-// Groups recommendation candidates into strategic buckets based on rec tag.
-// Each candidate appears in exactly one bucket (the bucket corresponding to rec.tag).
-function _groupCandidatesByStrategicPriority(recTag, candidates) {
-  // Initialize all buckets as empty
+// Groups recommendation candidates into strategic buckets based on rec tag
+// and candidate ability to solve gaps/reinforce.
+//
+// For 'gap' or 'reinforce' tags: sub-classifies into combo/gap/reinforce by checking
+// if the candidate solves critical gaps vs secondary gaps.
+// 
+// Returns an object with:
+//   combo: [c1, c2, ...],    // solve BOTH critical + secondary gaps
+//   pivot: [c3, c4, ...],    // (only when tag === 'pivot')
+//   gap: [c5, c6, ...],      // solve ONLY critical gaps
+//   reinforce: [c7, ...],    // solve ONLY secondary gaps
+//   bestfit: [c9, ...],      // solve neither
+//   labels: { ... }          // human-readable labels for each bucket
+function _groupCandidatesByStrategicPriority(recTag, candidates, analysis) {
   const groups = {
     combo: [],
     pivot: [],
@@ -249,15 +259,88 @@ function _groupCandidatesByStrategicPriority(recTag, candidates) {
     bestfit: [],
   }
   
-  // All candidates go to the bucket matching the rec tag
-  if (groups.hasOwnProperty(recTag)) {
-    groups[recTag] = candidates
-  } else {
-    // Fallback: unknown tag goes to bestfit
-    groups.bestfit = candidates
+  // For combo/pivot/bestfit tags: put all candidates in the corresponding bucket
+  if (recTag === 'combo' || recTag === 'pivot' || recTag === 'bestfit') {
+    if (groups.hasOwnProperty(recTag)) {
+      groups[recTag] = candidates
+    } else {
+      groups.bestfit = candidates
+    }
+    // Return with minimal labels for non-gap-based tags
+    return {
+      ...groups,
+      labels: {
+        combo: '⭐ COMBO',
+        pivot: '↩️ PIVOT',
+        gap: '⚠️ GAP',
+        reinforce: '🧱 REFORÇO',
+        bestfit: '🏆 FITTEST',
+      }
+    }
   }
   
-  return groups
+  // For 'gap' or 'reinforce' tags: sub-classify by what each candidate solves
+  if (recTag === 'gap' || recTag === 'reinforce') {
+    // Extract critical gaps (red/error score)
+    const criticalGaps = analysis.gaps ?? []
+    
+    // Extract secondary gaps (yellow/warning score = 2)
+    const secondaryGaps = Object.entries(analysis.heuristics ?? {})
+      .filter(([, h]) => h.score === 2)
+      .map(([k]) => k)
+    
+    // Build human-readable gap labels for dynamic column headers
+    const criticalLabels = criticalGaps.map(gap => gapLabel(gap, analysis))
+    const secondaryLabels = secondaryGaps.map(gap => gapLabel(gap, analysis))
+    
+    // Classify each candidate
+    for (const c of candidates) {
+      const solvesCritical   = criticalGaps.length > 0 && criticalGaps.some(gap => gapFilter(gap, analysis)(c))
+      const solvesSecondary  = secondaryGaps.length > 0 && secondaryGaps.some(gap => gapFilter(gap, analysis)(c))
+      
+      if (solvesCritical && solvesSecondary) {
+        groups.combo.push(c)
+      } else if (solvesCritical) {
+        groups.gap.push(c)
+      } else if (solvesSecondary) {
+        groups.reinforce.push(c)
+      } else {
+        groups.bestfit.push(c)
+      }
+    }
+    
+    // Build dynamic labels combining gap names
+    const criticalGapStr = criticalLabels.length > 0 
+      ? criticalLabels.join(' + ') 
+      : 'Gap'
+    const secondaryGapStr = secondaryLabels.length > 0 
+      ? secondaryLabels.join(' + ') 
+      : 'Reforço'
+    
+    return {
+      ...groups,
+      labels: {
+        combo: `🎯 GAP+REFORÇO ${criticalGapStr} + ${secondaryGapStr}`,
+        pivot: '↩️ PIVOT',
+        gap: `⚠️ GAP ${criticalGapStr}`,
+        reinforce: `🧱 REFORÇO ${secondaryGapStr}`,
+        bestfit: '🏆 FITTEST',
+      }
+    }
+  }
+  
+  // Fallback: unknown tag
+  return {
+    ...groups,
+    bestfit: candidates,
+    labels: {
+      combo: '⭐ COMBO',
+      pivot: '↩️ PIVOT',
+      gap: '⚠️ GAP',
+      reinforce: '🧱 REFORÇO',
+      bestfit: '🏆 FITTEST',
+    }
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -309,26 +392,26 @@ function buildRecommendations(analysis, enemyAnalysis, picks, overrides, ctx) {
 
   const recs = []
 
-  // Confirmed-missing roles → full priority rec lines
-   for (const role of missingRoles) {
-     const rec = _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, sortedCtx)
-     if (rec) {
-       // Add strategic grouping to each rec
-       rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates)
-       recs.push(rec)
-     }
-   }
- 
-   // Possibly-missing (wobbly flex) roles → bestfit lines only, no duplicates
-   for (const role of possibleRoles) {
-     if (missingRoles.includes(role)) continue  // already covered above
-     const rec = _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], sortedCtx)
-     if (rec) {
-       // Add strategic grouping to each rec
-       rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates)
-       recs.push(rec)
-     }
-   }
+   // Confirmed-missing roles → full priority rec lines
+    for (const role of missingRoles) {
+      const rec = _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, sortedCtx)
+      if (rec) {
+        // Add strategic grouping to each rec (pass analysis for dynamic sub-classification)
+        rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates, analysis)
+        recs.push(rec)
+      }
+    }
+  
+    // Possibly-missing (wobbly flex) roles → bestfit lines only, no duplicates
+    for (const role of possibleRoles) {
+      if (missingRoles.includes(role)) continue  // already covered above
+      const rec = _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], sortedCtx)
+      if (rec) {
+        // Add strategic grouping to each rec (pass analysis for dynamic sub-classification)
+        rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates, analysis)
+        recs.push(rec)
+      }
+    }
 
   recs.sort((a, b) => (TAG_ORDER[a.tag] ?? 9) - (TAG_ORDER[b.tag] ?? 9))
 
