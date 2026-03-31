@@ -305,6 +305,29 @@ function _minifyGapNames(gapNames) {
   return emojis.join('')
 }
 
+// Format counter types with emoji for full, medium, and minimal display
+// Full: "↩️ Engage/Siege"
+function _formatCounterTypesFull(counterTypes) {
+  if (!counterTypes || counterTypes.length === 0) return ''
+  return `↩️ ${counterTypes.join('/')}`
+}
+
+// Medium: "↩️ En./Si."
+function _formatCounterTypesMed(counterTypes) {
+  if (!counterTypes || counterTypes.length === 0) return ''
+  const abbrev = counterTypes.map(ct => {
+    // Simple abbreviation: first 2 letters
+    return ct.substring(0, 2)
+  })
+  return `↩️ ${abbrev.join('/')}`
+}
+
+// Minimum: "↩️" (just emoji, no text)
+function _formatCounterTypesMin(counterTypes) {
+  if (!counterTypes || counterTypes.length === 0) return ''
+  return '↩️'
+}
+
 // Compute all responsive variants for a column object
 function _enrichColumn(col) {
   const units = col.candidates.length
@@ -317,6 +340,12 @@ function _enrichColumn(col) {
     gapNames: col.gapNames,
     gapNamesMed: _abbreviateGapNames(col.gapNames),
     gapNamesMin: _minifyGapNames(col.gapNames),
+    // Add counter types variants if present (for PIVOT combos)
+    ...(col.counterTypes ? {
+      gapNames: `${_formatCounterTypesFull(col.counterTypes)} + ${col.gapNames}`,
+      gapNamesMed: `${_formatCounterTypesMed(col.counterTypes)} + ${_abbreviateGapNames(col.gapNames)}`,
+      gapNamesMin: `${_formatCounterTypesMin(col.counterTypes)}`,
+    } : {}),
     classTagsCompact: col.classTags && !Array.isArray(col.classTags) ? col.classTags.display : null,
   }
 }
@@ -412,6 +441,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
              tag: 'combo',
              prefix: '🏆 PIVOT + RECUPERAÇÃO DUPLA',
                 gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)}`,
+             counterTypes,
             classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableGaps[i], viableGaps[j]], analysis, counterTypes)),
             colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
             candidates,
@@ -435,6 +465,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
              tag: 'combo',
              prefix: '🏆 PIVOT + RECUPERAÇÃO + REFORÇO',
                 gapNames: `${gapNameWithEmoji(critGap, analysis)} + ${gapNameWithEmoji(yellowGap, analysis)}`,
+             counterTypes,
             classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([critGap, yellowGap], analysis, counterTypes)),
             colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
             candidates,
@@ -456,6 +487,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
           tag: 'combo',
           prefix: '🥇 PIVOT c/ RECUPERAÇÃO',
           gapNames: gapNameWithEmoji(gap, analysis),
+          counterTypes,
           classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([gap], analysis, counterTypes)),
             colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
             candidates,
