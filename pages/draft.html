@@ -490,16 +490,16 @@
                   <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
                   <template x-for="(col, ci) in rec.columns" :key="ci">
                      <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0;`">
-                      <!-- Column header: 2-part structure with standardized sizing for exact height match -->
-                       <div class="flex flex-col gap-1 px-2 py-1 rounded border text-[10px] leading-tight" :class="col.colorClasses.header">
-                        <!-- Row 1: prefix (emoji+type) - standard font size, no adaptive scaling -->
-                        <div class="flex items-center font-bold">
-                          <span x-text="col.prefixMin || col.prefixMed || col.prefix"></span>
-                        </div>
-                        <!-- Row 2: gap names + class tags inline - standard font size -->
-                        <div class="flex items-center gap-1 flex-wrap text-slate-300">
-                          <!-- Gap names - use single best variant based on col.units -->
-                          <span x-text="col.units === 1 ? col.gapNamesMin : (col.units === 2 ? col.gapNamesMed : col.gapNames)"></span>
+                       <!-- Column header: 2-part structure with standardized sizing for exact height match -->
+                        <div class="flex flex-col gap-1 px-2 py-1 rounded border text-[12px] leading-6" :class="col.colorClasses.header">
+                         <!-- Row 1: prefix (emoji+type) - col.units-based variant selection -->
+                         <div class="flex items-center font-bold">
+                           <span x-text="col.units === 1 ? col.prefixMin : (col.units === 2 ? col.prefixMed : col.prefix)"></span>
+                         </div>
+                         <!-- Row 2: gap names + class tags inline - col.units-based variant selection -->
+                         <div class="flex items-center gap-1 flex-wrap text-slate-300">
+                           <!-- Gap names: col.units=1 uses Min, col.units>=2 uses full names -->
+                           <span x-text="col.units === 1 ? col.gapNamesMin : col.gapNames"></span>
                           <!-- Class tags - compact format [N] -->
                           <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
                             <template x-if="Array.isArray(col.classTags)">
@@ -553,15 +553,10 @@
                                    <div class="absolute top-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
                                      <template x-if="c.comp_type">
                                        <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
-                                     </template>
-                                     <template x-if="c.comp_type_2">
-                                       <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type_2)"></span>
-                  </template>
-                  
-                  <!-- Trailing spacer (2 units = 2/12 of row) -->
-                  <div style="flex: 2 1 0; min-width: 0;"></div>
-               </div>
-                                 </template>
+                                      </template>
+                                      <template x-if="c.comp_type_2">
+                                        <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type_2)"></span>
+                                      </template>
                                 
                                    <!-- Top-right: WR (Win Rate %) -->
                                    <template x-if="card.wr && !card.isLoading">
@@ -621,6 +616,9 @@
                     </div>
                  </div>
                </template>
+                  
+                  <!-- Trailing spacer (2 units = 2/12 of row) -->
+                  <div style="flex: 2 1 0; min-width: 0;"></div>
              </div>
          </div>
        </template>
