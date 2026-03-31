@@ -529,10 +529,10 @@
                      <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
                      <div class="flex flex-row w-full gap-1">
                        <template x-for="c in col.candidates" :key="c.id">
-                          <button @click="quickPick(c)"
-                                  :disabled="ourPicks.every(Boolean)"
-                                  class="relative rounded-lg border-2 px-1.5 py-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
-                                  :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
+                           <button @click="quickPick(c)"
+                                   :disabled="ourPicks.every(Boolean)"
+                                   class="relative rounded-lg border-2 px-1.5 py-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1 aspect-[4/5]"
+                                   :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
                            <!-- Inner image container: inset within padding -->
                            <div class="relative w-full h-full">
                              <!-- Image with overflow clipping -->
