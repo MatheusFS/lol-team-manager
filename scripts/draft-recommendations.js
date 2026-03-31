@@ -232,11 +232,11 @@ const PREFIX_ABBREVIATIONS = {
   '🥈 RECUPERAÇÃO c/ REFORÇO DUPLO': { med: '🥈 RC + 2RF', min: '🥈 RC2RF' },
   '🥈 RECUPERAÇÃO DUPLA': { med: '🥈 2RC', min: '🥈 2RC' },
   '🥉 RECUPERAÇÃO c/ REFORÇO': { med: '🥉 RC + RF', min: '🥉 RCRF' },
-  '⚠️ RECUPERAÇÃO': { med: '⚠️ REC', min: '⚠️ RC' },
-  '🥈 REFORÇO TRIPLO': { med: '🥈 3RF', min: '🥈 3RF' },
-  '🥈 REFORÇO DUPLO': { med: '🥈 2RF', min: '🥈 2RF' },
-   '🧱 REFORÇO': { med: '🧱 RF', min: '🧱 RF' },
-   '⭐ SIGNATURE': { med: '⭐ SIG', min: '⭐ SIG' },
+   '⚠️ RECUPERAÇÃO': { med: '⚠️ REC', min: '⚠️ RC' },
+   '🥉 REFORÇO TRIPLO': { med: '🥉 3RF', min: '🥉 3RF' },
+   '🥉 REFORÇO DUPLO': { med: '🥉 2RF', min: '🥉 2RF' },
+    '🧱 REFORÇO': { med: '🧱 RF', min: '🧱 RF' },
+    '⭐ SIGNATURE': { med: '⭐ SIG', min: '⭐ SIG' },
  }
 
 const GAP_ABBREVIATIONS = {
@@ -376,12 +376,11 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
   const getCandidates      = filters => _getCandidatesForFilters(role, _cf(filters), cf, ctx)
   const getCandidatesCombo = filters => _getCandidatesForCombo  (role, _cf(filters), cf, ctx)
 
-   // Priority scale (lower internal number = shown first):
-   // 0=PIVOT+GAP+GAP(9) 1=PIVOT+GAP+REFORÇO(8) 2=PIVOT+GAP(7)
-   // 3=GAP+GAP+GAP(6) 4=PIVOT(5)/GAP+GAP+REFORÇO(5)
-   // 5=GAP+REFORÇO+REFORÇO(4)/GAP+GAP(4) 6=GAP+REFORÇO(3)
-   // 6.0=REFORÇO+PHASE(2.5) 6.1=REFORÇO+REFORÇO+REFORÇO(2) 6.2=REFORÇO+REFORÇO(2)
-   // 7=GAP(2) 8=REFORÇO(1) 9=SIGNATURE
+    // Priority scale (lower internal number = shown first):
+    // 0=PIVOT+GAP+GAP(9) 1=PIVOT+GAP+REFORÇO(8) 2=PIVOT+GAP(7)
+    // 3=GAP+GAP+GAP(6) 4=PIVOT(5)/GAP+GAP+REFORÇO(5)
+    // 5=GAP+REFORÇO+REFORÇO(4)/GAP+GAP(4) 6=GAP+REFORÇO(3)
+    // 6.0=REFORÇO TRIPLO(3) 6.1=REFORÇO DUPLO+DUPLO-PHASE(2) 7=GAP(2) 8=REFORÇO(1) 9=SIGNATURE
 
   // ── Priority 0: PIVOT+GAP+GAP (score 9) ⭐ ─────────────────────────────────
   if (shouldPivot && viableGaps.length >= 2) {
@@ -600,79 +599,89 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         candidates,
         filters
       }))
-    }
-   }
-
-   // ── Priority 6.0: REFORÇO+REFORÇO with phase gaps 🥈 ────────────────────────
-   // Combine heuristic yellow gaps with phase gaps (early/mid/late) to capture strategic needs
-   const phaseGaps = eligibleGaps.filter(g => ['early', 'mid', 'late'].includes(g))
-   if (viableYellowGaps.length > 0 && phaseGaps.length > 0) {
-     // Pair each yellow gap with each viable phase gap
-     for (const yellowGap of viableYellowGaps) {
-       for (const phaseGap of phaseGaps) {
-         const filters = [gapFilter(yellowGap, analysis), gapFilter(phaseGap, analysis)]
-         const candidates = getCandidatesCombo(filters)
-         if (candidates.length > 0) {
-           columns.push(_enrichColumn({
-             priority: 6.0,
-             tag: 'combo',
-             prefix: '🥈 REFORÇO DUPLO',
-             gapNames: `${gapNameWithEmoji(yellowGap, analysis)} + ${gapNameWithEmoji(phaseGap, analysis)}`,
-             classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([yellowGap, phaseGap], analysis)),
-             colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
-             candidates,
-             filters
-           }))
-         }
-       }
      }
-   }
+    }
 
-   // ── Priority 6.1: REFORÇO+REFORÇO+REFORÇO (score 2+2+2) 🥈 ────────────────────
-  if (viableYellowGaps.length >= 3) {
-    for (let i = 0; i < viableYellowGaps.length - 2; i++) {
-      for (let j = i + 1; j < viableYellowGaps.length - 1; j++) {
-        for (let k = j + 1; k < viableYellowGaps.length; k++) {
-          const filters = [gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis), gapFilter(viableYellowGaps[k], analysis)]
-          const candidates = getCandidatesCombo(filters)
-             if (candidates.length > 0) {
-               columns.push(_enrichColumn({
-                 priority: 6.1,
-                 tag: 'combo',
-                  prefix: '🥈 REFORÇO TRIPLO',
-                  gapNames: `${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)} + ${gapNameWithEmoji(viableYellowGaps[k], analysis)}`,
-                  classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableYellowGaps[i], viableYellowGaps[j], viableYellowGaps[k]], analysis)),
-                  colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
-                 candidates,
-                 filters
-               }))
-             }
+    // ── Priority 6.0: REFORÇO+REFORÇO+REFORÇO (score 2+2+2) 🥉 ────────────────────
+    if (viableYellowGaps.length >= 3) {
+      for (let i = 0; i < viableYellowGaps.length - 2; i++) {
+        for (let j = i + 1; j < viableYellowGaps.length - 1; j++) {
+          for (let k = j + 1; k < viableYellowGaps.length; k++) {
+            const filters = [gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis), gapFilter(viableYellowGaps[k], analysis)]
+            const candidates = getCandidatesCombo(filters)
+               if (candidates.length > 0) {
+                 columns.push(_enrichColumn({
+                   priority: 6.0,
+                   tag: 'combo',
+                    prefix: '🥉 REFORÇO TRIPLO',
+                    gapNames: `${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)} + ${gapNameWithEmoji(viableYellowGaps[k], analysis)}`,
+                    classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableYellowGaps[i], viableYellowGaps[j], viableYellowGaps[k]], analysis)),
+                    colorClasses: { header: 'text-yellow-600 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
+                   candidates,
+                   filters
+                 }))
+               }
+            }
+          }
+        }
+      }
+
+    // ── Priority 6.1: REFORÇO+REFORÇO (phase opportunities + yellow gaps) 🥉 ─────
+    // Combine heuristic yellow gaps with phase opportunities (early/mid/late with 0.6-1.4 scaling)
+    const phaseOpportunities = []
+    if (analysis.scaling && analysis.scaling.length === 3) {
+      const phases = ['early', 'mid', 'late']
+      for (let i = 0; i < 3; i++) {
+        const scale = analysis.scaling[i]
+        if (scale != null && scale >= 0.6 && scale < 1.4) {
+          phaseOpportunities.push(phases[i])
         }
       }
     }
-  }
-
-  // ── Priority 6.2: REFORÇO+REFORÇO (score 2+2) 🥈 ────────────────────────────
-  if (viableYellowGaps.length >= 2) {
-    for (let i = 0; i < viableYellowGaps.length - 1; i++) {
-      for (let j = i + 1; j < viableYellowGaps.length; j++) {
-        const filters = [gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis)]
-        const candidates = getCandidatesCombo(filters)
+    
+    // Pair each yellow gap with each phase opportunity
+    if (viableYellowGaps.length > 0 && phaseOpportunities.length > 0) {
+      for (const yellowGap of viableYellowGaps) {
+        for (const phaseOpp of phaseOpportunities) {
+          const filters = [gapFilter(yellowGap, analysis), gapFilter(phaseOpp, analysis)]
+          const candidates = getCandidatesCombo(filters)
           if (candidates.length > 0) {
             columns.push(_enrichColumn({
-              priority: 6.2,
+              priority: 6.1,
               tag: 'combo',
-               prefix: '🥈 REFORÇO DUPLO',
-               gapNames: `${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)}`,
-               classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableYellowGaps[i], viableYellowGaps[j]], analysis)),
-               colorClasses: { header: 'text-slate-100 bg-slate-600/50 border-slate-400', button: 'group-hover:border-slate-400' },
+              prefix: '🥉 REFORÇO DUPLO',
+              gapNames: `${gapNameWithEmoji(yellowGap, analysis)} + ${gapNameWithEmoji(phaseOpp, analysis)}`,
+              classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([yellowGap, phaseOpp], analysis)),
+              colorClasses: { header: 'text-yellow-600 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
               candidates,
               filters
             }))
           }
+        }
       }
     }
-  }
+
+    // Pair each yellow gap combination (2-gap combos)
+    if (viableYellowGaps.length >= 2) {
+      for (let i = 0; i < viableYellowGaps.length - 1; i++) {
+        for (let j = i + 1; j < viableYellowGaps.length; j++) {
+          const filters = [gapFilter(viableYellowGaps[i], analysis), gapFilter(viableYellowGaps[j], analysis)]
+          const candidates = getCandidatesCombo(filters)
+            if (candidates.length > 0) {
+              columns.push(_enrichColumn({
+                priority: 6.1,
+                tag: 'combo',
+                 prefix: '🥉 REFORÇO DUPLO',
+                 gapNames: `${gapNameWithEmoji(viableYellowGaps[i], analysis)} + ${gapNameWithEmoji(viableYellowGaps[j], analysis)}`,
+                 classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableYellowGaps[i], viableYellowGaps[j]], analysis)),
+                 colorClasses: { header: 'text-yellow-600 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
+                candidates,
+                filters
+              }))
+            }
+        }
+      }
+    }
 
   // ── Priority 8: REFORÇO (score 1) 🧱 ───────────────────────────────────────
   for (const gap of viableYellowGaps) {
