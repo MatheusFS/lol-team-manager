@@ -483,49 +483,36 @@
                <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 w-full text-center block"
                      x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
               </div>
-              <div class="flex flex-row flex-wrap gap-4">
-                 <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
-                 <template x-for="(col, ci) in rec.columns" :key="ci">
-                    <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0; max-width: calc(100% / 3);`">
-                     <!-- Column header: 2-part structure with responsive sizing -->
-                      <div class="flex flex-col gap-1 px-2 py-1 rounded border min-h-[2.5rem]" :class="col.colorClasses.header">
-                       <!-- Row 1: prefix (emoji+type) - adaptive text size based on col.units -->
-                       <div class="flex items-center">
-                         <template x-if="col.units === 1">
-                           <span class="text-[9px] font-bold" x-text="col.prefixMin"></span>
-                         </template>
-                         <template x-if="col.units === 2">
-                           <span class="text-[10px] font-bold" x-text="col.prefixMed"></span>
-                         </template>
-                         <template x-if="col.units >= 3">
-                           <span class="text-[11px] font-bold" x-text="col.prefix"></span>
-                         </template>
-                       </div>
-                       <!-- Row 2: gap names + class tags inline - adaptive sizing -->
-                       <div class="flex items-center gap-1 flex-wrap">
-                         <!-- Gap names - responsive variants -->
-                         <template x-if="col.units === 1">
-                           <span class="text-[9px] text-slate-300" x-text="col.gapNamesMin"></span>
-                         </template>
-                         <template x-if="col.units === 2">
-                           <span class="text-[10px] text-slate-300" x-text="col.gapNamesMed"></span>
-                         </template>
-                         <template x-if="col.units >= 3">
-                           <span class="text-[10px] text-slate-300" x-text="col.gapNames"></span>
-                         </template>
-                         <!-- Class tags - compact format [N] -->
-                         <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
-                           <template x-if="Array.isArray(col.classTags)">
-                             <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="`[${col.classTags.length}]`"></span>
-                           </template>
-                           <template x-if="!Array.isArray(col.classTags) && col.classTags.display">
-                             <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" 
-                                   :title="col.classTags.tooltip" 
-                                   x-text="col.classTagsCompact"></span>
-                           </template>
-                         </template>
-                       </div>
-                     </div>
+               <div class="flex flex-row gap-2">
+                  <!-- Leading spacer (2 units = 2/12 of row) -->
+                  <div style="flex: 2 1 0; min-width: 0;"></div>
+                  
+                  <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
+                  <template x-for="(col, ci) in rec.columns" :key="ci">
+                     <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0;`">
+                      <!-- Column header: 2-part structure with standardized sizing for exact height match -->
+                       <div class="flex flex-col gap-1 px-2 py-1 rounded border text-[10px] leading-tight" :class="col.colorClasses.header">
+                        <!-- Row 1: prefix (emoji+type) - standard font size, no adaptive scaling -->
+                        <div class="flex items-center font-bold">
+                          <span x-text="col.prefixMin || col.prefixMed || col.prefix"></span>
+                        </div>
+                        <!-- Row 2: gap names + class tags inline - standard font size -->
+                        <div class="flex items-center gap-1 flex-wrap text-slate-300">
+                          <!-- Gap names - use single best variant based on col.units -->
+                          <span x-text="col.units === 1 ? col.gapNamesMin : (col.units === 2 ? col.gapNamesMed : col.gapNames)"></span>
+                          <!-- Class tags - compact format [N] -->
+                          <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
+                            <template x-if="Array.isArray(col.classTags)">
+                              <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="`[${col.classTags.length}]`"></span>
+                            </template>
+                            <template x-if="!Array.isArray(col.classTags) && col.classTags.display">
+                              <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" 
+                                    :title="col.classTags.tooltip" 
+                                    x-text="col.classTagsCompact"></span>
+                            </template>
+                          </template>
+                        </div>
+                      </div>
                      <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
                      <div class="flex flex-row w-full gap-1">
                        <template x-for="c in col.candidates" :key="c.id">
@@ -569,8 +556,11 @@
                                      </template>
                                      <template x-if="c.comp_type_2">
                                        <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type_2)"></span>
-                                     </template>
-                                   </div>
+                  </template>
+                  
+                  <!-- Trailing spacer (2 units = 2/12 of row) -->
+                  <div style="flex: 2 1 0; min-width: 0;"></div>
+               </div>
                                  </template>
                                 
                                    <!-- Top-right: WR (Win Rate %) -->

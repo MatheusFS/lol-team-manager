@@ -515,19 +515,20 @@ document.addEventListener('alpine:init', () => {
 
     // ── Dynamic layout for recommendation columns ──────────────────────────────
     // Assigns flex units to recommendation columns based on candidate count.
-    // Layout rule: include columns in priority order until totalCandidates > 12.
-    // Each column uses units = candidates.length (1–4), no redistribution.
+    // Layout rule: exactly 8 champion slots in middle of 12-unit row.
+    // Include columns in priority order until totalCandidates > 8.
+    // Spacers (2 units each) handle centering: [spacer:2][col:N][spacer:2] = 12 total.
     _buildRecLayout(columns) {
       if (columns.length === 0) return { layout: [] }
 
       const layout = []
-      let totalCandidates = 0
+      let total = 0
 
       for (const col of columns) {
         const n = col.candidates.length
-        if (totalCandidates + n > 12) break
+        if (total + n > 8) break
         layout.push({ col, units: n })
-        totalCandidates += n
+        total += n
       }
 
       return { layout }
