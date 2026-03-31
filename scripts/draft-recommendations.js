@@ -96,6 +96,29 @@ function _findCounterTypes(enemyType) {
     .map(([type]) => type)
 }
 
+// Role-specific class filter (incompatibility map)
+// - adc: exclude Tank, Support, Assassin
+// - mid: exclude Support
+// - sup: exclude Assassin, Marksman
+// - others: no restriction
+function _roleClassFilter(role) {
+  if (role === 'adc') return c => c.class !== 'Tank' && c.class !== 'Support' && c.class !== 'Assassin'
+  if (role === 'mid') return c => c.class !== 'Support'
+  if (role === 'sup') return c => c.class !== 'Assassin' && c.class !== 'Marksman'
+  return () => true
+}
+
+// Check if at least one champion can resolve a given gap for a specific role
+function _hasAnyCandidates(role, gapFilterFn, ctx) {
+  const roleFilter = _roleClassFilter(role)
+  return ctx.championsList.some(c =>
+    !ctx.usedIds.has(c.id) &&
+    gapFilterFn(c) &&
+    roleFilter(c) &&
+    (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
+  )
+}
+
 
 
 // ── Strategic Columns Builder ─────────────────────────────────────────────────
@@ -111,13 +134,21 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     .filter(([, h]) => h.score === 2)
     .map(([k]) => k)
   
+  // Pre-filter gaps to only those with viable candidates for this role
+  const viableGaps = gaps.filter(gap =>
+    _hasAnyCandidates(role, gapFilter(gap, analysis), ctx)
+  )
+  const viableYellowGaps = yellowGaps.filter(gap =>
+    _hasAnyCandidates(role, gapFilter(gap, analysis), ctx)
+  )
+
   const cf = _coherenceFilter(analysis)
 
   // ── Combo priorities (0-4) ────────────────────────────────────────────────
-  
-  // Priority 0: PIVOT+GAP (counter-pick + solve critical gap)
-  if (shouldPivot && gaps.length > 0) {
-    for (const gap of gaps) {
+
+  // Priority 0: PIVOT+GAP (counter-picker + solve critical gap)
+  if (shouldPivot && viableGaps.length > 0) {
+    for (const gap of viableGaps) {
       const gf = gapFilter(gap, analysis)
       const filters = [
         c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
@@ -142,9 +173,9 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
     }
   }
 
-  // Priority 1: PIVOT+REFORÇO (counter-pick + reinforce yellow gap)
-  if (shouldPivot && yellowGaps.length > 0) {
-    for (const gap of yellowGaps) {
+  // Priority 1: PIVOT+REFORÇO (counter-picker + reinforce yellow gap)
+  if (shouldPivot && viableYellowGaps.length > 0) {
+    for (const gap of viableYellowGaps) {
       const gf = gapFilter(gap, analysis)
       const filters = [
         c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
@@ -161,15 +192,42 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
             ['PIVOT'],
             _gapClassesShort(gap, analysis)
           ]),
-          colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
-          candidates,
-          filters
-        })
-      }
-    }
-  }
+           colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
+           candidates,
+           filters
+         })
+       }
+     }
+   }
 
-  // Priority 2: PIVOT (pure counter-pick)
+   // Priority 1: PIVOT+REFORÇO (counter-pick + reinforce yellow gap)
+   if (shouldPivot && viableYellowGaps.length > 0) {
+     for (const gap of viableYellowGaps) {
+       const gf = gapFilter(gap, analysis)
+       const filters = [
+         c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
+         gf
+       ]
+       const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
+       if (candidates.length > 0) {
+         columns.push({
+           priority: 1,
+           tag: 'combo',
+           prefix: '⭐ PIVOT+REFORÇO',
+           gapNames: gapShortLabel(gap, analysis),
+           classTags: _crossProductTags([
+             ['PIVOT'],
+             _gapClassesShort(gap, analysis)
+           ]),
+           colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
+           candidates,
+           filters
+         })
+       }
+     }
+   }
+
+   // Priority 2: PIVOT (pure counter-pick)
   if (shouldPivot && counterTypes.length > 0) {
     const filters = [c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2)]
     const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
@@ -188,11 +246,11 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
   }
 
   // Priority 3: GAP+GAP (solve two critical gaps)
-  if (gaps.length >= 2) {
-    for (let i = 0; i < gaps.length - 1; i++) {
-      for (let j = i + 1; j < gaps.length; j++) {
-        const gf1 = gapFilter(gaps[i], analysis)
-        const gf2 = gapFilter(gaps[j], analysis)
+  if (viableGaps.length >= 2) {
+    for (let i = 0; i < viableGaps.length - 1; i++) {
+      for (let j = i + 1; j < viableGaps.length; j++) {
+        const gf1 = gapFilter(viableGaps[i], analysis)
+        const gf2 = gapFilter(viableGaps[j], analysis)
         const filters = [gf1, gf2]
         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
@@ -200,10 +258,10 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
             priority: 3,
             tag: 'combo',
             prefix: '🥇 GAP+GAP',
-            gapNames: `${gapShortLabel(gaps[i], analysis)} + ${gapShortLabel(gaps[j], analysis)}`,
+            gapNames: `${gapShortLabel(viableGaps[i], analysis)} + ${gapShortLabel(viableGaps[j], analysis)}`,
             classTags: _crossProductTags([
-              _gapClassesShort(gaps[i], analysis),
-              _gapClassesShort(gaps[j], analysis)
+              _gapClassesShort(viableGaps[i], analysis),
+              _gapClassesShort(viableGaps[j], analysis)
             ]),
             colorClasses: { header: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/30', button: 'group-hover:border-yellow-500' },
             candidates,
@@ -215,9 +273,9 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
   }
 
    // Priority 4: GAP+REFORÇO (solve one critical + one yellow gap)
-  if (gaps.length > 0 && yellowGaps.length > 0) {
-    for (const critGap of gaps) {
-      for (const yellowGap of yellowGaps) {
+  if (viableGaps.length > 0 && viableYellowGaps.length > 0) {
+    for (const critGap of viableGaps) {
+      for (const yellowGap of viableYellowGaps) {
         const gf1 = gapFilter(critGap, analysis)
         const gf2 = gapFilter(yellowGap, analysis)
         const filters = [gf1, gf2]
@@ -242,11 +300,11 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
   }
 
   // Priority 6: REFORÇO+REFORÇO (solve two yellow gaps)
-  if (yellowGaps.length >= 2) {
-    for (let i = 0; i < yellowGaps.length - 1; i++) {
-      for (let j = i + 1; j < yellowGaps.length; j++) {
-        const gf1 = gapFilter(yellowGaps[i], analysis)
-        const gf2 = gapFilter(yellowGaps[j], analysis)
+  if (viableYellowGaps.length >= 2) {
+    for (let i = 0; i < viableYellowGaps.length - 1; i++) {
+      for (let j = i + 1; j < viableYellowGaps.length; j++) {
+        const gf1 = gapFilter(viableYellowGaps[i], analysis)
+        const gf2 = gapFilter(viableYellowGaps[j], analysis)
         const filters = [gf1, gf2]
         const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
@@ -254,10 +312,10 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
             priority: 6,
             tag: 'combo',
             prefix: '🥉 REFORÇO+REFORÇO',
-            gapNames: `${gapShortLabel(yellowGaps[i], analysis)} + ${gapShortLabel(yellowGaps[j], analysis)}`,
+            gapNames: `${gapShortLabel(viableYellowGaps[i], analysis)} + ${gapShortLabel(viableYellowGaps[j], analysis)}`,
             classTags: _crossProductTags([
-              _gapClassesShort(yellowGaps[i], analysis),
-              _gapClassesShort(yellowGaps[j], analysis)
+              _gapClassesShort(viableYellowGaps[i], analysis),
+              _gapClassesShort(viableYellowGaps[j], analysis)
             ]),
             colorClasses: { header: 'text-amber-700 bg-amber-950 border-amber-800', button: 'group-hover:border-amber-600' },
             candidates,
@@ -271,7 +329,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
    // ── Single-target priorities (5-8) ────────────────────────────────────────
 
   // Priority 5: GAP (solve single critical gap)
-  for (const gap of gaps) {
+  for (const gap of viableGaps) {
     const gf = gapFilter(gap, analysis)
     const filters = [gf]
     const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
@@ -290,7 +348,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
   }
 
   // Priority 7: REFORÇO (reinforce single yellow gap)
-  for (const gap of yellowGaps) {
+  for (const gap of viableYellowGaps) {
     const gf = gapFilter(gap, analysis)
     const filters = [gf]
     const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
@@ -330,9 +388,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
 
 // Helper: apply all filters (AND logic) and return sorted/sliced candidates
 function _getCandidatesForFilters(role, filters, coherenceFilter, ctx) {
-  const roleFilter = role === 'adc'
-    ? c => c.class !== 'Support' && c.class !== 'Tank'
-    : () => true
+  const roleFilter = _roleClassFilter(role)
 
   const allValid = ctx.championsList.filter(c =>
     !ctx.usedIds.has(c.id) &&
@@ -350,9 +406,7 @@ function _getCandidatesForFilters(role, filters, coherenceFilter, ctx) {
 // Helper: apply filters with OR logic (for combo columns) — champions satisfying ANY filter
 // Sorted by: (1) number of filters satisfied (combo-first), (2) pool tier + win-rate
 function _getCandidatesForCombo(role, filters, coherenceFilter, ctx) {
-  const roleFilter = role === 'adc'
-    ? c => c.class !== 'Support' && c.class !== 'Tank'
-    : () => true
+  const roleFilter = _roleClassFilter(role)
 
   // Valid champions: satisfy at least one filter (OR logic)
   const valid = ctx.championsList.filter(c =>
