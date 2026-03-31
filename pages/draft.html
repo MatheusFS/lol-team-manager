@@ -500,7 +500,7 @@
                       <template x-for="c in col.candidates" :key="c.id">
                         <button @click="quickPick(c)"
                                 :disabled="ourPicks.every(Boolean)"
-                                class="relative aspect-square rounded-lg border-2 p-2.5 bg-slate-900 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
+                                class="relative aspect-square rounded-lg border-2 p-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
                                 :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
                            <!-- Inner image container: inset within padding -->
                            <div class="relative w-full h-full">
@@ -534,16 +534,16 @@
                                   </div>
                                 </template>
                                 
-                                <!-- Top-right: WR (Win Rate %) -->
-                                <template x-if="card.wr">
-                                  <div class="absolute top-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
+                                 <!-- Top-right: WR (Win Rate %) -->
+                                 <template x-if="card.wr">
+                                   <div class="absolute top-0.5 right-0.5 text-[12px] font-bold leading-none z-10 drop-shadow-sm">
                                     <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
                                   </div>
                                 </template>
                                 
-                                <!-- Bottom-left: P (Pool tier) -->
-                                <template x-if="card.poolTier">
-                                  <div class="absolute bottom-0.5 left-0.5 text-[10px] leading-none z-10 drop-shadow-sm">
+                                 <!-- Bottom-left: P (Pool tier) -->
+                                 <template x-if="card.poolTier">
+                                   <div class="absolute bottom-0.5 left-0.5 text-[18px] leading-none z-10 drop-shadow-sm">
                                     <span :class="{
                                       'text-yellow-300': card.poolTier === 'star',
                                       'text-green-400':  card.poolTier === 'green',
@@ -553,16 +553,16 @@
                                 </template>
                                 
                                 <!-- Bottom-center: EML (Scaling curve) -->
-                                <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
-                                  <template x-for="(idx, i) in card.scaling" :key="i">
-                                    <span class="w-1.5 h-1.5 rounded-sm inline-block"
-                                          :class="idx == null ? 'bg-slate-600' : idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
-                                  </template>
-                                </div>
+                                 <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                   <template x-for="(idx, i) in card.scaling" :key="i">
+                                     <span class="w-2 h-2 inline-block"
+                                           :class="idx == null ? 'bg-slate-600' : idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
+                                   </template>
+                                 </div>
                                 
-                                <!-- Bottom-right: M (Meta tier) -->
-                                <template x-if="card.metaTier !== '?'">
-                                  <div class="absolute bottom-0.5 right-0.5 text-[10px] font-bold leading-none z-10 drop-shadow-sm">
+                                 <!-- Bottom-right: M (Meta tier) -->
+                                 <template x-if="card.metaTier !== '?'">
+                                   <div class="absolute bottom-0.5 right-0.5 text-[14px] font-bold leading-none z-10 drop-shadow-sm">
                                     <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
                                   </div>
                                 </template>
