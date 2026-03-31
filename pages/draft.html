@@ -495,18 +495,20 @@
                         </div>
                       </template>
                     </div>
-                     <!-- Champions in this column (each champion occupies 1/5 of width, square layout) -->
-                     <div class="flex flex-row w-full">
+                     <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
+                     <div class="flex flex-row w-full gap-1">
                       <template x-for="c in col.candidates" :key="c.id">
                         <button @click="quickPick(c)"
                                 :disabled="ourPicks.every(Boolean)"
-                                class="relative aspect-square overflow-hidden rounded-lg border-2 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed w-1/5"
+                                class="relative aspect-square rounded-lg border-2 p-1.5 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
                                 :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
-                           <!-- Champion image: fills entire button -->
-                           <img :src="$store.champions.imgUrl(c.key)" class="absolute inset-0 w-full h-full object-cover">
-                           
-                           <!-- Dark gradient overlay for text readability -->
-                           <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60"></div>
+                           <!-- Inner image container: inset within padding -->
+                           <div class="relative w-full h-full rounded overflow-hidden">
+                             <img :src="$store.champions.imgUrl(c.key)" class="absolute inset-0 w-full h-full object-cover">
+                             
+                             <!-- Dark gradient overlay for text readability -->
+                             <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60"></div>
+                           </div>
                            
                            <!-- Cache card data to avoid repeated function calls -->
                            <template x-data="{ card: champCardData(c, rec.player, rec.role) }">
