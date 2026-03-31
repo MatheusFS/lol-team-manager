@@ -470,11 +470,11 @@
       <h3 class="text-sm font-semibold text-amber-400">💡 Recomendações para próximos picks</h3>
        <template x-for="(rec, ri) in ourRecs" :key="ri">
           <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <div class="flex items-center gap-2 mb-3 flex-wrap">
-              <!-- Role label + player name (once per line, prominent) -->
-              <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 shrink-0"
-                    x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
-            </div>
+             <div class="w-full mb-3">
+               <!-- Role label + player name (full width, centered) -->
+               <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 w-full text-center block"
+                     x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
+             </div>
              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <!-- Dynamic Strategic Columns (up to 3 per role, sorted by priority) -->
                 <template x-for="(col, ci) in rec.columns" :key="ci">
@@ -495,25 +495,35 @@
                         </div>
                       </template>
                     </div>
-                    <!-- Champions in this column (horizontal flex wrap) -->
-                    <div class="flex flex-row flex-wrap gap-3">
+                    <!-- Champions in this column (each champion occupies 1/5 of width) -->
+                    <div class="flex flex-row w-full">
                      <template x-for="c in col.candidates" :key="c.id">
                        <button @click="quickPick(c)"
                                :disabled="ourPicks.every(Boolean)"
-                               class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                               class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed w-1/5">
                           <!-- Line 1: Champion icon -->
                           <div :class="'w-12 h-12 rounded-lg overflow-hidden border border-slate-700 transition-colors group-hover:border-yellow-500 ' + col.colorClasses.button">
                             <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
                           </div>
-                         <!-- Line 2: Champion name -->
-                         <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
-                          <!-- Line 3: Player rank image (w-8 h-8) -->
-                          <template x-if="rec.player && champIdentityForPlayer(c, rec.player)">
-                            <img :src="champIdentityForPlayer(c, rec.player).imgUrl"
-                                 class="w-8 h-8"
-                                 :title="`Rank ${rec.player} (${_champDefaultIdentity(c)})`">
-                          </template>
-                         <!-- Line 4: Stats (Pool tier + Tier by role + Win%) -->
+                          <!-- Line 2: Champion name -->
+                          <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate w-full text-center transition-colors" x-text="c.name"></span>
+                          <!-- Line 3: EML curve -->
+                          <div class="flex items-center justify-center gap-0.5">
+                            <template x-for="[phase, label] in [['early','E'],['mid','M'],['late','L']]" :key="phase">
+                              <span class="flex items-center gap-0.5 text-[8px]">
+                                <span class="w-1.5 h-1.5 rounded-full inline-block"
+                                      :class="scaleIdx(c[phase]) === 2 ? 'bg-green-500' : scaleIdx(c[phase]) === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
+                                <span class="text-slate-500" x-text="label"></span>
+                              </span>
+                            </template>
+                          </div>
+                           <!-- Line 4: Player rank image (w-8 h-8) -->
+                           <template x-if="rec.player && champIdentityForPlayer(c, rec.player)">
+                             <img :src="champIdentityForPlayer(c, rec.player).imgUrl"
+                                  class="w-8 h-8"
+                                  :title="`Rank ${rec.player} (${_champDefaultIdentity(c)})`">
+                           </template>
+                          <!-- Line 5: Stats (Pool tier + Tier by role + Win%) -->
                          <div class="flex items-center justify-center gap-1 text-[9px]">
                            <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
                              <span :class="{

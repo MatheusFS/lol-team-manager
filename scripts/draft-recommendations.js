@@ -11,28 +11,88 @@
 
 const POOL_TIER_ORDER_REC = { star: 0, green: 1, yellow: 2 }
 
-// ── Context type (for documentation) ─────────────────────────────────────────
-// ctx = {
-//   champPool        : Map<champId, [{playerName, role, poolTier}]>
-//   playerChampStats : Map<"playerName:champKeyNorm", {n, wins}>
-//   formation        : PocketBase formation record (expanded)
-//   formationFields  : { top:'top', jng:'jungle', mid:'mid', adc:'adc', sup:'support' }
-//   usedIds          : Set<champId>
-//   championsList    : champion[]  (full store list, sorted by tier)
-// }
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Player name for a role from the active formation
-function _playerForRole(role, ctx) {
-  const fieldName = ctx.formationFields[role]
-  return ctx.formation?.expand?.[fieldName]?.name ?? null
+// Champion's default identity lens (pure function, mirrors _champDefaultIdentity from draft-page.js)
+// Used by _scoreCandidateForRole to look up identity rank for a given champion
+function _champLens(c) {
+  if (!c) return null
+  if (c.class === 'Support')  return 'suporte'
+  if (c.class === 'Tank')     return 'tank'
+  if (c.class === 'Assassin') return 'assassino'
+  // Carry: Marksman, or Mage/Fighter with high damage
+  if (c.class === 'Marksman') return 'carry'
+  // Check if Mage or Fighter with high damage (comp_type Carry or damage high)
+  const HIGH_DMG = new Set(['AD_high', 'AP_high', 'Mixed_high'])
+  if ((c.class === 'Mage' || c.class === 'Fighter') && HIGH_DMG.has(c.damage_type)) return 'carry'
+  // Bruiser: Fighter otherwise
+  if (c.class === 'Fighter') return 'bruiser'
+  return null
+}
+
+// Candidate score: weighted sum of 4 signals, normalized to midpoint=0.5 (Gold/50%/Green/B-tier)
+// Formula: f = 3×(normRank + normWR) + 2×(normPool + normMeta), negated for sort-ascending
+// - normRank  = rankIdx / 6   (Gold idx=3 → 0.5, uncapped; Iron=0, Challenger≈1.67)
+// - normWR    = wins / games  (50% → 0.5, 0–100%)
+// - normPool  = (2 - poolOrd) / 2  (star=1.0, green=0.5, yellow=0.0)
+// - normMeta  = (4 - tierOrd) / 4  (S=1.0, A=0.75, B=0.5, C=0.25, D=0.0)
+// Out-of-pool champions: normRank=0, normWR=0, normPool=0; only normMeta applies.
+// Flex champions (viable in multiple roles) receive no bonus here; they're already ranked fairly.
+function _scoreCandidateForRole(champ, role, ctx) {
+  const TIER_ORD = { S: 0, A: 1, B: 2, C: 3, D: 4 }
+  
+  // Meta tier: tier_by_role[role], default B (tier 2)
+  const tierOrd = TIER_ORD[champ.tier_by_role?.[role]] ?? 2
+  const normMeta = (4 - tierOrd) / 4
+
+  // Find pool entries for this champion + role
+  const entries = (ctx.champPool?.[champ.id] ?? [])
+    .filter(e => role == null || e.role === role)
+
+  if (!entries.length) {
+    // Not in pool: score by meta tier only
+    return -(2 * normMeta)  // negate: higher f → lower return
+  }
+
+  // Compute pool normalization: best tier across all players for this champ+role
+  const bestPoolOrd = Math.min(...entries.map(e => POOL_TIER_ORDER_REC[e.poolTier] ?? 2))
+  const normPool = (2 - bestPoolOrd) / 2  // star=1.0, green=0.5, yellow=0.0
+
+  // Compute best rank and WR across all player entries
+  let bestRank = 0
+  let bestWR = 0
+  const champLens = _champLens(champ)
+  
+  for (const e of entries) {
+    // Win rate from player champ stats
+    const s = ctx.playerChampStats?.[`${e.playerName}:${normChampKey(champ.key)}`]
+    if (s && s.n >= 3) {
+      const wr = s.wins / s.n
+      if (wr > bestWR) bestWR = wr
+    }
+    
+    // Identity rank from player lens + champion's default lens
+    if (champLens) {
+      const rankIdx = ctx.playerIdentityRanks?.[e.playerName]?.[champLens] ?? 0
+      if (rankIdx > bestRank) bestRank = rankIdx
+    }
+  }
+
+  const normRank = bestRank / 6  // Gold(idx=3) → 0.5; uncapped
+  const f = 3 * (normRank + bestWR) + 2 * (normPool + normMeta)
+  return -f  // negate: lower return = ranked first
 }
 
 // Strip 'comp: ' prefix from gapClasses results (e.g. 'comp: Engage' → 'Engage')
 function _gapClassesShort(gap, analysis) {
   const classes = gapClasses(gap, analysis)
   return classes.map(c => c.replace(/^comp:\s*/, ''))
+}
+
+// Player name for a role from the active formation
+function _playerForRole(role, ctx) {
+  const fieldName = ctx.formationFields[role]
+  return ctx.formation?.expand?.[fieldName]?.name ?? null
 }
 
 // Compute cross-product of arrays, joining each combination with '+'

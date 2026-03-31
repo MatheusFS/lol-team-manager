@@ -505,12 +505,13 @@ document.addEventListener('alpine:init', () => {
     // ── Context builder for recommendation engine ─────────────────────────────
     _recContext() {
       return {
-        champPool:        this.champPool,
-        playerChampStats: this.playerChampStats,
-        formation:        this.formation,
-        formationFields:  FORMATION_FIELDS,
-        usedIds:          this._usedIds(),
-        championsList:    Alpine.store('champions').list,
+        champPool:           this.champPool,
+        playerChampStats:    this.playerChampStats,
+        playerIdentityRanks: this.playerIdentityRanks,
+        formation:           this.formation,
+        formationFields:     FORMATION_FIELDS,
+        usedIds:             this._usedIds(),
+        championsList:       Alpine.store('champions').list,
       }
     },
 
