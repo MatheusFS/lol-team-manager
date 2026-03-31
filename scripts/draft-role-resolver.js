@@ -153,21 +153,21 @@ function resolveMissingRoles(picks, overrides, champPool) {
   // Wobbly logic: how many null (empty) slots still need a pick?
   const nullSlots = picks.filter(p => p == null).length
 
-  let possibleRoles = []
-  if (missingRoles.length < nullSlots && unresolvedIdxs.length > 0) {
-    // Collect all roles the remaining ambiguous flex picks could play.
-    // Any of those roles that are currently "covered" is wobbly — the flex pick
-    // might shift to it, uncovering another role.
-    const wobblySet = new Set()
-    for (const i of unresolvedIdxs) {
-      const pick = picks[i]
-      if (!pick) continue
-      for (const r of parseAssignedRoles(pick)) wobblySet.add(r)
-    }
-    // Only surface as possible if it's a role with a confirmed override (most reliable signal)
-    // and there are enough picks to cover both this and the missing roles.
-    possibleRoles = [...wobblySet].filter(r => coveredRoles.has(r))
-  }
+   let possibleRoles = []
+   if (missingRoles.length < nullSlots && unresolvedIdxs.length > 0) {
+     // Collect all roles the remaining ambiguous flex picks could play.
+     // When a flex pick is unconfirmed, ALL its viable roles are "possible" because
+     // none are definitively assigned yet. This allows recommendations for all 5 roles.
+     const wobblySet = new Set()
+     for (const i of unresolvedIdxs) {
+       const pick = picks[i]
+       if (!pick) continue
+       for (const r of parseAssignedRoles(pick)) wobblySet.add(r)
+     }
+     // Return ALL roles the ambiguous flex pick could play (not filtered by coveredRoles)
+     // This ensures 5 recommendation lines appear when flex pick has no confirmed role.
+     possibleRoles = [...wobblySet]
+   }
 
   console.debug('[draft] resolveMissingRoles', {
     picks:       picks.map(p => p?.name ?? null),

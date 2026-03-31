@@ -30,6 +30,8 @@ function _playerForRole(role, ctx) {
 }
 
 // Candidate score: lower = better.  Pool tier × 10 − best win-rate for this role.
+// Flex picks (champions viable in multiple roles) receive a small bonus (−0.1)
+// when comparing candidates with equal tier and win-rate.
 function _scoreCandidateForRole(champ, role, ctx) {
   const entries = (ctx.champPool?.[champ.id] ?? [])
     .filter(e => role == null || e.role === role)
@@ -40,7 +42,17 @@ function _scoreCandidateForRole(champ, role, ctx) {
     const s = ctx.playerChampStats?.[`${e.playerName}:${normChampKey(champ.key)}`]
     return (s && s.n >= 3) ? s.wins / s.n : 0
   }))
-  return bestTier * 10 - bestWR
+  
+  let score = bestTier * 10 - bestWR
+  
+  // Bonus for flex picks: champions viable in multiple roles get slightly better score
+  // This ensures flex champions rank higher when all other parameters are equal
+  const isFlexChamp = parseViableRoles(champ).length > 1
+  if (isFlexChamp) {
+    score -= 0.1  // negative = better (lower scores rank first)
+  }
+  
+  return score
 }
 
 // Build a single recommendation line for a given role + filter.
@@ -224,6 +236,30 @@ function _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchu
   return _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], ctx)
 }
 
+// ── Strategic Grouping ────────────────────────────────────────────────────────
+// Groups recommendation candidates into strategic buckets based on rec tag.
+// Each candidate appears in exactly one bucket (the bucket corresponding to rec.tag).
+function _groupCandidatesByStrategicPriority(recTag, candidates) {
+  // Initialize all buckets as empty
+  const groups = {
+    combo: [],
+    pivot: [],
+    gap: [],
+    reinforce: [],
+    bestfit: [],
+  }
+  
+  // All candidates go to the bucket matching the rec tag
+  if (groups.hasOwnProperty(recTag)) {
+    groups[recTag] = candidates
+  } else {
+    // Fallback: unknown tag goes to bestfit
+    groups.bestfit = candidates
+  }
+  
+  return groups
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 //
 // Builds the full list of recommendation lines for the next picks.
@@ -274,17 +310,25 @@ function buildRecommendations(analysis, enemyAnalysis, picks, overrides, ctx) {
   const recs = []
 
   // Confirmed-missing roles → full priority rec lines
-  for (const role of missingRoles) {
-    const rec = _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, sortedCtx)
-    if (rec) recs.push(rec)
-  }
-
-  // Possibly-missing (wobbly flex) roles → bestfit lines only, no duplicates
-  for (const role of possibleRoles) {
-    if (missingRoles.includes(role)) continue  // already covered above
-    const rec = _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], sortedCtx)
-    if (rec) recs.push(rec)
-  }
+   for (const role of missingRoles) {
+     const rec = _prioritizeRecForRole(role, analysis, shouldPivot, counterTypes, matchup, picksLeft, sortedCtx)
+     if (rec) {
+       // Add strategic grouping to each rec
+       rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates)
+       recs.push(rec)
+     }
+   }
+ 
+   // Possibly-missing (wobbly flex) roles → bestfit lines only, no duplicates
+   for (const role of possibleRoles) {
+     if (missingRoles.includes(role)) continue  // already covered above
+     const rec = _makeRecLine(role, () => true, `🏆 Melhor pick`, 'bestfit', [], sortedCtx)
+     if (rec) {
+       // Add strategic grouping to each rec
+       rec.strategicGroups = _groupCandidatesByStrategicPriority(rec.tag, rec.candidates)
+       recs.push(rec)
+     }
+   }
 
   recs.sort((a, b) => (TAG_ORDER[a.tag] ?? 9) - (TAG_ORDER[b.tag] ?? 9))
 

@@ -496,44 +496,221 @@
                <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700" x-text="cls"></span>
              </template>
            </div>
-           <div class="flex gap-3 flex-wrap">
-             <template x-for="c in rec.candidates" :key="c.id">
-               <button @click="quickPick(c)"
-                       :disabled="ourPicks.every(Boolean)"
-                       class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
-                 <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
-                   <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
-                 </div>
-                   <!-- Champion name -->
-                   <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
-                   <!-- Pool tier + Patch tier + Win% + Identity rank -->
-                   <div class="flex items-center justify-center gap-1 text-[9px]">
-                     <!-- Pool tier icon (if in pool for this role) -->
-                     <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
-                       <span :class="{
-                         'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
-                         'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
-                         'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
-                       }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
-                     </template>
-                      <!-- Role-specific tier from tier_by_role -->
-                      <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
-                      <!-- Win% for the formation player of this role -->
-                      <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
-                        <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
-                          <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              
+              <!-- Strategic Column: COMBO (Prioridade 0) -->
+              <template x-if="rec.strategicGroups?.combo?.length > 0">
+                <div class="flex flex-col gap-2">
+                  <h4 class="text-[11px] font-bold text-purple-400 px-2 py-1 bg-purple-900/20 rounded border border-purple-700/30">
+                    ⭐ COMBO
+                  </h4>
+                  <div class="flex flex-col gap-3">
+                    <template x-for="c in rec.strategicGroups.combo" :key="c.id">
+                      <button @click="quickPick(c)"
+                              :disabled="ourPicks.every(Boolean)"
+                              class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                        <!-- Line 1: Champion icon -->
+                        <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                          <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+                        </div>
+                        <!-- Line 2: Champion name -->
+                        <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
+                        <!-- Line 3: Player rank image (INCREASED w-8 h-8) -->
+                        <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
+                          <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
+                               class="w-8 h-8"
+                               :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
                         </template>
-                      </template>
-                      <!-- Player identity rank image for the champion's default lens -->
-                      <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
-                        <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
-                             class="w-3 h-3"
-                             :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
-                      </template>
-                   </div>
-               </button>
-             </template>
-           </div>
+                        <!-- Line 4: Stats (Pool tier + Tier by role + Win%) -->
+                        <div class="flex items-center justify-center gap-1 text-[9px]">
+                          <!-- Pool tier icon (if in pool for this role) -->
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <span :class="{
+                              'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
+                              'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
+                              'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
+                            }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
+                          </template>
+                          <!-- Role-specific tier from tier_by_role -->
+                          <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
+                          <!-- Win% for the formation player of this role -->
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
+                              <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+                            </template>
+                          </template>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- Strategic Column: PIVOT (Prioridade 1) -->
+              <template x-if="rec.strategicGroups?.pivot?.length > 0">
+                <div class="flex flex-col gap-2">
+                  <h4 class="text-[11px] font-bold text-orange-400 px-2 py-1 bg-orange-900/20 rounded border border-orange-700/30">
+                    ↩️ PIVOT
+                  </h4>
+                  <div class="flex flex-col gap-3">
+                    <template x-for="c in rec.strategicGroups.pivot" :key="c.id">
+                      <button @click="quickPick(c)"
+                              :disabled="ourPicks.every(Boolean)"
+                              class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                        <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                          <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+                        </div>
+                        <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
+                        <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
+                          <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
+                               class="w-8 h-8"
+                               :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
+                        </template>
+                        <div class="flex items-center justify-center gap-1 text-[9px]">
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <span :class="{
+                              'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
+                              'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
+                              'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
+                            }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
+                          </template>
+                          <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
+                              <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+                            </template>
+                          </template>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- Strategic Column: GAP (Prioridade 2) -->
+              <template x-if="rec.strategicGroups?.gap?.length > 0">
+                <div class="flex flex-col gap-2">
+                  <h4 class="text-[11px] font-bold text-red-400 px-2 py-1 bg-red-900/20 rounded border border-red-700/30">
+                    ⚠️ GAP
+                  </h4>
+                  <div class="flex flex-col gap-3">
+                    <template x-for="c in rec.strategicGroups.gap" :key="c.id">
+                      <button @click="quickPick(c)"
+                              :disabled="ourPicks.every(Boolean)"
+                              class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                        <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                          <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+                        </div>
+                        <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
+                        <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
+                          <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
+                               class="w-8 h-8"
+                               :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
+                        </template>
+                        <div class="flex items-center justify-center gap-1 text-[9px]">
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <span :class="{
+                              'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
+                              'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
+                              'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
+                            }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
+                          </template>
+                          <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
+                              <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+                            </template>
+                          </template>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- Strategic Column: REFORÇO (Prioridade 3) -->
+              <template x-if="rec.strategicGroups?.reinforce?.length > 0">
+                <div class="flex flex-col gap-2">
+                  <h4 class="text-[11px] font-bold text-blue-400 px-2 py-1 bg-blue-900/20 rounded border border-blue-700/30">
+                    🧱 REFORÇO
+                  </h4>
+                  <div class="flex flex-col gap-3">
+                    <template x-for="c in rec.strategicGroups.reinforce" :key="c.id">
+                      <button @click="quickPick(c)"
+                              :disabled="ourPicks.every(Boolean)"
+                              class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                        <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                          <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+                        </div>
+                        <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
+                        <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
+                          <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
+                               class="w-8 h-8"
+                               :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
+                        </template>
+                        <div class="flex items-center justify-center gap-1 text-[9px]">
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <span :class="{
+                              'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
+                              'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
+                              'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
+                            }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
+                          </template>
+                          <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
+                              <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+                            </template>
+                          </template>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- Fallback: BESTFIT (only if nothing else) -->
+              <template x-if="rec.strategicGroups?.bestfit?.length > 0">
+                <div class="flex flex-col gap-2">
+                  <h4 class="text-[11px] font-bold text-slate-400 px-2 py-1 bg-slate-800 rounded border border-slate-700">
+                    🏆 FITTEST
+                  </h4>
+                  <div class="flex flex-col gap-3">
+                    <template x-for="c in rec.strategicGroups.bestfit" :key="c.id">
+                      <button @click="quickPick(c)"
+                              :disabled="ourPicks.every(Boolean)"
+                              class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed">
+                        <div class="w-12 h-12 rounded-lg overflow-hidden border border-slate-700 group-hover:border-yellow-500 transition-colors">
+                          <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
+                        </div>
+                        <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
+                        <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
+                          <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
+                               class="w-8 h-8"
+                               :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
+                        </template>
+                        <div class="flex items-center justify-center gap-1 text-[9px]">
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <span :class="{
+                              'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
+                              'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
+                              'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
+                            }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
+                          </template>
+                          <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
+                          <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
+                            <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
+                              <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+                            </template>
+                          </template>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              
+            </div>
          </div>
        </template>
     </div>
