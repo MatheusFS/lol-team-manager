@@ -55,6 +55,15 @@ function formatClassTagsWithHighDamage(candidates, gapClasses) {
 
 // Gap name with emoji prefix (⚠️ for missing, 🧱 for reinforceable)
 function gapNameWithEmoji(gap, analysis) {
+  // For phase gaps (early/mid/late), determine emoji based on scaling value
+  if (['early', 'mid', 'late'].includes(gap)) {
+    const phaseIndex = ['early', 'mid', 'late'].indexOf(gap)
+    const scale = analysis.scaling?.[phaseIndex]
+    const emoji = scale != null && scale < 0.6 ? '⚠️' : '🧱'
+    return `${emoji} ${gapBareLabel(gap, analysis)}`
+  }
+  
+  // For heuristic gaps, use score from analysis.heuristics
   const score = analysis.heuristics?.[gap]?.score ?? 0
   const emoji = score < 2 ? '⚠️' : '🧱'
   return `${emoji} ${gapBareLabel(gap, analysis)}`
