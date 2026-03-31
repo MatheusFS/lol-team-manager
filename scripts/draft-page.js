@@ -266,10 +266,10 @@ document.addEventListener('alpine:init', () => {
           this.champPool = pool
         }
 
-        // Per-player per-champion win rates from match history
-        const matchRes = await api.col('matches').list({
-          perPage: 500, fields: 'win,player_stats',
-        })
+         // Per-player per-champion win rates from match history
+         const matchRes = await api.col('matches').list({
+           perPage: 500, fields: 'win,player_stats,duration,team_kills',
+         })
         const stats = {}
         for (const m of matchRes.items) {
           for (const ps of (m.player_stats ?? [])) {
