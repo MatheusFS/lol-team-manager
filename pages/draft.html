@@ -500,7 +500,7 @@
                       <template x-for="c in col.candidates" :key="c.id">
                         <button @click="quickPick(c)"
                                 :disabled="ourPicks.every(Boolean)"
-                                class="relative aspect-square rounded-lg border-2 p-1.5 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
+                                class="relative aspect-square rounded-lg border-2 p-2.5 bg-slate-900 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
                                 :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
                            <!-- Inner image container: inset within padding -->
                            <div class="relative w-full h-full">
@@ -517,8 +517,8 @@
                              <div x-data="{ card: champCardData(c, rec.player, rec.role) }" class="contents">
                                <!-- Top-left: RI (Identity Rank icon) -->
                                <template x-if="card.identity">
-                                 <div class="absolute top-0.5 left-0.5 z-10">
-                                   <img :src="card.identity.imgUrl" class="w-3.5 h-3.5">
+                                  <div class="absolute top-0.5 left-0.5 z-10">
+                                    <img :src="card.identity.imgUrl" class="w-5 h-5">
                                  </div>
                                </template>
                                
@@ -529,7 +529,7 @@
                                      <span class="text-[10px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
                                    </template>
                                    <template x-if="c.comp_type_2">
-                                     <span class="text-[10px] leading-none drop-shadow-sm opacity-60" x-text="compEmoji(c.comp_type_2)"></span>
+                                      <span class="text-[10px] leading-none drop-shadow-sm opacity-50" x-text="compEmoji(c.comp_type_2)"></span>
                                    </template>
                                  </div>
                                </template>
@@ -552,12 +552,12 @@
                                 </div>
                               </template>
                               
-                              <!-- Bottom-center: EML (Scaling curve) -->
-                              <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
-                                <template x-for="idx in card.scaling" :key="idx">
-                                  <span class="w-1.5 h-1.5 rounded-sm inline-block"
-                                        :class="idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
-                                </template>
+                               <!-- Bottom-center: EML (Scaling curve) -->
+                               <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px z-10">
+                                 <template x-for="(idx, i) in card.scaling" :key="i">
+                                   <span class="w-1.5 h-1.5 rounded-sm inline-block"
+                                         :class="idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
+                                 </template>
                               </div>
                               
                                <!-- Bottom-right: M (Meta tier) -->

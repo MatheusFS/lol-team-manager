@@ -403,7 +403,7 @@ function _getCandidatesForFilters(role, filters, coherenceFilter, ctx) {
   const notInPool = allValid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
 
   inPool.sort((a, b) => _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx))
-  return [...inPool, ...notInPool].slice(0, 5)
+  return [...inPool, ...notInPool].slice(0, 4)
 }
 
 // Helper: apply filters with AND logic (for combo columns) — champions satisfying ALL filters
@@ -429,7 +429,7 @@ function _getCandidatesForCombo(role, filters, coherenceFilter, ctx) {
     _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx)
   )
 
-  return [...inPool, ...notInPool].slice(0, 5)
+  return [...inPool, ...notInPool].slice(0, 4)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
