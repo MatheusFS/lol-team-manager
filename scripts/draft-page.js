@@ -607,6 +607,31 @@ document.addEventListener('alpine:init', () => {
       return this.formation?.expand?.[fieldName]?.name ?? null
     },
 
+    // Champion border color based on identity rank
+    // Returns the Tailwind border class for the rank, or default slate-700
+    champBorderColor(champ, playerName) {
+      const identity = this.champIdentityForPlayer(champ, playerName)
+      if (!identity) return 'border-slate-700'
+      return RANK_BORDER_COLORS[identity.rankIdx] ?? 'border-slate-700'
+    },
+
+    // Compute all card data for a recommendation card (RI, WR, P, EML, M)
+    // Returns object with: identity, wr, poolTier, scaling (array of 3 indices), metaTier
+    // This avoids repeated function calls in the template
+    champCardData(champ, playerName, role) {
+      const poolInfo = this.champPoolInfoForRole(champ.id, role)
+      const firstPool = poolInfo[0] ?? null
+      const wr = firstPool ? this.playerWR(firstPool.playerName, champ.key) : null
+      
+      return {
+        identity: this.champIdentityForPlayer(champ, playerName),
+        wr: wr,
+        poolTier: firstPool?.poolTier ?? null,
+        scaling: [champ.early, champ.mid, champ.late].map(s => this.scaleIdx(s)),
+        metaTier: champ.tier_by_role?.[role] ?? '?'
+      }
+    },
+
     // ── Internals ─────────────────────────────────────────────────────────────
     _arr(type, side) {
       if (type === 'ban') return side === 'blue' ? this.blueBans  : this.redBans

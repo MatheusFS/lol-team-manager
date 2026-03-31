@@ -495,51 +495,64 @@
                         </div>
                       </template>
                     </div>
-                    <!-- Champions in this column (each champion occupies 1/5 of width) -->
-                    <div class="flex flex-row w-full">
-                     <template x-for="c in col.candidates" :key="c.id">
-                       <button @click="quickPick(c)"
-                               :disabled="ourPicks.every(Boolean)"
-                               class="flex flex-col items-center gap-0.5 group disabled:opacity-40 disabled:cursor-not-allowed w-1/5">
-                          <!-- Line 1: Champion icon -->
-                          <div :class="'w-12 h-12 rounded-lg overflow-hidden border border-slate-700 transition-colors group-hover:border-yellow-500 ' + col.colorClasses.button">
-                            <img :src="$store.champions.imgUrl(c.key)" class="w-full h-full object-cover">
-                          </div>
-                          <!-- Line 2: Champion name -->
-                          <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate w-full text-center transition-colors" x-text="c.name"></span>
-                          <!-- Line 3: EML curve (three squares) -->
-                          <div class="flex items-center justify-center gap-0.5">
-                            <template x-for="[phase, label] in [['early','E'],['mid','M'],['late','L']]" :key="phase">
-                              <span class="w-2 h-2 rounded-sm inline-block"
-                                    :class="scaleIdx(c[phase]) === 2 ? 'bg-green-500' : scaleIdx(c[phase]) === 1 ? 'bg-yellow-400' : 'bg-red-500'"
-                                    :title="label"></span>
-                            </template>
-                          </div>
-                           <!-- Line 4: Player rank image (w-8 h-8) -->
-                           <template x-if="rec.player && champIdentityForPlayer(c, rec.player)">
-                             <img :src="champIdentityForPlayer(c, rec.player).imgUrl"
-                                  class="w-8 h-8"
-                                  :title="`Rank ${rec.player} (${_champDefaultIdentity(c)})`">
-                           </template>
-                          <!-- Line 5: Stats (Pool tier + Tier by role + Win%) -->
-                         <div class="flex items-center justify-center gap-1 text-[9px]">
-                           <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
-                             <span :class="{
-                               'text-yellow-300': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'star',
-                               'text-green-400':  champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'green',
-                               'text-yellow-600': champPoolInfoForRole(c.id, rec.role)[0]?.poolTier === 'yellow',
-                             }" x-text="poolTierIcon(champPoolInfoForRole(c.id, rec.role)[0]?.poolTier)"></span>
-                           </template>
-                           <span class="font-bold" :class="tierColor(c.tier_by_role?.[rec.role])" x-text="c.tier_by_role?.[rec.role] ?? '?'"></span>
-                           <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">
-                             <template x-if="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key)">
-                               <span :class="wrColor(playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct)" x-text="playerWR(champPoolInfoForRole(c.id, rec.role)[0]?.playerName, c.key).pct + '%'"></span>
+                     <!-- Champions in this column (each champion occupies 1/5 of width, square layout) -->
+                     <div class="flex flex-row w-full">
+                      <template x-for="c in col.candidates" :key="c.id">
+                        <button @click="quickPick(c)"
+                                :disabled="ourPicks.every(Boolean)"
+                                class="relative aspect-square overflow-hidden rounded-lg border-2 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed w-1/5"
+                                :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
+                           <!-- Champion image: fills entire button -->
+                           <img :src="$store.champions.imgUrl(c.key)" class="absolute inset-0 w-full h-full object-cover">
+                           
+                           <!-- Dark gradient overlay for text readability -->
+                           <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60"></div>
+                           
+                           <!-- Cache card data to avoid repeated function calls -->
+                           <template x-data="{ card: champCardData(c, rec.player, rec.role) }">
+                             <!-- Top-left: RI (Identity Rank icon) -->
+                             <template x-if="card.identity">
+                               <div class="absolute top-0.5 left-0.5">
+                                 <img :src="card.identity.imgUrl" class="w-3.5 h-3.5">
+                               </div>
+                             </template>
+                             
+                             <!-- Top-right: WR (Win Rate %) -->
+                             <template x-if="card.wr">
+                               <div class="absolute top-0.5 right-0.5 text-[9px] font-bold leading-none">
+                                 <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
+                               </div>
+                             </template>
+                             
+                             <!-- Bottom-left: P (Pool tier) -->
+                             <template x-if="card.poolTier">
+                               <div class="absolute bottom-0.5 left-0.5 text-[9px] leading-none">
+                                 <span :class="{
+                                   'text-yellow-300': card.poolTier === 'star',
+                                   'text-green-400':  card.poolTier === 'green',
+                                   'text-yellow-600': card.poolTier === 'yellow',
+                                 }" x-text="poolTierIcon(card.poolTier)"></span>
+                               </div>
+                             </template>
+                             
+                             <!-- Bottom-center: EML (Scaling curve) -->
+                             <div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-px">
+                               <template x-for="idx in card.scaling" :key="idx">
+                                 <span class="w-1.5 h-1.5 rounded-sm inline-block"
+                                       :class="idx === 2 ? 'bg-green-500' : idx === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
+                               </template>
+                             </div>
+                             
+                             <!-- Bottom-right: M (Meta tier) -->
+                             <template x-if="card.metaTier !== '?'">
+                               <div class="absolute bottom-0.5 right-0.5 text-[9px] font-bold leading-none">
+                                 <span :class="tierColor(card.metaTier)" x-text="card.metaTier"></span>
+                               </div>
                              </template>
                            </template>
-                         </div>
-                       </button>
-                     </template>
-                   </div>
+                         </button>
+                       </template>
+                    </div>
                  </div>
                </template>
              </div>
