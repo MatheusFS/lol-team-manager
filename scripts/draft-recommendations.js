@@ -235,6 +235,7 @@ function _findCounterTypes(enemyType) {
 // Abbreviation tables for responsive column headers
 const PREFIX_ABBREVIATIONS = {
   '🥇 PIVOT c/ RECUPERAÇÃO': { med: '🥇 PC + 1RC', min: '🥇 PC1RC' },
+  '🏆 PIVOT + RECUPERAÇÃO DUPLA': { med: '🏆 PIV. + 2 REC.', min: '🏆 PV+2RC' },
   '🥇 RECUPERAÇÃO TRIPLA': { med: '🥇 3RC', min: '🥇 3RC' },
   '↩️ PIVOT': { med: '↩️ PIV', min: '↩️ PIV' },
   '🏆 PIVOT + RECUPERAÇÃO + REFORÇO': { med: '🏆 PIV. + REC. + REF.', min: '🏆 PV+RC+RF' },
@@ -406,11 +407,11 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const filters = [pivotFilter, gapFilter(viableGaps[i], analysis), gapFilter(viableGaps[j], analysis)]
         const candidates = getCandidatesCombo(filters)
         if (candidates.length > 0) {
-          columns.push(_enrichColumn({
-            priority: 0,
-            tag: 'combo',
-            prefix: '⭐ PIVOT c/ RECUPERAÇÃO DUPLA',
-               gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)}`,
+           columns.push(_enrichColumn({
+             priority: 0,
+             tag: 'combo',
+             prefix: '🏆 PIVOT + RECUPERAÇÃO DUPLA',
+                gapNames: `${gapNameWithEmoji(viableGaps[i], analysis)} + ${gapNameWithEmoji(viableGaps[j], analysis)}`,
             classTags: formatClassTagsWithHighDamage(candidates, _comboClassTagsFromGaps([viableGaps[i], viableGaps[j]], analysis, counterTypes)),
             colorClasses: { header: 'text-purple-400 bg-purple-900/20 border-purple-700/30', button: 'group-hover:border-purple-500' },
             candidates,
