@@ -469,42 +469,34 @@
     <div class="space-y-3">
       <h3 class="text-sm font-semibold text-amber-400">💡 Recomendações para próximos picks</h3>
        <template x-for="(rec, ri) in ourRecs" :key="ri">
-         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-           <div class="flex items-center gap-2 mb-3 flex-wrap">
-             <!-- Role label + player name (once per line, prominent) -->
-             <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 shrink-0"
-                   x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
-             <!-- Tag badge -->
-             <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
-                   :class="{
-                     'bg-red-900/60 text-red-300 border border-red-700':          rec.tag === 'gap',
-                     'bg-yellow-900/60 text-yellow-300 border border-yellow-700':  rec.tag === 'pivot',
-                     'bg-purple-900/60 text-purple-300 border border-purple-700':  rec.tag === 'combo',
-                     'bg-blue-900/60 text-blue-300 border border-blue-700':        rec.tag === 'reinforce',
-                     'bg-slate-800 text-slate-400 border border-slate-700':        rec.tag === 'bestfit',
-                   }"
-                   x-text="{
-                     gap:      '⚠️ GAP',
-                     pivot:    '↩️ PIVOT',
-                     combo:    '⭐ PIVOT+GAP',
-                     reinforce:'🧱 REFORÇO',
-                     bestfit:  '🏆 FITTEST',
-                   }[rec.tag] ?? rec.tag">
-             </span>
-             <span class="text-sm font-medium text-slate-200" x-text="rec.reason"></span>
-             <template x-for="cls in rec.classes" :key="cls">
-               <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700" x-text="cls"></span>
-             </template>
-           </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-3 flex-wrap">
+              <!-- Role label + player name (once per line, prominent) -->
+              <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 shrink-0"
+                    x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
+            </div>
              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-               <!-- Dynamic Strategic Columns (up to 3 per role, sorted by priority) -->
-               <template x-for="(col, ci) in rec.columns" :key="ci">
-                 <div class="flex flex-col gap-2">
-                   <!-- Column header with dynamic styling -->
-                   <h4 :class="'text-[11px] font-bold px-2 py-1 rounded border ' + col.colorClasses.header"
-                       x-text="col.label"></h4>
-                   <!-- Champions in this column (horizontal flex wrap) -->
-                   <div class="flex flex-row flex-wrap gap-3">
+                <!-- Dynamic Strategic Columns (up to 3 per role, sorted by priority) -->
+                <template x-for="(col, ci) in rec.columns" :key="ci">
+                  <div class="flex flex-col gap-2">
+                    <!-- Column header: 2-part structure -->
+                    <div class="flex flex-col gap-1 px-2 py-1 rounded border" :class="col.colorClasses.header">
+                      <!-- Row 1: prefix (emoji+type) + gap names -->
+                      <div class="flex flex-wrap items-center gap-1">
+                        <span class="text-[11px] font-bold" x-text="col.prefix"></span>
+                        <span class="text-[10px] text-slate-300" x-text="col.gapNames"></span>
+                      </div>
+                      <!-- Row 2: class tags (cross-product badges) - only if not empty -->
+                      <template x-if="col.classTags && col.classTags.length > 0">
+                        <div class="flex flex-wrap gap-1">
+                          <template x-for="tag in col.classTags" :key="tag">
+                            <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="tag"></span>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+                    <!-- Champions in this column (horizontal flex wrap) -->
+                    <div class="flex flex-row flex-wrap gap-3">
                      <template x-for="c in col.candidates" :key="c.id">
                        <button @click="quickPick(c)"
                                :disabled="ourPicks.every(Boolean)"

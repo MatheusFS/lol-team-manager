@@ -122,6 +122,35 @@ function gapLabel(gap, analysis) {
   }
 }
 
+// ── Gap short label ────────────────────────────────────────────────────────
+// Returns a brief human-readable description of the gap (without class hints).
+// Used for column headers where space is tight.
+
+function gapShortLabel(gap, analysis) {
+  switch (gap) {
+    case 'frontline':    return 'Falta frontline'
+    case 'ofensividade': return 'Falta ofensividade'
+    case 'engage':       return 'Falta engage ou pick'
+    case 'peel':         return 'Falta proteção'
+
+    case 'perfilDano': {
+      const { adWeight, apWeight, hasExplosivo, hasSustentado } = computeDamageProfile(analysis)
+      if (adWeight < 1 && apWeight < 1) return 'Falta dano AD e AP'
+      if (adWeight < 1)                 return 'Falta dano físico relevante'
+      if (apWeight < 1)                 return 'Falta dano mágico relevante'
+      if (!hasExplosivo)                return 'Falta dano explosivo'
+      if (!hasSustentado)               return 'Falta dano sustentado'
+      return 'Perfil de dano incompleto'
+    }
+
+    case 'coherence':
+      return `Comp incoerente (${analysis.compType ?? '?'})`
+
+    default:
+      return gap
+  }
+}
+
 // ── Gap classes ───────────────────────────────────────────────────────────────
 // Returns badge labels for champion classes that address this gap.
 
