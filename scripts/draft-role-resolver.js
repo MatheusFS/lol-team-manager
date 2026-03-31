@@ -44,9 +44,10 @@ function parseViableRoles(champ) {
 //             with the same override role are treated as unresolved to avoid
 //             falsely double-confirming a single role.
 //
-//   Pass 1 — Pool-based: for unassigned slots with a pick, look up champPool.
-//             The pool entry's role field is the player's declared role for that champion.
-//             If a clear role exists and hasn't been assigned yet → assign it.
+//   Pass 1 — Champion role inference: for unassigned slots with a pick, check the
+//             champion's inherent viable roles (roles[] + tier_by_role).
+//             If exactly 1 viable role and not yet assigned → assign it.
+//             If 2+ viable roles (multi-role/flex) → leave for constraint propagation.
 //
 //   Pass 2 — Constraint propagation on still-unresolved picks:
 //             Uses parseAssignedRoles (narrow) for each unresolved pick.
@@ -100,18 +101,31 @@ function resolveMissingRoles(picks, overrides, champPool) {
     // Slot with duplicate override → leave for later passes (has a pick but no assignment)
   }
 
-  // ── Pass 1: pool-based resolution ──────────────────────────────────────────
+  // ── Pass 1: champion role inference ────────────────────────────────────────
+  // Resolve picks based on champion's inherent viable roles (from roles[] + tier_by_role),
+  // NOT from the champion_pool collection. This ensures that:
+  //   • Single-role champions (e.g., Thresh [sup]) auto-confirm.
+  //   • Multi-role champions (e.g., Poppy [top,jng,sup]) are treated as flex.
+  // The pool is used elsewhere (candidate ranking), not for role inference.
   for (let i = 0; i < picks.length; i++) {
     if (slotAssignments.has(i)) continue   // already assigned
     const pick = picks[i]
     if (!pick) continue                    // empty slot — not a pick at all
 
-    const poolEntries = champPool?.[pick.id] ?? []
-    const poolRole    = poolEntries.find(e => e.role && e.role !== '?')?.role
-    if (poolRole && !coveredRoles.has(poolRole)) {
-      slotAssignments.set(i, poolRole)
-      coveredRoles.add(poolRole)
+    // Use champion's viable roles (wide: roles[] + tier_by_role)
+    const viableRoles = parseViableRoles(pick)
+
+    // Only resolve if exactly 1 viable role; otherwise treat as flex
+    if (viableRoles.length === 1) {
+      const role = viableRoles[0]
+      if (!coveredRoles.has(role)) {
+        slotAssignments.set(i, role)
+        coveredRoles.add(role)
+      } else {
+        unresolvedIdxs.push(i)
+      }
     } else {
+      // 0 roles (no roles field?) or 2+ roles (multi-role/flex) → unresolved
       unresolvedIdxs.push(i)
     }
   }
@@ -150,24 +164,23 @@ function resolveMissingRoles(picks, overrides, champPool) {
   // ── Pass 3: derive missing + possible ──────────────────────────────────────
   const missingRoles = ALL_ROLES.filter(r => !coveredRoles.has(r))
 
-  // Wobbly logic: how many null (empty) slots still need a pick?
-  const nullSlots = picks.filter(p => p == null).length
-
-   let possibleRoles = []
-   if (missingRoles.length < nullSlots && unresolvedIdxs.length > 0) {
-     // Collect all roles the remaining ambiguous flex picks could play.
-     // When a flex pick is unconfirmed, ALL its viable roles are "possible" because
-     // none are definitively assigned yet. This allows recommendations for all 5 roles.
-     const wobblySet = new Set()
-     for (const i of unresolvedIdxs) {
-       const pick = picks[i]
-       if (!pick) continue
-       for (const r of parseAssignedRoles(pick)) wobblySet.add(r)
-     }
-     // Return ALL roles the ambiguous flex pick could play (not filtered by coveredRoles)
-     // This ensures 5 recommendation lines appear when flex pick has no confirmed role.
-     possibleRoles = [...wobblySet]
-   }
+  // Flex pick detection: when picks exist but lack role confirmation (unresolved),
+  // collect all the roles they could viably play — but ONLY roles not yet covered.
+  // This ensures possibleRoles never includes roles already confirmed elsewhere.
+  let possibleRoles = []
+  if (unresolvedIdxs.length > 0) {
+    // Collect all roles that unconfirmed/flex picks could play (narrow: parseAssignedRoles),
+    // filtering out roles already assigned (in coveredRoles).
+    const wobblySet = new Set()
+    for (const i of unresolvedIdxs) {
+      const pick = picks[i]
+      if (!pick) continue
+      for (const r of parseAssignedRoles(pick)) {
+        if (!coveredRoles.has(r)) wobblySet.add(r)
+      }
+    }
+    possibleRoles = [...wobblySet]
+  }
 
   console.debug('[draft] resolveMissingRoles', {
     picks:       picks.map(p => p?.name ?? null),
@@ -176,7 +189,6 @@ function resolveMissingRoles(picks, overrides, champPool) {
     coveredRoles: [...coveredRoles],
     missingRoles,
     possibleRoles,
-    nullSlots,
     unresolved: unresolvedIdxs,
   })
 

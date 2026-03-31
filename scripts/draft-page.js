@@ -109,10 +109,21 @@ document.addEventListener('alpine:init', () => {
         this.$watch('pickRoles',   () => this._saveToStorage())
         // When formation/pool data finishes loading, force Alpine to re-evaluate
         // ourRecs (and other getters that depend on champPool/playerChampStats).
-         this.$watch('formationLoaded', () => {
-           console.log('[draft] formationLoaded changed, forcing re-render')
-           this.bluePicks = [...this.bluePicks]
-           this.redPicks  = [...this.redPicks]
+         this.$watch('formationLoaded', (newVal) => {
+           console.log('[draft] formationLoaded changed to', newVal)
+           if (newVal === true) {
+             console.log('[draft] formationLoaded = true, forcing full DOM update')
+             // Force Alpine to re-evaluate all reactive properties and computed getters
+             // by triggering a reflow and then updating picks
+             this.$nextTick(() => {
+               // Trigger DOM reflow
+               void this.$el.offsetHeight
+               // Force re-evaluation of all getters that depend on formationLoaded
+               this.bluePicks = [...this.bluePicks]
+               this.redPicks  = [...this.redPicks]
+               console.log('[draft] DOM update complete, skeletons should disappear')
+             })
+           }
          })
        })
      },
@@ -502,6 +513,41 @@ document.addEventListener('alpine:init', () => {
     get blueAnalysis()  { return analyzeTeam(this.bluePicks) },
     get redAnalysis()   { return analyzeTeam(this.redPicks) },
 
+    // ── Dynamic layout for recommendation columns ──────────────────────────────
+    // Assigns flex units to recommendation columns based on candidate count.
+    // Total grid = 12 units. Each column gets units = candidates.length.
+    // If used < 12, pull extra columns and distribute free space.
+    _buildRecLayout(columns) {
+      if (columns.length === 0) return { layout: [], totalUnits: 12 }
+
+      const layout = []
+      let usedUnits = 0
+
+      // Assign units to first N columns until used >= 12 (or run out)
+      for (const col of columns) {
+        const units = Math.min(col.candidates.length, 4)
+        if (usedUnits >= 12) break
+        layout.push({ col, units })
+        usedUnits += units
+      }
+
+      // If we have free space, pull extra columns and distribute evenly
+      const freeUnits = 12 - usedUnits
+      if (freeUnits > 0 && layout.length < columns.length) {
+        const extraCount = Math.min(3, columns.length - layout.length)  // Pull up to 3 extra columns
+        const unitsPerExtra = Math.floor(freeUnits / extraCount)
+        
+        for (let i = 0; i < extraCount; i++) {
+          const idx = layout.length + i
+          if (idx < columns.length) {
+            layout.push({ col: columns[idx], units: unitsPerExtra })
+          }
+        }
+      }
+
+      return { layout, totalUnits: 12 }
+    },
+
     get ourRecs() {
       // Accesses this.ourSide, bluePicks, redPicks directly for Alpine reactivity
       const ourPicks = this.ourSide === 'blue' ? this.bluePicks : this.redPicks
@@ -510,13 +556,22 @@ document.addEventListener('alpine:init', () => {
         .map((_, i) => this.pickRoles[`${this.ourSide}:${i}`] ?? null)
       const ourAnalysis = analyzeTeam(ourPicks)
       const enemyAnalysis = analyzeTeam(enemyPicks)
-      return buildRecommendations(
+      const recs = buildRecommendations(
         ourAnalysis,
         enemyAnalysis,
         ourPicks,
         overrides,
         this._recContext(),
       )
+      
+      // Attach dynamic layout to each recommendation line
+      return recs.map(rec => {
+        const { layout } = this._buildRecLayout(rec.columns)
+        return {
+          ...rec,
+          columns: layout.map(item => ({ ...item.col, units: item.units }))
+        }
+      })
     },
 
     get matchup() {

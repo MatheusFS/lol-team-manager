@@ -467,18 +467,26 @@
   <!-- ── Recommendations ────────────────────────────────────────────────── -->
   <template x-if="ourRecs.length > 0">
     <div class="space-y-3">
-      <h3 class="text-sm font-semibold text-amber-400">💡 Recomendações para próximos picks</h3>
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="text-sm font-semibold text-amber-400">💡 Recomendações para próximos picks</h3>
+        <div class="flex gap-1 flex-wrap">
+          <template x-for="rec in ourRecs" :key="rec.role">
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-300 uppercase"
+                  x-text="roleLabel(rec.role)"></span>
+          </template>
+        </div>
+      </div>
        <template x-for="(rec, ri) in ourRecs" :key="ri">
           <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
              <div class="w-full mb-3">
                <!-- Role label + player name (full width, centered) -->
                <span class="text-xs font-bold px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 w-full text-center block"
                      x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
-             </div>
-             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <!-- Dynamic Strategic Columns (up to 3 per role, sorted by priority) -->
-                <template x-for="(col, ci) in rec.columns" :key="ci">
-                  <div class="flex flex-col gap-2">
+              </div>
+              <div class="flex flex-row flex-wrap gap-4">
+                 <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
+                 <template x-for="(col, ci) in rec.columns" :key="ci">
+                   <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0;`">
                     <!-- Column header: 2-part structure -->
                     <div class="flex flex-col gap-1 px-2 py-1 rounded border" :class="col.colorClasses.header">
                       <!-- Row 1: prefix (emoji+type) + gap names -->
@@ -486,14 +494,21 @@
                         <span class="text-[11px] font-bold" x-text="col.prefix"></span>
                         <span class="text-[10px] text-slate-300" x-text="col.gapNames"></span>
                       </div>
-                      <!-- Row 2: class tags (cross-product badges) - only if not empty -->
-                      <template x-if="col.classTags && col.classTags.length > 0">
-                        <div class="flex flex-wrap gap-1">
-                          <template x-for="tag in col.classTags" :key="tag">
-                            <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="tag"></span>
-                          </template>
-                        </div>
-                      </template>
+                       <!-- Row 2: class tags (cross-product badges) - only if not empty -->
+                       <template x-if="col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
+                         <div class="flex flex-wrap gap-1">
+                           <template x-if="Array.isArray(col.classTags)">
+                             <template x-for="tag in col.classTags" :key="tag">
+                               <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="tag"></span>
+                             </template>
+                           </template>
+                           <template x-if="!Array.isArray(col.classTags) && col.classTags.display">
+                             <span class="text-[9px] px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" 
+                                   :title="col.classTags.tooltip" 
+                                   x-text="col.classTags.display"></span>
+                           </template>
+                         </div>
+                       </template>
                     </div>
                      <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
                      <div class="flex flex-row w-full gap-1">
@@ -513,8 +528,12 @@
                              </div>
                            </div>
                            
-                            <!-- Cache card data to avoid repeated function calls -->
-                              <div x-data="{ card: champCardData(c, rec.player, rec.role) }" class="contents">
+                             <!-- Cache card data to avoid repeated function calls -->
+                               <div x-data="{
+                                 get card() {
+                                   return champCardData(c, rec.player, rec.role)
+                                 }
+                               }" class="contents">
                                  <!-- Top-left: RI (Identity Rank icon) -->
                                  <template x-if="card.identity && !card.isLoading">
                                    <div class="absolute top-0.5 left-0.5 z-10">

@@ -158,7 +158,7 @@ function gapShortLabel(gap, analysis) {
     }
 
     case 'coherence':
-      return 'Comp incoerente'
+      return 'Combinar tema'
 
     case 'early':
       return 'Falta early'
@@ -171,6 +171,35 @@ function gapShortLabel(gap, analysis) {
 
     default:
       return gap
+  }
+}
+
+// ── Gap bare label ────────────────────────────────────────────────────────
+// Returns ONLY the gap name without "Falta" prefix.
+// Used for gapNameWithEmoji() where emoji prefix replaces text prefix.
+
+function gapBareLabel(gap, analysis) {
+  switch (gap) {
+    case 'frontline':    return 'Frontline'
+    case 'ofensividade': return 'Ofensividade'
+    case 'engage':       return 'Engage/Pick'
+    case 'peel':         return 'Proteção'
+
+    case 'perfilDano': {
+      const { adWeight, apWeight, hasExplosivo, hasSustentado } = computeDamageProfile(analysis)
+      if (adWeight < 1 && apWeight < 1) return 'AD e AP'
+      if (adWeight < 1)                 return 'AD'
+      if (apWeight < 1)                 return 'AP'
+      if (!hasExplosivo)                return 'Dano explosivo'
+      if (!hasSustentado)               return 'Dano sustentado'
+      return 'Perfil de dano'
+    }
+
+    case 'coherence': return 'Tema'
+    case 'early':     return 'Early'
+    case 'mid':       return 'Mid'
+    case 'late':      return 'Late'
+    default:          return gap
   }
 }
 
@@ -193,9 +222,12 @@ function gapClasses(gap, analysis) {
     }
 
     case 'coherence': {
-      const ct = analysis.compType
-      if (!ct) return []
-      return [`comp: ${ct}`]
+      const voteList = analysis.voteList ?? []
+      if (!voteList.length) return []
+      const maxVotes = voteList[0]?.n ?? 0
+      // Show all comp types with at least 50% of the leader's votes
+      const relevant = voteList.filter(v => v.n >= maxVotes * 0.5)
+      return relevant.map(v => `comp: ${v.type}`)
     }
 
     case 'early':
