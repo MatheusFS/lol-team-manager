@@ -484,12 +484,12 @@
                      x-text="roleLabel(rec.role) + (rec.player ? ' (' + rec.player + ')' : '')"></span>
               </div>
                <div class="flex flex-row gap-2">
-                  <!-- Leading spacer (2 units = 2/12 of row) -->
-                  <div style="flex: 2 1 0; min-width: 0;"></div>
+                   <!-- Leading spacer (2 units = 2/12 of row) -->
+                   <div style="flex: 0 0 calc(100% / 12 * 2);"></div>
                   
-                  <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
-                  <template x-for="(col, ci) in rec.columns" :key="ci">
-                     <div class="flex flex-col gap-2" :style="`flex: ${col.units} 1 0; min-width: 0;`">
+                   <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
+                   <template x-for="(col, ci) in rec.columns" :key="ci">
+                      <div class="flex flex-col gap-2" :style="`flex: 0 0 calc(100% / 12 * ${col.units});`">
                        <!-- Column header: 2-part structure with standardized sizing for exact height match -->
                         <div class="flex flex-col gap-1 px-2 py-1 rounded border text-[12px] leading-6" :class="col.colorClasses.header">
                          <!-- Row 1: prefix (emoji+type) - col.units-based variant selection -->
@@ -554,11 +554,13 @@
                                      <template x-if="c.comp_type">
                                        <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type)"></span>
                                       </template>
-                                      <template x-if="c.comp_type_2">
-                                        <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type_2)"></span>
-                                      </template>
-                                
-                                   <!-- Top-right: WR (Win Rate %) -->
+                                       <template x-if="c.comp_type_2">
+                                         <span class="text-[13px] leading-none drop-shadow-sm" x-text="compEmoji(c.comp_type_2)"></span>
+                                       </template>
+                                    </div>
+                                  </template>
+                                 
+                                    <!-- Top-right: WR (Win Rate %) -->
                                    <template x-if="card.wr && !card.isLoading">
                                      <div class="absolute top-0.5 right-0.5 text-[11px] font-bold leading-none z-10 drop-shadow-sm">
                                       <span :class="wrColor(card.wr.pct)" x-text="card.wr.pct + '%'"></span>
@@ -617,8 +619,8 @@
                  </div>
                </template>
                   
-                  <!-- Trailing spacer (2 units = 2/12 of row) -->
-                  <div style="flex: 2 1 0; min-width: 0;"></div>
+                   <!-- Trailing spacer (2 units = 2/12 of row) -->
+                   <div style="flex: 0 0 calc(100% / 12 * 2);"></div>
              </div>
          </div>
        </template>
