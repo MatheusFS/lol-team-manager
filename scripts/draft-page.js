@@ -518,21 +518,25 @@ document.addEventListener('alpine:init', () => {
     // Layout rule: exactly 8 champion slots in middle of 12-unit row.
     // Include columns in priority order until totalCandidates > 8.
     // Spacers (2 units each) handle centering: [spacer:2][col:N][spacer:2] = 12 total.
-    _buildRecLayout(columns) {
-      if (columns.length === 0) return { layout: [] }
+     _buildRecLayout(columns) {
+       if (columns.length === 0) return { layout: [] }
 
-      const layout = []
-      let total = 0
+       const layout = []
+       let total = 0
 
-      for (const col of columns) {
-        const n = col.candidates.length
-        if (total + n > 8) break
-        layout.push({ col, units: n })
-        total += n
-      }
+       for (const col of columns) {
+         const remaining = 8 - total
+         if (remaining <= 0) break
+         const n = Math.min(col.candidates.length, remaining)
+         const trimmedCol = n < col.candidates.length
+           ? { ...col, candidates: col.candidates.slice(0, n) }
+           : col
+         layout.push({ col: trimmedCol, units: n })
+         total += n
+       }
 
-      return { layout }
-    },
+       return { layout }
+     },
 
     get ourRecs() {
       // Accesses this.ourSide, bluePicks, redPicks directly for Alpine reactivity
