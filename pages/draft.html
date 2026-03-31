@@ -500,7 +500,7 @@
                       <template x-for="c in col.candidates" :key="c.id">
                         <button @click="quickPick(c)"
                                 :disabled="ourPicks.every(Boolean)"
-                                class="relative aspect-square rounded-lg border-2 p-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed flex-1"
+                                class="relative aspect-square rounded-lg border-2 p-3 bg-slate-950 transition-colors group disabled:opacity-40 disabled:cursor-not-allowed max-w-[25%]"
                                 :class="[champBorderColor(c, rec.player), col.colorClasses.button]">
                            <!-- Inner image container: inset within padding -->
                            <div class="relative w-full h-full">
