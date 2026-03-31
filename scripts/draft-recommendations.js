@@ -309,7 +309,7 @@ function _enrichColumn(col) {
     gapNames: col.gapNames,
     gapNamesMed: _abbreviateGapNames(col.gapNames),
     gapNamesMin: _minifyGapNames(col.gapNames),
-    classTagsCompact: units >= 3 && col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags?.display) ? (Array.isArray(col.classTags) ? `[${col.classTags.length}]` : `[${col.classTags.tooltip?.split(',').length ?? 1}]`) : null,
+    classTagsCompact: units >= 3 && col.classTags ? (Array.isArray(col.classTags) && col.classTags.length > 0 ? `[🔍 ${col.classTags.length}]` : !Array.isArray(col.classTags) && col.classTags?.display ? col.classTags.display : null) : null,
   }
 }
 
