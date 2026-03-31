@@ -507,14 +507,12 @@
                           </div>
                           <!-- Line 2: Champion name -->
                           <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate w-full text-center transition-colors" x-text="c.name"></span>
-                          <!-- Line 3: EML curve -->
+                          <!-- Line 3: EML curve (three squares) -->
                           <div class="flex items-center justify-center gap-0.5">
                             <template x-for="[phase, label] in [['early','E'],['mid','M'],['late','L']]" :key="phase">
-                              <span class="flex items-center gap-0.5 text-[8px]">
-                                <span class="w-1.5 h-1.5 rounded-full inline-block"
-                                      :class="scaleIdx(c[phase]) === 2 ? 'bg-green-500' : scaleIdx(c[phase]) === 1 ? 'bg-yellow-400' : 'bg-red-500'"></span>
-                                <span class="text-slate-500" x-text="label"></span>
-                              </span>
+                              <span class="w-2 h-2 rounded-sm inline-block"
+                                    :class="scaleIdx(c[phase]) === 2 ? 'bg-green-500' : scaleIdx(c[phase]) === 1 ? 'bg-yellow-400' : 'bg-red-500'"
+                                    :title="label"></span>
                             </template>
                           </div>
                            <!-- Line 4: Player rank image (w-8 h-8) -->
