@@ -110,9 +110,15 @@ document.addEventListener('alpine:init', () => {
         // When formation/pool data finishes loading, force Alpine to re-evaluate
         // ourRecs (and other getters that depend on champPool/playerChampStats).
         this.$watch('formationLoaded', () => {
+          console.log('[draft] formationLoaded changed, forcing re-render')
           this.bluePicks = [...this.bluePicks]
           this.redPicks  = [...this.redPicks]
         })
+        // When formation changes, reload formation data
+        this.$watch('formation', () => {
+          console.log('[draft] formation changed, reloading formation data')
+          this._loadFormationData()
+        }, { immediate: false })
       })
     },
 
@@ -220,9 +226,32 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    // ── Retry helper for API calls ───────────────────────────────────────────
+    async _retryAsync(fn, maxRetries = 3, delayMs = 2000) {
+      let lastError
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[draft] Attempt ${attempt}/${maxRetries}`)
+          return await fn()
+        } catch (e) {
+          lastError = e
+          console.warn(`[draft] Attempt ${attempt} failed:`, e.message)
+          if (attempt < maxRetries) {
+            console.log(`[draft] Retrying in ${delayMs}ms...`)
+            await new Promise(r => setTimeout(r, delayMs))
+          }
+        }
+      }
+      console.error(`[draft] Failed after ${maxRetries} retries`)
+      throw lastError
+    },
+
     // ── Formation + pool + WR data ────────────────────────────────────────────
     async _loadFormationData() {
       try {
+        console.log('[draft] Starting _loadFormationData')
+        this.formationLoaded = false  // Reset loading state
+        
         if (!this.selectedFormationId) {
           const fRes = await api.col('formations').list({
             sort: '-active,name', perPage: 100,
@@ -234,6 +263,7 @@ document.addEventListener('alpine:init', () => {
             expand: 'top,jungle,mid,adc,support',
           })
         }
+        console.log('[draft] Formation loaded:', this.formation?.name)
 
         // Build role/player lookups from the formation
         const roleForPlayer = {}   // playerId → role
@@ -244,85 +274,108 @@ document.addEventListener('alpine:init', () => {
           if (p) { roleForPlayer[p.id] = role; playerNames[p.id] = p.name }
         }
 
-        // Champion pool for formation players
+        // Champion pool for formation players — with retry
         const playerIds = Object.keys(roleForPlayer)
         if (playerIds.length) {
-          const poolRes = await api.col('champion_pool').list({
-            perPage: 500,
-            filter: playerIds.map(id => `player = '${id}'`).join(' || '),
-            expand: 'player',
-          })
-          const pool = {}
-          for (const entry of poolRes.items) {
-            const cid = entry.champion
-            const pid = entry.player
-            if (!pool[cid]) pool[cid] = []
-            pool[cid].push({
-              playerName: entry.expand?.player?.name ?? playerNames[pid] ?? '?',
-              role:       roleForPlayer[pid] ?? '?',
-              poolTier:   entry.tier,
-            })
-          }
-          this.champPool = pool
-        }
-
-         // Per-player per-champion win rates from match history
-         const matchRes = await api.col('matches').list({
-           perPage: 500, fields: 'win,player_stats,duration,team_kills',
-         })
-        const stats = {}
-        for (const m of matchRes.items) {
-          for (const ps of (m.player_stats ?? [])) {
-            if (!ps.name || !ps.champion) continue
-            const key = `${ps.name}:${normChampKey(ps.champion)}`
-            if (!stats[key]) stats[key] = { n: 0, wins: 0 }
-            stats[key].n++
-            if (m.win) stats[key].wins++
+          console.log('[draft] Loading champion pool...')
+          try {
+            const poolRes = await this._retryAsync(() =>
+              api.col('champion_pool').list({
+                perPage: 500,
+                filter: playerIds.map(id => `player = '${id}'`).join(' || '),
+                expand: 'player',
+              })
+            )
+            const pool = {}
+            for (const entry of poolRes.items) {
+              const cid = entry.champion
+              const pid = entry.player
+              if (!pool[cid]) pool[cid] = []
+              pool[cid].push({
+                playerName: entry.expand?.player?.name ?? playerNames[pid] ?? '?',
+                role:       roleForPlayer[pid] ?? '?',
+                poolTier:   entry.tier,
+              })
+            }
+            this.champPool = pool
+            console.log('[draft] Champion pool loaded:', Object.keys(pool).length, 'champions')
+          } catch (e) {
+            console.error('[draft] Champion pool failed after retries:', e)
+            this.champPool = {}
           }
         }
-        this.playerChampStats = stats
 
-        // Compute player identity ranks (carry/assassino/bruiser/tank/suporte)
-        try {
-          await loadRankConfig()
-          const champsByKey = {}
-          for (const c of Alpine.store('champions').list) champsByKey[normChampKey(c.key)] = c
-
-          const riotMatches = matchRes.items.filter(m => m.player_stats?.length)
-          const mapAll = {}
-          for (const m of riotMatches) {
-            for (const ps of m.player_stats) {
+         // Per-player per-champion win rates from match history — with retry
+         console.log('[draft] Loading match history...')
+         try {
+           const matchRes = await this._retryAsync(() =>
+             api.col('matches').list({
+               perPage: 500, fields: 'win,player_stats,duration,team_kills',
+             })
+           )
+          const stats = {}
+          for (const m of matchRes.items) {
+            for (const ps of (m.player_stats ?? [])) {
               if (!ps.name || !ps.champion) continue
-              const ce = champsByKey[normChampKey(ps.champion)] ?? null
-              const p  = mapAll[ps.name] ??= { nTotal:0, nCarry:0, nAssassino:0, nBruiser:0, nTank:0, nSuporte:0 }
-              p.nTotal++
-              if (isCarry(ce)) p.nCarry++
-              else if (ce?.class === 'Assassin') p.nAssassino++
-              else if (isBruiser(ce)) p.nBruiser++
-              else if (ce?.class === 'Tank') p.nTank++
-              else if (ce?.class === 'Support') p.nSuporte++
+              const key = `${ps.name}:${normChampKey(ps.champion)}`
+              if (!stats[key]) stats[key] = { n: 0, wins: 0 }
+              stats[key].n++
+              if (m.win) stats[key].wins++
             }
           }
+          this.playerChampStats = stats
+          console.log('[draft] Match history loaded:', Object.keys(stats).length, 'player-champ records')
 
-          const identRanks = {}
-          for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
-            const rows = aggregateRows(riotMatches, champsByKey, LENS_DEFS[identLens].filter, mapAll)
-            computeIdentityRanks(rows, identLens)
-            for (const row of rows) {
-              // Only store identity rank if player has 3+ games in this lens
-              if (row.identRank && row.n >= 3) {
-                identRanks[row.name] ??= {}
-                identRanks[row.name][identLens] = row.identRank.rankIdx
+          // Compute player identity ranks (carry/assassino/bruiser/tank/suporte)
+          console.log('[draft] Computing identity ranks...')
+          try {
+            await loadRankConfig()
+            const champsByKey = {}
+            for (const c of Alpine.store('champions').list) champsByKey[normChampKey(c.key)] = c
+
+            const riotMatches = matchRes.items.filter(m => m.player_stats?.length)
+            const mapAll = {}
+            for (const m of riotMatches) {
+              for (const ps of m.player_stats) {
+                if (!ps.name || !ps.champion) continue
+                const ce = champsByKey[normChampKey(ps.champion)] ?? null
+                const p  = mapAll[ps.name] ??= { nTotal:0, nCarry:0, nAssassino:0, nBruiser:0, nTank:0, nSuporte:0 }
+                p.nTotal++
+                if (isCarry(ce)) p.nCarry++
+                else if (ce?.class === 'Assassin') p.nAssassino++
+                else if (isBruiser(ce)) p.nBruiser++
+                else if (ce?.class === 'Tank') p.nTank++
+                else if (ce?.class === 'Support') p.nSuporte++
               }
             }
+
+            const identRanks = {}
+            for (const identLens of ['carry', 'assassino', 'bruiser', 'tank', 'suporte']) {
+              const rows = aggregateRows(riotMatches, champsByKey, LENS_DEFS[identLens].filter, mapAll)
+              computeIdentityRanks(rows, identLens)
+              for (const row of rows) {
+                // Only store identity rank if player has 3+ games in this lens
+                if (row.identRank && row.n >= 3) {
+                  identRanks[row.name] ??= {}
+                  identRanks[row.name][identLens] = row.identRank.rankIdx
+                }
+              }
+            }
+            this.playerIdentityRanks = identRanks
+            console.log('[draft] Identity ranks computed:', Object.keys(identRanks).length, 'players')
+          } catch (e) {
+            console.warn('[draft] identity ranks failed:', e)
+            this.playerIdentityRanks = {}
           }
-          this.playerIdentityRanks = identRanks
-        } catch (e) {
-          console.warn('[draft] identity ranks failed:', e)
-        }
+         } catch (e) {
+           console.error('[draft] Match history failed after retries:', e)
+           this.playerChampStats = {}
+           this.playerIdentityRanks = {}
+         }
       } catch (e) {
-        console.warn('[draft] _loadFormationData failed:', e)
+        console.error('[draft] _loadFormationData failed:', e)
       } finally {
+        console.log('[draft] _loadFormationData complete, formationLoaded = true')
         this.formationLoaded = true
       }
     },
@@ -632,7 +685,8 @@ document.addEventListener('alpine:init', () => {
         wr: wr,
         poolTier: firstPool?.poolTier ?? null,
         scaling: [champ.early, champ.mid, champ.late].map(s => this.scaleIdx(s)),
-        metaTier: champ.tier_by_role?.[role] ?? '?'
+        metaTier: champ.tier_by_role?.[role] ?? '?',
+        isLoading: !this.formationLoaded
       }
     },
 
