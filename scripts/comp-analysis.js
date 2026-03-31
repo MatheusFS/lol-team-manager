@@ -68,11 +68,12 @@ function buildHeuristics(picks, comp, { classCounts, damageCounts }) {
   const frontlineRaw = classCounts.Tank + Math.floor(classCounts.Fighter / 2)
   const frontline    = { score: sc(frontlineRaw, [0, 2, 3]), label: 'Frontline' }
 
-   const dpsRaw = picks.filter(c =>
-     (c.class === 'Marksman' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high')) ||
-     (c.class === 'Assassin' && (c.damage_type === 'AD_high' || c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high')) ||
-     (c.class === 'Mage'     && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'))
-   ).length
+    const dpsRaw = picks.filter(c =>
+      (c.class === 'Marksman' && (c.damage_type === 'AD_high' || c.damage_type === 'Mixed_high')) ||
+      (c.class === 'Assassin' && (c.damage_type === 'AD_high' || c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high')) ||
+      (c.class === 'Mage'     && (c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high')) ||
+      (c.class === 'Fighter'  && (c.damage_type === 'AD_high' || c.damage_type === 'AP_high' || c.damage_type === 'Mixed_high'))
+    ).length
    // Scoring: 0 → 0 (red), 1-2 → 2 (yellow), 3+ → 3 (green)
    const ofensividade = { score: dpsRaw === 0 ? 0 : dpsRaw < 3 ? 2 : 3, label: 'Ofensividade' }
 
