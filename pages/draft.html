@@ -507,12 +507,12 @@
                           </div>
                          <!-- Line 2: Champion name -->
                          <span class="text-[10px] text-slate-500 group-hover:text-slate-300 truncate max-w-[3.5rem] text-center transition-colors" x-text="c.name"></span>
-                         <!-- Line 3: Player rank image (w-8 h-8) -->
-                         <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0 && champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName)">
-                           <img :src="champIdentityForPlayer(c, champPoolInfoForRole(c.id, rec.role)[0]?.playerName).imgUrl"
-                                class="w-8 h-8"
-                                :title="`Rank ${champPoolInfoForRole(c.id, rec.role)[0]?.playerName} (${_champDefaultIdentity(c)})`">
-                         </template>
+                          <!-- Line 3: Player rank image (w-8 h-8) -->
+                          <template x-if="rec.player && champIdentityForPlayer(c, rec.player)">
+                            <img :src="champIdentityForPlayer(c, rec.player).imgUrl"
+                                 class="w-8 h-8"
+                                 :title="`Rank ${rec.player} (${_champDefaultIdentity(c)})`">
+                          </template>
                          <!-- Line 4: Stats (Pool tier + Tier by role + Win%) -->
                          <div class="flex items-center justify-center gap-1 text-[9px]">
                            <template x-if="champPoolInfoForRole(c.id, rec.role).length > 0">

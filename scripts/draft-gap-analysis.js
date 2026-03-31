@@ -64,7 +64,7 @@ function gapFilter(gap, analysis) {
         c.comp_type  === 'Pick'   || c.comp_type_2 === 'Pick'
 
     case 'peel':
-      return c => c.class === 'Support'
+      return c => c.class === 'Support' || c.comp_type === 'Protect' || c.comp_type_2 === 'Protect'
 
     case 'perfilDano': {
       const { adWeight, apWeight, hasExplosivo, hasSustentado } = computeDamageProfile(analysis)
@@ -159,7 +159,7 @@ function gapClasses(gap, analysis) {
     case 'frontline':    return ['Tank']
     case 'ofensividade': return ['Marksman', 'Assassin', 'Mage']
     case 'engage':       return ['comp: Engage', 'comp: Pick']
-    case 'peel':         return ['Support']
+    case 'peel':         return ['Support', 'comp: Protect']
 
     case 'perfilDano': {
       const { adWeight, apWeight, hasExplosivo } = computeDamageProfile(analysis)

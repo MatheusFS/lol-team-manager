@@ -123,7 +123,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
         gf
       ]
-      const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+      const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
       if (candidates.length > 0) {
         columns.push({
           priority: 0,
@@ -150,7 +150,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         c => counterTypes.includes(c.comp_type) || counterTypes.includes(c.comp_type_2),
         gf
       ]
-      const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+      const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
       if (candidates.length > 0) {
         columns.push({
           priority: 1,
@@ -176,7 +176,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const gf1 = gapFilter(gaps[i], analysis)
         const gf2 = gapFilter(gaps[j], analysis)
         const filters = [gf1, gf2]
-        const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+        const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
           columns.push({
             priority: 2,
@@ -203,7 +203,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const gf1 = gapFilter(critGap, analysis)
         const gf2 = gapFilter(yellowGap, analysis)
         const filters = [gf1, gf2]
-        const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+        const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
           columns.push({
             priority: 3,
@@ -230,7 +230,7 @@ function _buildStrategicColumns(role, analysis, shouldPivot, counterTypes, match
         const gf1 = gapFilter(yellowGaps[i], analysis)
         const gf2 = gapFilter(yellowGaps[j], analysis)
         const filters = [gf1, gf2]
-        const candidates = _getCandidatesForFilters(role, filters, cf, ctx)
+        const candidates = _getCandidatesForCombo(role, filters, cf, ctx)
         if (candidates.length > 0) {
           columns.push({
             priority: 4,
@@ -344,7 +344,41 @@ function _getCandidatesForFilters(role, filters, coherenceFilter, ctx) {
   const notInPool = allValid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
 
   inPool.sort((a, b) => _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx))
-  return [...inPool, ...notInPool].slice(0, 10)
+  return [...inPool, ...notInPool].slice(0, 5)
+}
+
+// Helper: apply filters with OR logic (for combo columns) — champions satisfying ANY filter
+// Sorted by: (1) number of filters satisfied (combo-first), (2) pool tier + win-rate
+function _getCandidatesForCombo(role, filters, coherenceFilter, ctx) {
+  const roleFilter = role === 'adc'
+    ? c => c.class !== 'Support' && c.class !== 'Tank'
+    : () => true
+
+  // Valid champions: satisfy at least one filter (OR logic)
+  const valid = ctx.championsList.filter(c =>
+    !ctx.usedIds.has(c.id) &&
+    filters.some(f => f(c)) &&  // ANY filter must pass (OR logic)
+    roleFilter(c) &&
+    (parseAssignedRoles(c).length > 0 ? parseAssignedRoles(c) : parseViableRoles(c)).includes(role)
+  )
+
+  // Count how many filters this champion satisfies (more = better for combo ranking)
+  const comboScore = c => {
+    const count = filters.filter(f => f(c)).length
+    return -count  // negate: higher count = lower value (sorts first)
+  }
+
+  const inPool = valid.filter(c => ctx.champPool?.[c.id]?.some(e => e.role === role))
+  const notInPool = valid.filter(c => !ctx.champPool?.[c.id]?.some(e => e.role === role))
+
+  // Sort pool champs: combo-first (more filters), then by pool score
+  inPool.sort((a, b) => {
+    const scoreA = comboScore(a), scoreB = comboScore(b)
+    if (scoreA !== scoreB) return scoreA - scoreB
+    return _scoreCandidateForRole(a, role, ctx) - _scoreCandidateForRole(b, role, ctx)
+  })
+
+  return [...inPool, ...notInPool].slice(0, 5)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
