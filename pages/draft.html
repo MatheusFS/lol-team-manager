@@ -490,29 +490,24 @@
                    <!-- Dynamic Strategic Columns (layout computed per-role in ourRecs getter) -->
                    <template x-for="(col, ci) in rec.columns" :key="ci">
                       <div class="flex flex-col gap-2" :style="`flex: 0 0 calc(100% / 12 * ${col.units});`">
-                       <!-- Column header: 2-part structure with standardized sizing for exact height match -->
-                        <div class="flex flex-col gap-1 px-2 py-1 rounded border text-[12px] leading-6" :class="col.colorClasses.header">
-                         <!-- Row 1: prefix (emoji+type) - col.units-based variant selection -->
-                         <div class="flex items-center font-bold">
-                           <span x-text="col.units === 1 ? col.prefixMin : (col.units === 2 ? col.prefixMed : col.prefix)"></span>
-                         </div>
-                          <!-- Row 2: gap names + class tags inline - col.units-based variant selection -->
-                          <div class="flex items-center gap-1 flex-wrap text-slate-300">
-                            <!-- Gap names: col.units=1 uses Min, col.units=2 uses Med, col.units>=3 uses full names -->
-                            <span x-text="col.units === 1 ? col.gapNamesMin : (col.units === 2 ? col.gapNamesMed : col.gapNames)"></span>
-                          <!-- Class tags - compact format [🔍 N] - only show when width >= 3 units -->
-                          <template x-if="col.units >= 3 && col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
-                            <template x-if="Array.isArray(col.classTags)">
-                              <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" x-text="`[🔍 ${col.classTags.length}]`"></span>
-                            </template>
-                            <template x-if="!Array.isArray(col.classTags) && col.classTags.display">
-                              <span class="px-1 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-400" 
-                                    :title="col.classTags.tooltip" 
-                                    x-text="col.classTagsCompact"></span>
-                            </template>
-                          </template>
-                        </div>
-                      </div>
+                        <!-- Column header: 2-part structure with standardized sizing for exact height match -->
+                         <div class="relative flex flex-col gap-1 px-2 py-1 rounded border text-[12px] leading-6" :class="col.colorClasses.header">
+                          <!-- Row 1: prefix (emoji+type) - col.units-based variant selection -->
+                          <div class="flex items-center font-bold">
+                            <span x-text="col.units === 1 ? col.prefixMin : (col.units === 2 ? col.prefixMed : col.prefix)"></span>
+                          </div>
+                           <!-- Row 2: gap names - col.units-based variant selection -->
+                           <div class="flex items-center gap-1 flex-wrap text-slate-300">
+                             <!-- Gap names: col.units=1 uses Min, col.units=2 uses Med, col.units>=3 uses full names -->
+                             <span x-text="col.units === 1 ? col.gapNamesMin : (col.units === 2 ? col.gapNamesMed : col.gapNames)"></span>
+                           </div>
+                           <!-- Info icon with class tags tooltip (bottom-right, no height impact) -->
+                           <template x-if="col.units >= 3 && col.classTags && (Array.isArray(col.classTags) ? col.classTags.length > 0 : col.classTags.display)">
+                             <span class="absolute bottom-0 right-1 text-slate-400 cursor-help text-xs leading-none" 
+                                   :title="Array.isArray(col.classTags) ? col.classTags.join(', ') : col.classTags.tooltip"
+                                   x-text="'ℹ️'"></span>
+                           </template>
+                       </div>
                      <!-- Champions in this column (each champion occupies 1/5 of width with gap spacing) -->
                      <div class="flex flex-row w-full gap-1">
                        <template x-for="c in col.candidates" :key="c.id">
